@@ -118,7 +118,7 @@
           <button class="pill" onclick="selL(this,'Gym')">Gym</button>
         </div>
       </div>
-      <div class="inj-banner" id="inj-banner" onclick="openInjuryModal()" style="cursor:pointer;" title="Tap to manage injuries"></div>
+      <div class="inj-banner" id="inj-banner"></div>
       <div class="section">
         <div class="lbl">PRE-SESSION NOTES (optional)</div>
         <textarea id="pre-notes" placeholder="e.g. Shoulder sore today, skip overhead. Using floor press instead of rings. Feeling strong." style="width:100%;background:#111;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:80px;outline:none;line-height:1.6;"></textarea>
@@ -253,7 +253,7 @@ async function init() {
     if (injuries.length) {
       const b = document.getElementById('inj-banner');
       b.style.display = 'block';
-      b.textContent = '⚠ Active: ' + injuries.map(i => i.body_part).join(', ') + ' — exercises filtered. Tap to manage.';
+      b.textContent = '⚠ Active: ' + injuries.map(i => i.body_part).join(', ') + ' — exercises filtered';
     }
 
     document.getElementById('dot').classList.add('live');
@@ -331,27 +331,22 @@ async function generatePlan() {
     'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
   };
 
-  const jsonFormat = '{"session_notes":"one line intent","exercises":[{"exercise_id":"slug","display_name":"Name","sets":4,"reps":"8-10","weight":"32kg","tempo":"3-0-1-0","rir":1,"notes":"cue"}]}';
+  const system = `You are an elite strength coach for James Thornton.
+Phase: Lean bulk Q2 2026. Hypertrophy focus.
+Session type: ${sType} — ${sessionFocus[sType] || ''}
+Equipment available: ${kitStr}
+Active injuries:\n${injStr}
+Available exercises (use ONLY these exercise_ids):\n${availEx}
+History:\n${histStr}
 
-  const injuryRules = injuries.length
-    ? 'MANDATORY INJURY RULES — NEVER VIOLATE:\n' +
-      injuries.map(i => '- ' + i.body_part + ': ' + i.restrictions).join('\n')
-    : '';
-
-  const system = 'You are an elite strength coach for James Thornton.\n' +
-    'Phase: Lean bulk Q2 2026. Hypertrophy focus.\n' +
-    'Session type: ' + sType + ' — ' + (sessionFocus[sType] || '') + '\n' +
-    'Equipment available: ' + kitStr + '\n\n' +
-    (injuryRules ? injuryRules + '\n\n' : '') +
-    'Available exercises (use ONLY these exercise_ids — already filtered for safety):\n' + availEx + '\n\n' +
-    'History:\n' + histStr + '\n\n' +
-    'Generate a ' + sType + ' workout. Return ONLY valid JSON, no markdown, no preamble:\n' +
-    jsonFormat + '\n\n' +
-    'Rules:\n' +
-    '- 4-6 exercises only\n' +
-    '- Base load and volume strictly on history data\n' +
-    '- Only use exercise_ids from the provided list above\n' +
-    (injuries.length ? '- STRICTLY follow all injury restrictions above — no exceptions\n' : '');
+Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
+{
+  "session_notes": "one line intent",
+  "exercises": [
+    { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
+  ]
+}
+Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercises from the provided list.`;
 
 
 
@@ -386,6 +381,20 @@ async function startSession() {
   document.getElementById('chat').innerHTML = '';
   goScreen('s-active');
 
+  // Log session to GSheet
+  apiPost({
+    action: 'appendSession',
+    data: {
+      session_id: sessionId,
+      date: new Date().toISOString().slice(0, 10),
+      week_type: 'training',
+      phase: 'Lean Bulk Q2 2026',
+      session_type: sType,
+      location: loc,
+      ai_plan_used: true,
+    }
+  });
+
   const intro = `${sType} — ${new Date().toLocaleDateString('en-AU')} — ${loc}\n\n` +
     plan.map((e, i) => `${i + 1}. ${e.display_name}\n   ${e.sets}×${e.reps} @ ${e.weight} | ${e.tempo} | RIR ${e.rir}\n   ${e.notes || ''}`).join('\n\n') +
     '\n\nStart with ' + plan[0]?.display_name + '. Log each set as you go.';
@@ -407,7 +416,7 @@ async function sendMsg() {
     return;
   }
 
-  // Auto-log set if reps detected — batched, written on Save & Finish
+  // Auto-log set if reps detected
   const repsMatch = msg.match(/(\d+)\s*reps?/i);
   if (repsMatch && plan.length) {
     const currentEx = plan[Math.min(Math.floor(loggedSets.length / 3), plan.length - 1)];
@@ -420,6 +429,7 @@ async function sendMsg() {
       notes: msg,
     };
     loggedSets.push(setData);
+    apiPost({ action: 'appendSet', data: setData });
   }
 
   await getCoachReply(msg);
@@ -480,11 +490,7 @@ function quickMsg(msg) {
 }
 
 function endSession() {
-  if (confirm('Exit session?\n\nThis session has NOT been saved. All logged sets will be lost.\n\nExit anyway?')) {
-    loggedSets = [];
-    chatLog = [];
-    goScreen('s-idle');
-  }
+  if (confirm('End session?')) goScreen('s-idle');
 }
 
 // ── Chat UI ───────────────────────────────────────────────────────────────────
@@ -682,181 +688,32 @@ function selectRPE(n) {
 
 async function savePostSession() {
   const notes = document.getElementById('post-notes')?.value.trim() || '';
-  const rpe = selectedRPE || '—';
-
-  if (!confirm('Save session?\n\nRPE: ' + rpe + '\nSets logged: ' + loggedSets.length + '\nNotes: ' + (notes || 'none') + '\n\nThis will write to your GSheet.')) {
-    return;
-  }
-
-  try {
-    // Write session row
-    await apiPost({
-      action: 'appendSession',
-      data: {
-        session_id: sessionId,
-        date: new Date().toISOString().slice(0, 10),
-        week_type: 'training',
-        phase: 'Lean Bulk Q2 2026',
-        session_type: sType,
-        location: loc,
-        rpe_session: selectedRPE || '',
-        notes: notes,
-        ai_plan_used: true,
-      }
-    });
-
-    // Write all logged sets
-    for (const set of loggedSets) {
-      await apiPost({ action: 'appendSet', data: set });
+  // Update session in GSheet with RPE and notes
+  await apiPost({
+    action: 'appendSession',
+    data: {
+      session_id: sessionId + '-debrief',
+      date: new Date().toISOString().slice(0, 10),
+      week_type: 'training',
+      phase: 'Lean Bulk Q2 2026',
+      session_type: sType,
+      location: loc,
+      rpe_session: selectedRPE || '',
+      notes: notes,
+      ai_plan_used: true,
     }
-
-    addMsg('coach', 'Session saved ✓\nRPE ' + rpe + (notes ? ' · ' + notes : '') + '\n\nRest up. See you next session.');
-    loggedSets = [];
-  } catch(e) {
-    addMsg('coach', 'Save failed: ' + e.message + '\n\nTry again or screenshot your session data.');
-  }
+  });
+  addMsg('coach', 'Session saved. RPE ' + (selectedRPE || '—') + (notes ? ' · ' + notes : '') + '\n\nRest up. See you next session.');
 }
 
 function discardSession() {
-  if (confirm('Discard session?\n\nNo data will be saved to your GSheet. This cannot be undone.')) {
-    loggedSets = [];
-    chatLog = [];
+  if (confirm('Discard this session? No data will be saved.')) {
     goScreen('s-idle');
   }
 }
 
-// ── Injury modal ──────────────────────────────────────────────────────────────
-function openInjuryModal() {
-  renderInjuryList();
-  document.getElementById('inj-modal').style.display = 'block';
-}
-
-function closeInjuryModal() {
-  document.getElementById('inj-modal').style.display = 'none';
-}
-
-function renderInjuryList() {
-  const list = document.getElementById('inj-list');
-  if (!injuries.length) {
-    list.innerHTML = '<div style="font-size:12px;color:#444;font-style:italic;">No active injuries.</div>';
-    return;
-  }
-  list.innerHTML = injuries.map((inj, i) => `
-    <div style="border:1px solid #1a1a1a;border-radius:8px;padding:12px 14px;margin-bottom:10px;background:#0d0d0d;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-        <div style="font-size:13px;color:#e8e4dc;font-weight:500;">${inj.body_part}</div>
-        <span style="font-size:11px;color:#f59e0b;background:rgba(245,158,11,0.1);padding:2px 8px;border-radius:4px;">${inj.severity}</span>
-      </div>
-      <div style="font-size:11px;color:#555;margin-bottom:10px;line-height:1.5;">${inj.restrictions}</div>
-      <div style="display:flex;gap:8px;">
-        <button onclick="resolveInjury(${i})" style="flex:1;padding:7px;background:rgba(34,197,94,0.1);color:#22c55e;border:1px solid rgba(34,197,94,0.3);border-radius:6px;font-size:11px;font-family:inherit;cursor:pointer;letter-spacing:0.08em;">MARK RESOLVED</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-async function resolveInjury(index) {
-  const inj = injuries[index];
-  if (!confirm('Mark ' + inj.body_part + ' as resolved?\n\nThis will update your injury record and remove exercise restrictions.')) return;
-
-  // Write resolved date to GSheet
-  await apiPost({
-    action: 'appendSession',
-    data: {
-      session_id: 'INJ-RESOLVED-' + Date.now(),
-      date: new Date().toISOString().slice(0, 10),
-      week_type: 'rest',
-      notes: 'Injury resolved: ' + inj.body_part,
-    }
-  });
-
-  // Remove from local injuries array
-  injuries.splice(index, 1);
-
-  // Update banner
-  if (injuries.length) {
-    const b = document.getElementById('inj-banner');
-    b.textContent = '⚠ Active: ' + injuries.map(i => i.body_part).join(', ') + ' — exercises filtered. Tap to manage.';
-  } else {
-    document.getElementById('inj-banner').style.display = 'none';
-  }
-
-  renderInjuryList();
-}
-
-async function addInjury() {
-  const part = document.getElementById('new-inj-part').value.trim();
-  const severity = document.getElementById('new-inj-severity').value.trim();
-  const restrictions = document.getElementById('new-inj-restrictions').value.trim();
-
-  if (!part || !restrictions) {
-    alert('Body part and restrictions are required.');
-    return;
-  }
-
-  const newInj = {
-    injury_id: 'INJ-' + Date.now(),
-    date_onset: new Date().toISOString().slice(0, 10),
-    date_resolved: '',
-    body_part: part,
-    severity: severity || 'Moderate',
-    description: '',
-    restrictions,
-  };
-
-  if (!confirm('Add injury?\n\n' + part + ' (' + (severity || 'Moderate') + ')\nRestrictions: ' + restrictions + '\n\nThis will filter exercises immediately.')) return;
-
-  // Write to GSheet
-  await apiPost({ action: 'appendSet', data: newInj });
-
-  // Add to local array
-  injuries.push(newInj);
-
-  // Clear inputs
-  document.getElementById('new-inj-part').value = '';
-  document.getElementById('new-inj-severity').value = '';
-  document.getElementById('new-inj-restrictions').value = '';
-
-  // Update banner
-  const b = document.getElementById('inj-banner');
-  b.style.display = 'block';
-  b.textContent = '⚠ Active: ' + injuries.map(i => i.body_part).join(', ') + ' — exercises filtered. Tap to manage.';
-
-  renderInjuryList();
-}
-
-// ── Unload protection ────────────────────────────────────────────────────────
-window.addEventListener('beforeunload', function(e) {
-  if (document.getElementById('s-active').classList.contains('on')) {
-    e.preventDefault();
-    e.returnValue = 'Your session has not been saved. Are you sure you want to leave?';
-  }
-});
-
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();
 </script>
-<!-- INJURY MODAL -->
-<div id="inj-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;padding:24px;overflow-y:auto;">
-  <div style="max-width:400px;margin:0 auto;background:#111;border:1px solid #222;border-radius:12px;padding:20px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <div style="font-size:12px;letter-spacing:0.15em;color:#888;">INJURY MANAGER</div>
-      <button onclick="closeInjuryModal()" style="background:none;border:none;color:#555;font-size:18px;cursor:pointer;font-family:inherit;">✕</button>
-    </div>
-
-    <!-- Active injuries list -->
-    <div id="inj-list" style="margin-bottom:20px;"></div>
-
-    <!-- Add new injury -->
-    <div style="border-top:1px solid #1a1a1a;padding-top:16px;">
-      <div style="font-size:10px;color:#333;letter-spacing:0.15em;margin-bottom:12px;">ADD INJURY</div>
-      <input id="new-inj-part" placeholder="Body part (e.g. Left knee)" style="width:100%;background:#0a0a0a;border:1px solid #222;border-radius:6px;padding:8px 12px;color:#e8e4dc;font-size:12px;font-family:inherit;outline:none;margin-bottom:8px;"/>
-      <input id="new-inj-severity" placeholder="Severity (Mild / Moderate / Severe)" style="width:100%;background:#0a0a0a;border:1px solid #222;border-radius:6px;padding:8px 12px;color:#e8e4dc;font-size:12px;font-family:inherit;outline:none;margin-bottom:8px;"/>
-      <textarea id="new-inj-restrictions" placeholder="Restrictions (e.g. No squatting, avoid knee flexion past 90°)" style="width:100%;background:#0a0a0a;border:1px solid #222;border-radius:6px;padding:8px 12px;color:#e8e4dc;font-size:12px;font-family:inherit;outline:none;resize:none;height:70px;line-height:1.6;margin-bottom:8px;"></textarea>
-      <button onclick="addInjury()" style="width:100%;padding:10px;background:#e8e4dc;color:#0a0a0a;border:none;border-radius:6px;font-size:11px;letter-spacing:0.12em;font-family:inherit;cursor:pointer;font-weight:bold;">ADD INJURY</button>
-    </div>
-  </div>
-</div>
-
 </body>
 </html>
