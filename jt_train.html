@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>JT.TRAIN</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #0a0a0a; --bg2: #111; --bg3: #1a1a1a;
+    --text: #e8e4dc; --text2: #888; --text3: #444;
+    --border: #222; --border2: #2a2a2a;
+    --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    --font: 'DM Mono', 'Courier New', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column; }
+  .screen { display: none; flex: 1; flex-direction: column; }
+  .screen.on { display: flex; }
+
+  /* Header */
+  .header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg); z-index: 10; }
+  .logo { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.18em; color: var(--text2); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); transition: all 0.3s; }
+  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .badge { font-size: 10px; color: var(--text3); }
+  .btn-sm { font-family: var(--font); font-size: 11px; color: var(--text2); background: none; border: 1px solid var(--border); padding: 5px 12px; border-radius: 6px; cursor: pointer; letter-spacing: 0.08em; }
+
+  /* Idle screen */
+  .idle-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .idle-inner { width: 100%; max-width: 400px; }
+  .section { margin-bottom: 28px; }
+  .lbl { font-size: 10px; color: var(--text3); letter-spacing: 0.15em; margin-bottom: 10px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { font-family: var(--font); font-size: 12px; padding: 7px 14px; border-radius: 20px; border: 1px solid var(--border2); color: var(--text2); cursor: pointer; background: none; transition: all 0.15s; letter-spacing: 0.04em; }
+  .pill.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .inj-banner { padding: 10px 14px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; margin-bottom: 24px; font-size: 12px; color: var(--amber); display: none; }
+  .btn-main { width: 100%; padding: 14px; background: var(--text); color: var(--bg); border: none; border-radius: 8px; font-size: 12px; letter-spacing: 0.15em; font-family: var(--font); font-weight: bold; cursor: pointer; transition: opacity 0.15s; }
+  .btn-main:disabled { opacity: 0.4; cursor: default; }
+  .btn-start { background: var(--green); color: #fff; }
+  .status-line { font-size: 11px; color: var(--text3); text-align: center; margin-top: 12px; min-height: 16px; }
+
+  /* Review screen */
+  .review-body { flex: 1; overflow-y: auto; padding: 20px; }
+  .review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+  .review-title { font-size: 16px; font-weight: 500; }
+  .review-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .exercise-card { border: 1px solid var(--border2); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; background: var(--bg2); }
+  .ex-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .ex-name { font-size: 13px; color: var(--text); font-weight: 500; }
+  .ex-vol { font-size: 12px; color: var(--text); background: var(--bg3); padding: 3px 9px; border-radius: 4px; white-space: nowrap; }
+  .ex-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text3); margin-bottom: 6px; }
+  .ex-note { font-size: 11px; color: var(--text3); font-style: italic; }
+  .review-footer { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--bg); }
+
+  /* Active screen */
+  .chat-area { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { display: flex; flex-direction: column; }
+  .msg.you { align-items: flex-end; }
+  .msg.coach { align-items: flex-start; }
+  .msg-label { font-size: 10px; color: var(--text3); letter-spacing: 0.08em; margin-bottom: 3px; }
+  .msg-bubble { max-width: 88%; padding: 10px 14px; font-size: 13px; line-height: 1.65; color: var(--text); white-space: pre-wrap; }
+  .msg.you .msg-bubble { background: var(--bg2); border: 1px solid var(--border2); border-radius: 14px 14px 4px 14px; }
+  .msg.coach .msg-bubble { background: var(--bg3); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; }
+  .typing { display: flex; gap: 4px; padding: 10px 14px; }
+  .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); animation: pulse 1.2s infinite; }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse { 0%,100%{opacity:0.2;transform:scale(0.8)} 50%{opacity:1;transform:scale(1)} }
+  .input-area { border-top: 1px solid var(--border); padding: 12px 16px; background: var(--bg); }
+  .input-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .msg-input { flex: 1; background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: 13px; font-family: var(--font); outline: none; }
+  .msg-input::placeholder { color: var(--text3); }
+  .send-btn { background: var(--text); color: var(--bg); border: none; border-radius: 10px; padding: 10px 18px; font-size: 16px; cursor: pointer; transition: opacity 0.15s; }
+  .send-btn:disabled { opacity: 0.3; }
+  .quick-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .quick-btn { font-family: var(--font); font-size: 11px; padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border2); color: var(--text2); background: none; cursor: pointer; letter-spacing: 0.04em; }
+  .quick-btn.debrief { border-color: rgba(34,197,94,0.4); color: var(--green); }
+
+  /* Spinner */
+  .spinner-screen { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; }
+  .spinner-text { font-size: 11px; color: var(--text3); letter-spacing: 0.15em; }
+
+
+  /* Set logger */
+  .set-logger { background: var(--bg2); border-top: 1px solid var(--border2); padding: 12px 16px; }
+  .sl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .sl-ex-select { font-family: var(--font); font-size: 12px; color: var(--text); background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 10px; outline: none; max-width: 200px; }
+  .sl-counter { font-size: 10px; color: var(--text3); letter-spacing: 0.1em; }
+  .sl-fields { display: flex; gap: 8px; margin-bottom: 10px; }
+  .sl-field { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 6px; text-align: center; }
+  .sl-field-lbl { font-size: 9px; color: var(--text3); letter-spacing: 0.12em; margin-bottom: 6px; }
+  .sl-stepper { display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .sl-btn { font-family: var(--font); width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border2); background: var(--bg); color: var(--text2); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; -webkit-tap-highlight-color: transparent; }
+  .sl-btn:active { background: var(--border2); }
+  .sl-val { font-size: 16px; color: var(--text); min-width: 32px; text-align: center; font-weight: 500; }
+  .sl-unit { font-size: 10px; color: var(--text3); }
+  .sl-log-btn { width: 100%; padding: 11px; background: var(--green); color: #fff; border: none; border-radius: 8px; font-family: var(--font); font-size: 11px; letter-spacing: 0.14em; font-weight: bold; cursor: pointer; transition: opacity 0.15s; }
+  .sl-log-btn:active { opacity: 0.8; }
+  .sl-divider { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .sl-divider-line { flex: 1; height: 1px; background: var(--border); }
+  .sl-divider-lbl { font-size: 9px; color: var(--text3); letter-spacing: 0.1em; }
+  /* Equipment config */
+  .eq-body { flex: 1; overflow-y: auto; padding: 0 20px 20px; }
+  .eq-loc-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .eq-loc-tab { flex: 1; padding: 12px 0; background: none; border: none; border-bottom: 2px solid transparent; font-family: var(--font); font-size: 11px; letter-spacing: 0.12em; color: var(--text3); cursor: pointer; transition: all 0.15s; margin-bottom: -1px; }
+  .eq-loc-tab.active { color: var(--text); border-bottom-color: var(--text); }
+  .eq-section-lbl { font-size: 10px; color: var(--text3); letter-spacing: 0.15em; margin: 20px 0 8px; }
+  .eq-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .eq-label { font-size: 12px; color: var(--text2); }
+  .eq-sublabel { font-size: 10px; color: var(--text3); margin-top: 2px; }
+  .tog { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+  .tog input { opacity: 0; width: 0; height: 0; }
+  .tog-slider { position: absolute; cursor: pointer; inset: 0; background: var(--border2); border-radius: 22px; transition: 0.2s; }
+  .tog-slider:before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: var(--text3); border-radius: 50%; transition: 0.2s; }
+  .tog input:checked + .tog-slider { background: var(--green); }
+  .tog input:checked + .tog-slider:before { transform: translateX(16px); background: #fff; }
+  .kb-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+  .kb-pill { font-family: var(--font); font-size: 11px; padding: 5px 11px; border-radius: 14px; border: 1px solid var(--border2); color: var(--text3); cursor: pointer; background: none; transition: all 0.15s; letter-spacing: 0.04em; }
+  .kb-pill.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- IDLE -->
+<div id="s-idle" class="screen on">
+  <div class="header">
+    <div class="logo">
+      <div class="dot" id="dot"></div>
+      JT.TRAIN
+      <span class="badge" id="badge">connecting...</span>
+    </div>
+    <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc)">⚙</button>
+  </div>
+  <div class="idle-body">
+    <div class="idle-inner">
+      <div class="section">
+        <div class="lbl">SESSION TYPE</div>
+        <div class="pills" id="session-pills">
+          <button class="pill active" onclick="selS(this,'Full Body A')">Full Body A</button>
+          <button class="pill" onclick="selS(this,'Full Body B')">Full Body B</button>
+          <button class="pill" onclick="selS(this,'Upper Body')">Upper Body</button>
+          <button class="pill" onclick="selS(this,'Lower Body')">Lower Body</button>
+          <button class="pill" onclick="selS(this,'Rings Only')">Rings Only</button>
+          <button class="pill" onclick="selS(this,'KB Only')">KB Only</button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="lbl">LOCATION</div>
+        <div class="pills" id="loc-pills">
+          <button class="pill active" onclick="selL(this,'Home')">Home</button>
+          <button class="pill" onclick="selL(this,'Travel')">Travel</button>
+          <button class="pill" onclick="selL(this,'Gym')">Gym</button>
+        </div>
+      </div>
+      <div class="inj-banner" id="inj-banner"></div>
+      <div class="section">
+        <div class="lbl">PRE-SESSION NOTES (optional)</div>
+        <textarea id="pre-notes" placeholder="e.g. Shoulder sore today, skip overhead. Using floor press instead of rings. Feeling strong." style="width:100%;background:#111;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:80px;outline:none;line-height:1.6;"></textarea>
+      </div>
+      <button class="btn-main" id="gen-btn" onclick="generatePlan()" disabled>Generate session →</button>
+      <div class="status-line" id="status">Loading your data...</div>
+    </div>
+  </div>
+</div>
+
+<!-- GENERATING -->
+<div id="s-generating" class="screen">
+  <div class="header"><div class="logo"><div class="dot live"></div>JT.TRAIN</div></div>
+  <div class="spinner-screen">
+    <div class="spinner-text" id="gen-status">Building your session...</div>
+    <div class="typing"><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<!-- REVIEW -->
+<div id="s-review" class="screen">
+  <div class="header">
+    <div class="logo"><div class="dot live"></div>JT.TRAIN</div>
+    <button class="btn-sm" onclick="goScreen('s-idle')">Back</button>
+  </div>
+  <div class="review-body" id="review-body">
+    <div class="review-header">
+      <div>
+        <div class="review-title" id="review-title"></div>
+        <div class="review-sub" id="review-sub"></div>
+      </div>
+    </div>
+    <div id="plan-cards"></div>
+
+    <!-- Iteration chat -->
+    <div style="margin-top:20px;border-top:1px solid #1a1a1a;padding-top:16px;">
+      <div style="font-size:10px;color:#333;letter-spacing:0.15em;margin-bottom:10px;">ADJUST PLAN</div>
+      <div id="review-chat" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:200px;overflow-y:auto;"></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <input id="review-input" placeholder="e.g. swap exercise 3, add more legs, shorter session..." style="flex:1;background:#111;border:1px solid #222;border-radius:8px;padding:9px 12px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;outline:none;" onkeydown="if(event.key==='Enter')sendReviewMsg()"/>
+        <button onclick="sendReviewMsg()" style="background:#e8e4dc;color:#0a0a0a;border:none;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;">→</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="quick-btn" onclick="reviewQuick('Swap the last exercise')">Swap last</button>
+        <button class="quick-btn" onclick="reviewQuick('Make it shorter — 4 exercises only')">Shorter</button>
+        <button class="quick-btn" onclick="reviewQuick('Add a core exercise')">Add core</button>
+        <button class="quick-btn" onclick="reviewQuick('Shoulder is sore today, adjust accordingly')">Shoulder sore</button>
+      </div>
+    </div>
+  </div>
+  <div class="review-footer">
+    <button class="btn-main btn-start" onclick="startSession()">Start session →</button>
+  </div>
+</div>
+
+<!-- ACTIVE -->
+<div id="s-active" class="screen">
+  <div class="header">
+    <div class="logo"><div class="dot live"></div><span id="active-title">ACTIVE</span></div>
+    <button class="btn-sm" onclick="endSession()">End</button>
+  </div>
+  <div class="chat-area" id="chat"></div>
+  <div class="input-area" style="padding:0;">
+    <!-- Set Logger -->
+    <div class="set-logger" id="set-logger">
+      <div class="sl-header">
+        <select class="sl-ex-select" id="sl-ex-select" onchange="onExSelect()"></select>
+        <span class="sl-counter" id="sl-counter">Set 1</span>
+      </div>
+      <div class="sl-fields">
+        <div class="sl-field">
+          <div class="sl-field-lbl">WEIGHT</div>
+          <div class="sl-stepper">
+            <button class="sl-btn" onclick="adjustVal('weight',-2)">−</button>
+            <span class="sl-val" id="val-weight">32</span>
+            <span class="sl-unit">kg</span>
+            <button class="sl-btn" onclick="adjustVal('weight',2)">+</button>
+          </div>
+        </div>
+        <div class="sl-field">
+          <div class="sl-field-lbl">REPS</div>
+          <div class="sl-stepper">
+            <button class="sl-btn" onclick="adjustVal('reps',-1)">−</button>
+            <span class="sl-val" id="val-reps">10</span>
+            <button class="sl-btn" onclick="adjustVal('reps',1)">+</button>
+          </div>
+        </div>
+        <div class="sl-field">
+          <div class="sl-field-lbl">RIR</div>
+          <div class="sl-stepper">
+            <button class="sl-btn" onclick="adjustVal('rir',-1)">−</button>
+            <span class="sl-val" id="val-rir">2</span>
+            <button class="sl-btn" onclick="adjustVal('rir',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <button class="sl-log-btn" onclick="logSet()">LOG SET →</button>
+    </div>
+    <!-- Coach chat -->
+    <div style="padding: 10px 16px 12px;">
+      <div class="sl-divider"><div class="sl-divider-line"></div><div class="sl-divider-lbl">ASK COACH</div><div class="sl-divider-line"></div></div>
+      <div class="input-row" style="margin-bottom:8px;">
+        <input class="msg-input" id="msg-input" placeholder="Shoulder sore? Swap? Ask anything..." onkeydown="if(event.key==='Enter')sendMsg()"/>
+        <button class="send-btn" id="send-btn" onclick="sendMsg()">→</button>
+      </div>
+      <div class="quick-btns">
+        <button class="quick-btn" onclick="quickMsg('Shoulder hurting — swap it')">Shoulder pain</button>
+        <button class="quick-btn" onclick="quickMsg('Need an easier option')">Easier</button>
+        <button class="quick-btn debrief" onclick="quickMsg('done')">Done — debrief</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- EQUIPMENT -->
+<div id="s-equipment" class="screen">
+  <div class="header">
+    <div class="logo"><div class="dot live"></div>EQUIPMENT</div>
+    <button class="btn-sm" onclick="goScreen('s-idle')">← Back</button>
+  </div>
+  <div class="eq-body">
+    <div class="eq-loc-tabs">
+      <button class="eq-loc-tab active" id="eqtab-Home"   onclick="selectEquipLoc('Home')">HOME</button>
+      <button class="eq-loc-tab"        id="eqtab-Travel" onclick="selectEquipLoc('Travel')">TRAVEL</button>
+      <button class="eq-loc-tab"        id="eqtab-Gym"    onclick="selectEquipLoc('Gym')">GYM</button>
+    </div>
+    <div id="eq-config-body"></div>
+  </div>
+  <div class="review-footer">
+    <button class="btn-main" onclick="saveEquipConfig()">Save equipment →</button>
+  </div>
+</div>
+
+<script>
+const W = 'https://jt-workout-worke.james-thornton88.workers.dev';
+
+let sType = 'Full Body A', loc = 'Home';
+let injuries = [], exercises = [], history = { sessions: [], sets: [] };
+let plan = [], chatLog = [], sessionId = '', loggedSets = [];
+let isTyping = false;
+let equipmentConfig = {};
+const ALL_KB = [8,12,16,20,24,28,32,36,40,44,48];
+const DEFAULT_CONFIG = {
+  Home:   { rings:true,  pull_up_bar:true,  parallettes:true,  bands:true,  kb_weights:[16,20,24,32,44], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
+  Travel: { rings:false, pull_up_bar:false, parallettes:false, bands:true,  kb_weights:[],               kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
+  Gym:    { rings:false, pull_up_bar:true,  parallettes:false, bands:true,  kb_weights:[8,12,16,20,24,28,32,36,40,44,48], kb_pairs:true, barbell:true, dumbbells:true, cable_machine:true }
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function isTrue(v) { return v === true || v === 'TRUE' || v === 'true'; }
+function goScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+}
+function selS(el, v) {
+  sType = v;
+  document.querySelectorAll('#session-pills .pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  loadHistory();
+}
+function selL(el, v) {
+  loc = v;
+  document.querySelectorAll('#loc-pills .pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ── API calls ─────────────────────────────────────────────────────────────────
+async function api(action, params = {}) {
+  const url = new URL(W);
+  url.searchParams.set('action', action);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const r = await fetch(url.toString());
+  return r.json();
+}
+
+async function apiPost(body) {
+  const r = await fetch(W, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+}
+
+async function claude(system, messages) {
+  const r = await apiPost({ action: 'claude', system, messages });
+  return r.text || '';
+}
+
+
+// ── Equipment config ──────────────────────────────────────────────────────────
+let equipLoc = 'Home';
+
+function buildKitString(l) {
+  const cfg = equipmentConfig[l] || DEFAULT_CONFIG[l] || {};
+  const parts = [];
+  if (cfg.rings)        parts.push('Gymnastics rings');
+  if (cfg.pull_up_bar)  parts.push('Pull-up bar');
+  if (cfg.parallettes)  parts.push('Parallettes');
+  if (cfg.bands)        parts.push('Resistance bands');
+  if (cfg.kb_weights && cfg.kb_weights.length) {
+    const w = cfg.kb_weights;
+    if (cfg.kb_pairs) {
+      parts.push('KB (' + w.join('/') + 'kg, matching pairs available)');
+    } else {
+      const combos = [];
+      for (let i = 0; i < w.length; i++)
+        for (let j = i + 1; j < w.length; j++)
+          combos.push(w[i] + '+' + w[j] + '=' + (w[i]+w[j]) + 'kg');
+      parts.push('KB singles (' + w.join('/') + 'kg). Double KB = asymmetric loads only. Available double KB combos (total load): ' + combos.join(', ') + '. When prescribing double KB exercises specify both bells e.g. weight: "20+24kg" and use the TOTAL for history comparison.');
+    }
+  }
+  if (cfg.barbell)       parts.push('Barbell + squat rack');
+  if (cfg.dumbbells)     parts.push('Full dumbbell rack');
+  if (cfg.cable_machine) parts.push('Cable machine');
+  parts.push('Bodyweight');
+  return parts.join(', ') || 'Bodyweight only';
+};
+  const parts = [];
+  if (cfg.rings)        parts.push('Gymnastics rings');
+  if (cfg.pull_up_bar)  parts.push('Pull-up bar');
+  if (cfg.parallettes)  parts.push('Parallettes');
+  if (cfg.bands)        parts.push('Resistance bands');
+  if (cfg.kb_weights?.length) {
+    const pairNote = cfg.kb_pairs
+      ? ', pairs available'
+      : ', singles only — IMPORTANT: do NOT prescribe any double-KB exercises';
+    parts.push('KB (' + cfg.kb_weights.join('/') + 'kg' + pairNote + ')');
+  }
+  if (cfg.barbell)       parts.push('Barbell + squat rack');
+  if (cfg.dumbbells)     parts.push('Full dumbbell rack');
+  if (cfg.cable_machine) parts.push('Cable machine');
+  parts.push('Bodyweight');
+  return parts.join(', ') || 'Bodyweight only';
+}
+
+function filterExercises(exList, l, sType) {
+  const cfg = equipmentConfig[l] || DEFAULT_CONFIG[l] || {};
+  return exList.filter(e => {
+    // Session type
+    if (e.session_type) {
+      const tags = e.session_type.split(';').map(t => t.trim());
+      if (!tags.includes(sType)) return false;
+    }
+    const eq = e.equipment || '';
+    if (l === 'Travel') {
+      const ok = (eq === 'BW' || eq === 'Bodyweight')
+        || (eq.includes('Band') && cfg.bands)
+        || (eq.includes('Rings') && cfg.rings)
+        || (eq.includes('KB') && cfg.kb_weights?.length > 0);
+      if (!ok) return false;
+    } else if (l === 'Home') {
+      if (!isTrue(e.home_available)) return false;
+      if (eq.includes('Rings') && !cfg.rings) return false;
+      if (eq.includes('Parallettes') && !cfg.parallettes) return false;
+      if (eq.includes('Band') && !cfg.bands) return false;
+    }
+    // Injury
+    if (injuries.length && !isTrue(e.shoulder_safe)) return false;
+    return true;
+  });
+}
+
+function selectEquipLoc(l) {
+  equipLoc = l;
+  document.querySelectorAll('.eq-loc-tab').forEach(t => t.classList.remove('active'));
+  const tab = document.getElementById('eqtab-' + l);
+  if (tab) tab.classList.add('active');
+  renderEquipConfig(l);
+}
+
+function renderEquipConfig(l) {
+  const cfg = { ...(DEFAULT_CONFIG[l] || {}), ...(equipmentConfig[l] || {}) };
+  const body = document.getElementById('eq-config-body');
+  if (!body) return;
+
+  const togRow = (key, label, sublabel, checked) => `
+    <div class="eq-row">
+      <div><div class="eq-label">${label}</div>${sublabel ? '<div class="eq-sublabel">' + sublabel + '</div>' : ''}</div>
+      <label class="tog"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleEquip('${l}','${key}',this.checked)"><span class="tog-slider"></span></label>
+    </div>`;
+
+  let html = '';
+
+  // KBs
+  html += '<div class="eq-section-lbl">KETTLEBELLS</div>';
+  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Tap to toggle available weights</div>';
+  html += '<div class="kb-grid">';
+  ALL_KB.forEach(w => {
+    const on = (cfg.kb_weights || []).includes(w);
+    html += `<button class="kb-pill ${on ? 'on' : ''}" id="kb-${l}-${w}" onclick="toggleKBWeight('${l}',${w})">${w}kg</button>`;
+  });
+  html += '</div>';
+  html += togRow('kb_pairs', 'Matching pairs', 'Have 2× of each weight?', cfg.kb_pairs);
+
+  // Rings & bars
+  html += '<div class="eq-section-lbl">RINGS & BARS</div>';
+  html += togRow('rings', 'Gymnastics rings', '', cfg.rings);
+  html += togRow('pull_up_bar', 'Pull-up bar', '', cfg.pull_up_bar);
+
+  // Accessories
+  html += '<div class="eq-section-lbl">ACCESSORIES</div>';
+  html += togRow('parallettes', 'Parallettes', '', cfg.parallettes);
+  html += togRow('bands', 'Resistance bands', '', cfg.bands);
+
+  // Gym only
+  if (l === 'Gym') {
+    html += '<div class="eq-section-lbl">GYM EQUIPMENT</div>';
+    html += togRow('barbell', 'Barbell + squat rack', '', cfg.barbell);
+    html += togRow('dumbbells', 'Dumbbells (full rack)', '', cfg.dumbbells);
+    html += togRow('cable_machine', 'Cable machine / lat pulldown', '', cfg.cable_machine);
+  }
+
+  body.innerHTML = html;
+}
+
+function toggleEquip(l, key, val) {
+  if (!equipmentConfig[l]) equipmentConfig[l] = { ...DEFAULT_CONFIG[l] };
+  equipmentConfig[l][key] = val;
+}
+
+function toggleKBWeight(l, weight) {
+  if (!equipmentConfig[l]) equipmentConfig[l] = { ...DEFAULT_CONFIG[l] };
+  const w = equipmentConfig[l].kb_weights || [];
+  const idx = w.indexOf(weight);
+  if (idx >= 0) w.splice(idx, 1); else w.push(weight);
+  w.sort((a, b) => a - b);
+  equipmentConfig[l].kb_weights = w;
+  const pill = document.getElementById('kb-' + l + '-' + weight);
+  if (pill) pill.classList.toggle('on', idx < 0);
+}
+
+async function saveEquipConfig() {
+  try {
+    await Promise.all(
+      Object.entries(equipmentConfig).map(([location, config]) =>
+        apiPost({ action: 'saveEquipmentConfig', location, config })
+      )
+    );
+    goScreen('s-idle');
+    document.getElementById('status').textContent = 'Equipment saved ✓';
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const [injR, exR, eqR] = await Promise.all([
+      api('getActiveInjuries'),
+      api('getExercises'),
+      api('getEquipmentConfig'),
+    ]);
+    equipmentConfig = eqR.data || {};
+    ['Home','Travel','Gym'].forEach(l => { if (!equipmentConfig[l]) equipmentConfig[l] = {...DEFAULT_CONFIG[l]}; });
+    injuries = injR.data || [];
+    exercises = exR.data || [];
+
+    if (injuries.length) {
+      const b = document.getElementById('inj-banner');
+      b.style.display = 'block';
+      b.textContent = '⚠ Active: ' + injuries.map(i => i.body_part).join(', ') + ' — exercises filtered';
+    }
+
+    document.getElementById('dot').classList.add('live');
+    document.getElementById('badge').textContent = '● LIVE';
+    document.getElementById('status').textContent = exercises.length + ' exercises loaded';
+    document.getElementById('gen-btn').disabled = false;
+
+    await loadHistory();
+  } catch (e) {
+    document.getElementById('badge').textContent = 'offline';
+    document.getElementById('status').textContent = 'Connection failed — check Worker URL';
+  }
+}
+
+async function loadHistory() {
+  try {
+    history = await api('getSessionHistory', { session_type: sType, limit: 3 });
+  } catch (e) {
+    history = { sessions: [], sets: [] };
+  }
+}
+
+// ── Generate plan ─────────────────────────────────────────────────────────────
+async function generatePlan() {
+  goScreen('s-generating');
+
+  const injStr = injuries.length
+    ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n')
+    : 'None';
+
+  const kitStr = buildKitString(loc);
+
+  const availEx = filterExercises(exercises, loc, sType)
+    .map(e => e.exercise_id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
+    .join('\n');
+
+  const histStr = history.sets && history.sets.length
+    ? 'Last ' + history.sessions.length + ' sessions:\n' +
+      history.sets.map(s =>
+        s.session_id.slice(0, 10) + ' | ' + s.exercise_id +
+        ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
+        (s.rir ? ' RIR' + s.rir : '') +
+        (s.tempo ? ' ' + s.tempo : '') +
+        (s.notes ? ' (' + s.notes + ')' : '')
+      ).join('\n')
+    : 'No recent history for ' + sType;
+
+  const sessionFocus = {
+    'Full Body A': 'Compound lower body + push + pull. Squat or hinge pattern, horizontal push, vertical or horizontal pull.',
+    'Full Body B': 'Compound lower body + push + pull. Different pattern to Full Body A — hinge or lunge, different push/pull combo.',
+    'Upper Body': 'Push and pull supersets. Horizontal push + vertical pull, vertical push + horizontal pull. No legs.',
+    'Lower Body': 'Legs and hinge patterns only. Squat, hinge, lunge variations. No upper body pushing or pulling.',
+    'Rings Only': 'All exercises on gymnastics rings. Push, pull, core — rings only. No KB.',
+    'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
+  };
+
+  const system = `You are an elite strength coach for James Thornton.
+Phase: Lean bulk Q2 2026. Hypertrophy focus.
+Session type: ${sType} — ${sessionFocus[sType] || ''}
+Equipment available: ${kitStr}
+Active injuries:\n${injStr}
+Available exercises (use ONLY these exercise_ids):\n${availEx}
+History:\n${histStr}
+
+Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
+{
+  "session_notes": "one line intent",
+  "exercises": [
+    { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
+  ]
+}
+Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercises from the provided list.`;
+
+
+
+  try {
+    document.getElementById('gen-status').textContent = 'Reading your history...';
+    const preNotes = document.getElementById('pre-notes').value.trim();
+  const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
+  const raw = await claude(system, [{ role: 'user', content: userMsg }]);
+    const clean = raw.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    plan = parsed.exercises || [];
+
+    // Render plan
+    document.getElementById('review-title').textContent = sType;
+    document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
+    document.getElementById('review-chat').innerHTML = '';
+    renderPlanCards(parsed);
+    goScreen('s-review');
+  } catch (e) {
+    goScreen('s-idle');
+    document.getElementById('status').textContent = 'Error: ' + e.message;
+  }
+}
+
+// ── Start session ─────────────────────────────────────────────────────────────
+async function startSession() {
+  sessionId = new Date().toISOString().slice(0, 10) + '-A';
+  loggedSets = [];
+  chatLog = [];
+
+  document.getElementById('active-title').textContent = sType.toUpperCase();
+  document.getElementById('chat').innerHTML = '';
+  goScreen('s-active');
+  initSetLogger();
+
+  // Log session to GSheet
+  apiPost({
+    action: 'appendSession',
+    data: {
+      session_id: sessionId,
+      date: new Date().toISOString().slice(0, 10),
+      week_type: 'training',
+      phase: 'Lean Bulk Q2 2026',
+      session_type: sType,
+      location: loc,
+      ai_plan_used: true,
+    }
+  });
+
+  const intro = `${sType} — ${new Date().toLocaleDateString('en-AU')} — ${loc}\n\n` +
+    plan.map((e, i) => `${i + 1}. ${e.display_name}\n   ${e.sets}×${e.reps} @ ${e.weight} | ${e.tempo} | RIR ${e.rir}\n   ${e.notes || ''}`).join('\n\n') +
+    '\n\nStart with ' + plan[0]?.display_name + '. Log each set as you go.';
+
+  addMsg('coach', intro);
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+// ── Set Logger ────────────────────────────────────────────────────────────────
+let slExIdx = 0;          // current exercise index in plan
+let slVals = { weight: 0, reps: 10, rir: 2 };
+let setsPerEx = {};       // exercise_id → sets logged this session
+
+function initSetLogger() {
+  slExIdx = 0;
+  setsPerEx = {};
+  renderSetLogger();
+}
+
+function renderSetLogger() {
+  if (!plan.length) return;
+  const ex = plan[slExIdx];
+  if (!ex) return;
+
+  // Populate exercise dropdown
+  const sel = document.getElementById('sl-ex-select');
+  if (sel) {
+    sel.innerHTML = plan.map((e, i) =>
+      `<option value="${i}" ${i === slExIdx ? 'selected' : ''}>${i + 1}. ${e.display_name}</option>`
+    ).join('');
+  }
+
+  // Pre-fill values from plan
+  const wNum = parseFloat(ex.weight) || 0;
+  slVals.weight = wNum;
+  const repsStr = String(ex.reps || '10');
+  const repsMatch = repsStr.match(/\d+/);
+  slVals.reps = repsMatch ? parseInt(repsMatch[0]) : 10;
+  slVals.rir = ex.rir ?? 2;
+
+  updateSlUI();
+  updateSetCounter();
+}
+
+function updateSlUI() {
+  const w = document.getElementById('val-weight');
+  const r = document.getElementById('val-reps');
+  const rir = document.getElementById('val-rir');
+  if (w) w.textContent = slVals.weight === 0 ? 'BW' : slVals.weight;
+  if (r) r.textContent = slVals.reps;
+  if (rir) rir.textContent = slVals.rir;
+}
+
+function updateSetCounter() {
+  const ex = plan[slExIdx];
+  if (!ex) return;
+  const done = (setsPerEx[ex.exercise_id] || 0);
+  const total = ex.sets || 4;
+  const el = document.getElementById('sl-counter');
+  if (el) el.textContent = `Set ${done + 1} of ${total}`;
+}
+
+function onExSelect() {
+  const sel = document.getElementById('sl-ex-select');
+  if (!sel) return;
+  slExIdx = parseInt(sel.value);
+  const ex = plan[slExIdx];
+  // Keep weight if same exercise, reset if different
+  const wNum = parseFloat(ex.weight) || 0;
+  slVals.weight = wNum;
+  const repsStr = String(ex.reps || '10');
+  const repsMatch = repsStr.match(/\d+/);
+  slVals.reps = repsMatch ? parseInt(repsMatch[0]) : 10;
+  slVals.rir = ex.rir ?? 2;
+  updateSlUI();
+  updateSetCounter();
+}
+
+function adjustVal(field, delta) {
+  if (field === 'weight') {
+    slVals.weight = Math.max(0, slVals.weight + delta);
+  } else if (field === 'reps') {
+    slVals.reps = Math.max(1, slVals.reps + delta);
+  } else if (field === 'rir') {
+    slVals.rir = Math.max(0, Math.min(5, slVals.rir + delta));
+  }
+  updateSlUI();
+}
+
+async function logSet() {
+  const ex = plan[slExIdx];
+  if (!ex) return;
+
+  // Increment set counter
+  if (!setsPerEx[ex.exercise_id]) setsPerEx[ex.exercise_id] = 0;
+  setsPerEx[ex.exercise_id]++;
+  const setNum = setsPerEx[ex.exercise_id];
+
+  const setData = {
+    session_id: sessionId,
+    exercise_id: ex.exercise_id,
+    set_num: setNum,
+    reps: slVals.reps,
+    weight_kg: slVals.weight,
+    rir: slVals.rir,
+    tempo: ex.tempo || '',
+    notes: '',
+  };
+
+  loggedSets.push(setData);
+  apiPost({ action: 'appendSet', data: setData });
+
+  // Post confirmation to chat
+  const weightStr = slVals.weight === 0 ? 'BW' : slVals.weight + 'kg';
+  const msg = `${ex.display_name} — Set ${setNum}: ${slVals.reps} reps @ ${weightStr} | RIR ${slVals.rir}`;
+  addMsg('you', msg);
+
+  // Check if all sets done for this exercise
+  const plannedSets = ex.sets || 4;
+  if (setNum >= plannedSets) {
+    // Auto-advance to next exercise
+    if (slExIdx < plan.length - 1) {
+      slExIdx++;
+      renderSetLogger();
+      await getCoachReply(msg + '\n\nAll sets done for that exercise. Moving to next.');
+    } else {
+      // All exercises done
+      updateSetCounter();
+      await getCoachReply(msg + '\n\nAll sets complete.');
+    }
+  } else {
+    updateSetCounter();
+    await getCoachReply(msg);
+  }
+}
+
+async function sendMsg() {
+  const input = document.getElementById('msg-input');
+  const msg = input.value.trim();
+  if (!msg || isTyping) return;
+  input.value = '';
+
+  addMsg('you', msg);
+
+  if (msg.toLowerCase() === 'done') {
+    await generateDebrief();
+    return;
+  }
+
+  await getCoachReply(msg);
+}
+
+async function getCoachReply(userMsg) {
+  isTyping = true;
+  showTyping();
+
+  const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
+  const system = `You are an elite strength coach for James Thornton mid-workout.
+Session: ${sType} | Location: ${loc}
+Active injuries:\n${injStr}
+Today's plan: ${JSON.stringify(plan)}
+Sets logged: ${JSON.stringify(loggedSets)}
+
+Rules: 1-3 sentences max. Be direct. When a set is logged confirm it and say what's next. If pain reported swap the exercise immediately. When all done say to type 'done' for debrief.`;
+
+  const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
+  messages.push({ role: 'user', content: userMsg });
+
+  try {
+    const reply = await claude(system, messages);
+    hideTyping();
+    addMsg('coach', reply);
+  } catch (e) {
+    hideTyping();
+    addMsg('coach', 'Error: ' + e.message);
+  }
+  isTyping = false;
+}
+
+async function generateDebrief() {
+  isTyping = true;
+  showTyping();
+
+  const system = `You are an elite strength coach. Generate a post-workout debrief for James Thornton.
+Session: ${sType} | Plan: ${JSON.stringify(plan)} | Logged sets: ${JSON.stringify(loggedSets)}
+Cover: total volume, progression vs last session, injury flags, recommendation for next session.
+Max 200 words. Specific and data-driven. James has high fitness literacy — skip basics.`;
+
+  try {
+    const reply = await claude(system, [{ role: 'user', content: 'Debrief my session.' }]);
+    hideTyping();
+    addMsg('coach', '── SESSION COMPLETE ──\n\n' + reply);
+    // Show post-session capture
+    setTimeout(() => showPostSession(), 500);
+  } catch (e) {
+    hideTyping();
+    addMsg('coach', 'Debrief error: ' + e.message);
+  }
+  isTyping = false;
+}
+
+function quickMsg(msg) {
+  document.getElementById('msg-input').value = msg;
+  sendMsg();
+}
+
+function endSession() {
+  if (confirm('End session?')) goScreen('s-idle');
+}
+
+// ── Chat UI ───────────────────────────────────────────────────────────────────
+function addMsg(role, text) {
+  chatLog.push({ role, text });
+  const chat = document.getElementById('chat');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'you' ? 'you' : 'coach');
+  div.innerHTML = `<div class="msg-label">${role === 'you' ? 'YOU' : 'COACH'}</div><div class="msg-bubble">${text}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+let typingEl = null;
+function showTyping() {
+  const chat = document.getElementById('chat');
+  typingEl = document.createElement('div');
+  typingEl.className = 'msg coach';
+  typingEl.innerHTML = '<div class="msg-label">COACH</div><div class="msg-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
+  chat.appendChild(typingEl);
+  chat.scrollTop = chat.scrollHeight;
+  document.getElementById('send-btn').disabled = true;
+}
+
+function hideTyping() {
+  if (typingEl) { typingEl.remove(); typingEl = null; }
+  document.getElementById('send-btn').disabled = false;
+}
+
+// ── Render plan cards ─────────────────────────────────────────────────────────
+function renderPlanCards(parsed) {
+  const cards = document.getElementById('plan-cards');
+  cards.innerHTML = '';
+  if (parsed.session_notes) {
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:12px;color:#555;margin-bottom:16px;font-style:italic;';
+    note.textContent = parsed.session_notes;
+    cards.appendChild(note);
+  }
+  (parsed.exercises || plan).forEach((ex, i) => {
+    const card = document.createElement('div');
+    card.className = 'exercise-card';
+    card.innerHTML = `
+      <div class="ex-header">
+        <div class="ex-name">${i + 1}. ${ex.display_name}</div>
+        <div class="ex-vol">${ex.sets}×${ex.reps}</div>
+      </div>
+      <div class="ex-meta">
+        <span>${ex.weight}</span>
+        <span>${ex.tempo}</span>
+        <span>RIR ${ex.rir}</span>
+      </div>
+      ${ex.notes ? `<div class="ex-note">${ex.notes}</div>` : ''}
+    `;
+    cards.appendChild(card);
+  });
+}
+
+// ── Plan iteration ────────────────────────────────────────────────────────────
+let reviewTyping = false;
+
+function reviewQuick(msg) {
+  document.getElementById('review-input').value = msg;
+  sendReviewMsg();
+}
+
+function addReviewMsg(role, text) {
+  const chat = document.getElementById('review-chat');
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;flex-direction:column;align-items:' + (role === 'you' ? 'flex-end' : 'flex-start');
+  div.innerHTML = '<div style="font-size:10px;color:#333;margin-bottom:2px;letter-spacing:0.07em">' + (role === 'you' ? 'YOU' : 'COACH') + '</div><div style="max-width:92%;padding:8px 12px;background:' + (role === 'you' ? '#111' : '#0d0d0d') + ';border:1px solid #1a1a1a;border-radius:' + (role === 'you' ? '10px 10px 3px 10px' : '10px 10px 10px 3px') + ';font-size:12px;line-height:1.6;color:#e8e4dc;white-space:pre-wrap">' + text + '</div>';
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function sendReviewMsg() {
+  const input = document.getElementById('review-input');
+  const msg = input.value.trim();
+  if (!msg || reviewTyping) return;
+  input.value = '';
+  reviewTyping = true;
+  addReviewMsg('you', msg);
+
+  // Build available exercise list filtered by session type, location and injury
+  const availableExList = filterExercises(exercises, loc, sType)
+    .map(e => e.exercise_id + ' (' + e.display_name + ', ' + e.category + ', ' + e.equipment + ')')
+    .join(', ');
+
+  // Show typing
+  const chat = document.getElementById('review-chat');
+  const typingDiv = document.createElement('div');
+  typingDiv.id = 'review-typing';
+  typingDiv.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start';
+  typingDiv.innerHTML = '<div style="font-size:10px;color:#333;margin-bottom:2px">COACH</div><div style="padding:8px 12px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:10px 10px 10px 3px;"><div class="typing"><span></span><span></span><span></span></div></div>';
+  chat.appendChild(typingDiv);
+  chat.scrollTop = chat.scrollHeight;
+
+  const injStr = injuries.length
+    ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n')
+    : 'None';
+
+  const kitStr2 = buildKitString(loc);
+
+  const system = `You are an elite strength coach adjusting a workout plan for James Thornton.
+Current plan: ${JSON.stringify(plan)}
+Available kit: ${kitStr2}
+Available exercises to substitute from (use exercise_id slugs): ${availableExList}
+Active injuries: ${injStr}
+Phase: Lean bulk Q2 2026, hypertrophy.
+
+The athlete wants to adjust the plan. Make the requested change and return ONLY valid JSON — same format as before, no markdown:
+{
+  "session_notes": "updated intent",
+  "exercises": [
+    { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
+  ]
+}
+Keep what works. Only change what was asked.`;
+
+  try {
+    const raw = await claude(system, [{ role: 'user', content: msg }]);
+    const clean = raw.replace(/\`\`\`json|\`\`\`/g, '').trim();
+    const parsed = JSON.parse(clean);
+    plan = parsed.exercises || [];
+
+    // Re-render plan cards
+    renderPlanCards(parsed);
+
+    document.getElementById('review-typing').remove();
+    addReviewMsg('coach', 'Done — plan updated. Ready to start or keep adjusting.');
+  } catch (e) {
+    document.getElementById('review-typing')?.remove();
+    addReviewMsg('coach', 'Could not parse update. Try rephrasing — e.g. "swap exercise 2 for a pulling movement"');
+  }
+  reviewTyping = false;
+}
+
+// ── Post session capture ──────────────────────────────────────────────────────
+function showPostSession() {
+  const chat = document.getElementById('chat');
+  const div = document.createElement('div');
+  div.style.cssText = 'margin-top:16px;padding:14px 16px;background:#111;border:1px solid #222;border-radius:10px;';
+  div.innerHTML = `
+    <div style="font-size:11px;color:#444;letter-spacing:0.12em;margin-bottom:12px;">SESSION RATING</div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:11px;color:#666;margin-bottom:6px;">Overall RPE (1-10)</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;" id="rpe-btns">
+        ${[1,2,3,4,5,6,7,8,9,10].map(n => `<button onclick="selectRPE(${n})" style="font-family:inherit;width:36px;height:36px;border-radius:6px;border:1px solid #222;background:none;color:#888;font-size:13px;cursor:pointer;" id="rpe-${n}">${n}</button>`).join('')}
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:11px;color:#666;margin-bottom:6px;">Session notes</div>
+      <textarea id="post-notes" placeholder="How did it feel? Anything to flag for next session..." style="width:100%;background:#0a0a0a;border:1px solid #222;border-radius:6px;padding:8px 12px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:70px;outline:none;line-height:1.6;"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="savePostSession()" style="flex:1;padding:10px;background:#e8e4dc;color:#0a0a0a;border:none;border-radius:6px;font-size:11px;letter-spacing:0.12em;font-family:inherit;cursor:pointer;font-weight:bold;">SAVE & FINISH</button>
+      <button onclick="discardSession()" style="padding:10px 16px;background:none;color:#555;border:1px solid #222;border-radius:6px;font-size:11px;letter-spacing:0.12em;font-family:inherit;cursor:pointer;">DISCARD</button>
+    </div>
+  `;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+let selectedRPE = null;
+function selectRPE(n) {
+  selectedRPE = n;
+  document.querySelectorAll('[id^="rpe-"]').forEach(b => {
+    b.style.background = 'none';
+    b.style.color = '#888';
+    b.style.borderColor = '#222';
+  });
+  const btn = document.getElementById('rpe-' + n);
+  btn.style.background = '#e8e4dc';
+  btn.style.color = '#0a0a0a';
+  btn.style.borderColor = '#e8e4dc';
+}
+
+async function savePostSession() {
+  const notes = document.getElementById('post-notes')?.value.trim() || '';
+  // Update session in GSheet with RPE and notes
+  await apiPost({
+    action: 'appendSession',
+    data: {
+      session_id: sessionId + '-debrief',
+      date: new Date().toISOString().slice(0, 10),
+      week_type: 'training',
+      phase: 'Lean Bulk Q2 2026',
+      session_type: sType,
+      location: loc,
+      rpe_session: selectedRPE || '',
+      notes: notes,
+      ai_plan_used: true,
+    }
+  });
+  addMsg('coach', 'Session saved. RPE ' + (selectedRPE || '—') + (notes ? ' · ' + notes : '') + '\n\nRest up. See you next session.');
+}
+
+function discardSession() {
+  if (confirm('Discard this session? No data will be saved.')) {
+    goScreen('s-idle');
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
