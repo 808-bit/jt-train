@@ -1,0 +1,11 @@
+name = "jt-workout-worke"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding      = "DB"
+database_name = "jt-train-db"
+database_id  = "bc3254ce-c147-4bbd-a452-acecb770e9f0"  # output from: wrangler d1 create jt-train-db
+
+# Secrets (set via: wrangler secret put ANTHROPIC_API_KEY)
+# ANTHROPIC_API_KEY — do NOT put real keys in this file
