@@ -172,7 +172,7 @@
   .timer-val { font-size: 14px; color: var(--text); letter-spacing: 0.06em; font-weight: 500; min-width: 44px; }
   .timer-val.rest-active { color: var(--amber); }
   .timer-sep { width: 1px; height: 20px; background: var(--border2); }
-  .rest-stop-btn { font-family: var(--font); font-size: 10px; color: var(--text3); background: none; border: 1px solid var(--border2); border-radius: 4px; padding: 3px 8px; cursor: pointer; letter-spacing: 0.06em; }
+  .rest-stop-btn { font-family: var(--font); font-size: 10px; color: #fff; background: var(--red); border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer; letter-spacing: 0.06em; }
   .rest-stop-btn:active { background: var(--border2); }
 
   /* Scrollbar */
@@ -489,6 +489,7 @@ let isTyping = false;
 // ── Timers ────────────────────────────────────────────────────────────────────
 let sessionTimerInterval = null, sessionTimerStart = null;
 let restTimerInterval = null, restTimerStart = null;
+let lastRestDuration = null;
 
 function fmtTime(ms) {
   const s = Math.floor(ms / 1000);
@@ -523,6 +524,7 @@ function startRestTimer() {
 }
 
 function stopRestTimer() {
+  if (restTimerStart) lastRestDuration = Math.floor((Date.now() - restTimerStart) / 1000);
   clearInterval(restTimerInterval);
   restTimerInterval = null;
   restTimerStart = null;
@@ -807,6 +809,15 @@ async function logSet() {
     weightKg=slVals.weight; weightLabel=slVals.weight===0?'BW':slVals.weight+'kg';
   }
   const setData = { session_id:sessionId, exercise_id:ex.exercise_id, set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes:setNotes };
+
+  // TUT from tempo (e.g. "3-0-1-0" × reps)
+  const tempoMatch = (ex.tempo||'').match(/(\d+)-(\d+)-(\d+)-(\d+)/);
+  if (tempoMatch) {
+    const totalTempo = tempoMatch.slice(1).reduce((s,n) => s + parseInt(n), 0);
+    setData.tut_seconds = totalTempo * slVals.reps;
+  }
+  // Rest from timer
+  if (lastRestDuration !== null) { setData.rest_seconds = lastRestDuration; lastRestDuration = null; }
   loggedSets.push(setData);
   apiPost({ action:'appendSet', data:setData });
   startRestTimer();
