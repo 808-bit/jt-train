@@ -569,10 +569,13 @@ async function apiPost(body) {
   const r = await fetch(W, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return r.json();
 }
-async function claude(system, messages) {
-  const r = await apiPost({ action: 'claude', system, messages });
+async function claude(system, messages, model) {
+  model = model || 'claude-haiku-4-5-20251001';
+  const r = await apiPost({ action: 'claude', system, messages, model });
   return r.text || '';
 }
+const SONNET = 'claude-sonnet-4-6';
+const HAIKU  = 'claude-haiku-4-5-20251001';
 
 // ── Globals ───────────────────────────────────────────────────────────────────
 let equipmentConfig = {};
@@ -950,7 +953,7 @@ Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only 
     document.getElementById('gen-status').textContent = 'Reading your history...';
     const preNotes = document.getElementById('pre-notes').value.trim();
     const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
-    const raw = await claude(system, [{ role: 'user', content: userMsg }]);
+    const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     plan = parsed.exercises || [];
@@ -1054,7 +1057,7 @@ DEBRIEF STRUCTURE (follow this, no headers needed — flowing prose):
 
 Max 150 words. James has high fitness literacy — no basics. Use his name once, only if the insight warrants it.`;
   try {
-    const reply = await claude(system, [{ role: 'user', content: 'Debrief my session.' }]);
+    const reply = await claude(system, [{ role: 'user', content: 'Debrief my session.' }], SONNET);
     hideTyping();
     addMsg('coach', '── SESSION COMPLETE ──\n\n' + reply);
     setTimeout(() => showPostSession(), 500);
@@ -1180,7 +1183,7 @@ Return ONLY valid JSON — same format, no markdown, no preamble:
 }
 Keep what works. Only change what was asked. Protect the right shoulder.`;
   try {
-    const raw = await claude(system, [{ role: 'user', content: msg }]);
+    const raw = await claude(system, [{ role: 'user', content: msg }], SONNET);
     const clean = raw.replace(/\`\`\`json|\`\`\`/g, '').trim();
     const parsed = JSON.parse(clean);
     plan = parsed.exercises || [];
