@@ -164,6 +164,17 @@
   .corr-bar-wrap { flex: 1; margin-left: 10px; height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
   .corr-bar { height: 100%; border-radius: 3px; }
 
+  /* Timers */
+  .timer-bar { display: none; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--bg2); }
+  .timer-bar.visible { display: flex; }
+  .timer-block { display: flex; align-items: center; gap: 7px; }
+  .timer-lbl { font-size: 9px; color: var(--text3); letter-spacing: 0.14em; }
+  .timer-val { font-size: 14px; color: var(--text); letter-spacing: 0.06em; font-weight: 500; min-width: 44px; }
+  .timer-val.rest-active { color: var(--amber); }
+  .timer-sep { width: 1px; height: 20px; background: var(--border2); }
+  .rest-stop-btn { font-family: var(--font); font-size: 10px; color: var(--text3); background: none; border: 1px solid var(--border2); border-radius: 4px; padding: 3px 8px; cursor: pointer; letter-spacing: 0.06em; }
+  .rest-stop-btn:active { background: var(--border2); }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
@@ -266,6 +277,18 @@
   <div class="header">
     <div class="logo"><div class="dot live"></div><span id="active-title">ACTIVE</span></div>
     <button class="btn-sm" onclick="endSession()">End</button>
+  </div>
+  <div class="timer-bar" id="timer-bar">
+    <div class="timer-block">
+      <span class="timer-lbl">SESSION</span>
+      <span class="timer-val" id="session-timer">00:00</span>
+    </div>
+    <div class="timer-sep"></div>
+    <div class="timer-block">
+      <span class="timer-lbl">REST</span>
+      <span class="timer-val" id="rest-timer">--:--</span>
+    </div>
+    <button class="rest-stop-btn" id="rest-stop-btn" onclick="stopRestTimer()" style="display:none">■ Stop</button>
   </div>
   <div class="chat-area" id="chat"></div>
   <div class="input-area" style="padding:0;">
@@ -462,6 +485,59 @@ let sType = 'Full Body A', loc = 'Home';
 let injuries = [], exercises = [], history = { sessions: [], sets: [] };
 let plan = [], chatLog = [], sessionId = '', loggedSets = [];
 let isTyping = false;
+
+// ── Timers ────────────────────────────────────────────────────────────────────
+let sessionTimerInterval = null, sessionTimerStart = null;
+let restTimerInterval = null, restTimerStart = null;
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return String(m).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+}
+
+function startSessionTimer() {
+  sessionTimerStart = Date.now();
+  document.getElementById('timer-bar').classList.add('visible');
+  sessionTimerInterval = setInterval(() => {
+    const el = document.getElementById('session-timer');
+    if (el) el.textContent = fmtTime(Date.now() - sessionTimerStart);
+  }, 1000);
+}
+
+function stopSessionTimer() {
+  clearInterval(sessionTimerInterval);
+  sessionTimerInterval = null;
+  document.getElementById('timer-bar').classList.remove('visible');
+  document.getElementById('session-timer').textContent = '00:00';
+}
+
+function startRestTimer() {
+  stopRestTimer();
+  restTimerStart = Date.now();
+  const el = document.getElementById('rest-timer');
+  const btn = document.getElementById('rest-stop-btn');
+  if (el) { el.textContent = '00:00'; el.classList.add('rest-active'); }
+  if (btn) btn.style.display = 'block';
+  restTimerInterval = setInterval(() => {
+    if (el) el.textContent = fmtTime(Date.now() - restTimerStart);
+  }, 1000);
+}
+
+function stopRestTimer() {
+  clearInterval(restTimerInterval);
+  restTimerInterval = null;
+  restTimerStart = null;
+  const el = document.getElementById('rest-timer');
+  const btn = document.getElementById('rest-stop-btn');
+  if (el) { el.textContent = '--:--'; el.classList.remove('rest-active'); }
+  if (btn) btn.style.display = 'none';
+}
+
+function stopAllTimers() {
+  stopSessionTimer();
+  stopRestTimer();
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function isTrue(v) { return v === true || v === 'TRUE' || v === 'true'; }
@@ -735,6 +811,7 @@ async function logSet() {
   const setData = { session_id:sessionId, exercise_id:ex.exercise_id, set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes:setNotes };
   loggedSets.push(setData);
   apiPost({ action:'appendSet', data:setData });
+  startRestTimer();
   const msg = `${ex.display_name} — Set ${setNum}: ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`;
   addMsg('you', msg);
   const plannedSets = ex.sets||4;
@@ -756,13 +833,13 @@ function endSession() {
 }
 function closeEndModal() { document.getElementById('end-modal').style.display='none'; }
 async function savePartialSession() {
-  closeEndModal(); goScreen('s-idle');
+  closeEndModal(); stopAllTimers(); goScreen('s-idle');
   document.getElementById('status').textContent='Session saved ✓';
 }
 async function discardAndDelete() {
   closeEndModal();
   if (sessionId) await apiPost({ action:'deleteSession', session_id:sessionId });
-  loggedSets=[]; sessionId=''; goScreen('s-idle');
+  loggedSets=[]; sessionId=''; stopAllTimers(); goScreen('s-idle');
   document.getElementById('status').textContent='Session discarded';
 }
 
@@ -876,6 +953,7 @@ async function startSession() {
   document.getElementById('active-title').textContent = sType.toUpperCase();
   document.getElementById('chat').innerHTML = '';
   goScreen('s-active');
+  startSessionTimer();
   initSetLogger();
   apiPost({
     action: 'appendSession',
@@ -1126,6 +1204,7 @@ async function savePostSession() {
     }
   });
   addMsg('coach', 'Session saved. RPE ' + (selectedRPE || '—') + (notes ? ' · ' + notes : '') + '\n\nRest up. See you next session.');
+  stopAllTimers();
 }
 
 function discardSession() {
