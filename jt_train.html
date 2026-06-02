@@ -1076,7 +1076,7 @@ shoulder_flag: true if any flagged exercises involve the right shoulder`;
     apiPost({ action: 'saveDebrief', data: {
       session_id: sessionId,
       date: new Date().toISOString().slice(0,10),
-      session_type: sessionType,
+      session_type: sType,
       total_volume_kg: sso.total_volume_kg,
       total_sets: sso.total_sets,
       performance_signal: sso.performance_signal,
