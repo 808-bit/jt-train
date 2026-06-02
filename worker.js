@@ -39,9 +39,7 @@ async function handleGet(request, env) {
   const action = searchParams.get('action');
 
   if (action === 'getExercises') {
-    const { results } = await env.DB.prepare(
-      'SELECT e.*, mp.name AS pattern_name FROM exercises e LEFT JOIN movement_patterns mp ON e.movement_pattern_id = mp.id ORDER BY e.display_name'
-    ).all();
+    const { results } = await env.DB.prepare('SELECT * FROM exercises ORDER BY display_name').all();
     const data = results.map(e => ({
       ...e,
       home_available: e.home_available === 1 || e.home_available === true,
@@ -50,13 +48,6 @@ async function handleGet(request, env) {
       session_type:   e.session_types || '',
     }));
     return json({ data });
-  }
-
-  if (action === 'getMovementPatterns') {
-    const { results } = await env.DB.prepare(
-      'SELECT mp.*, COUNT(e.id) as exercise_count FROM movement_patterns mp LEFT JOIN exercises e ON e.movement_pattern_id = mp.id GROUP BY mp.id ORDER BY mp.display_order'
-    ).all();
-    return json({ data: results });
   }
 
   if (action === 'getActiveInjuries') {
@@ -123,46 +114,6 @@ async function handleGet(request, env) {
     return json({ data: results });
   }
 
-  if (action === 'getSessions') {
-    const sessionType = searchParams.get('session_type') || '';
-    const limit  = parseInt(searchParams.get('limit')  || '20');
-    const offset = parseInt(searchParams.get('offset') || '0');
-    const sessQuery = sessionType
-      ? 'SELECT * FROM sessions WHERE session_type = ? ORDER BY date DESC LIMIT ? OFFSET ?'
-      : 'SELECT * FROM sessions ORDER BY date DESC LIMIT ? OFFSET ?';
-    const sessResult = sessionType
-      ? await env.DB.prepare(sessQuery).bind(sessionType, limit, offset).all()
-      : await env.DB.prepare(sessQuery).bind(limit, offset).all();
-    const sessions = sessResult.results;
-    if (!sessions.length) return json({ sessions: [], sets: [] });
-    const ids = sessions.map(s => "'" + s.id + "'").join(',');
-    const setsResult = await env.DB.prepare(
-      'SELECT st.*, e.display_name, ROUND(st.weight_kg * (1 + st.reps / 30.0), 2) AS estimated_1rm ' +
-      'FROM sets st JOIN exercises e ON st.exercise_id = e.id ' +
-      'WHERE st.session_id IN (' + ids + ') ORDER BY st.session_id, st.exercise_id, st.set_num'
-    ).all();
-    const pbResult = await env.DB.prepare(
-      'SELECT st.exercise_id, MAX(ROUND(st.weight_kg * (1 + st.reps / 30.0), 2)) AS best_e1rm FROM sets st GROUP BY st.exercise_id'
-    ).all();
-    const allTimeBest = {};
-    pbResult.results.forEach(r => { allTimeBest[r.exercise_id] = r.best_e1rm; });
-    const stats = {};
-    setsResult.results.forEach(s => {
-      if (!stats[s.session_id]) stats[s.session_id] = { volume: 0, setCount: 0, pbs: new Set() };
-      stats[s.session_id].volume += (s.reps || 0) * (s.weight_kg || 0);
-      stats[s.session_id].setCount++;
-      const e1rm = parseFloat(s.estimated_1rm) || 0;
-      if (e1rm > 0 && e1rm >= (allTimeBest[s.exercise_id] || 0)) stats[s.session_id].pbs.add(s.exercise_id);
-    });
-    const enriched = sessions.map(s => ({
-      ...s,
-      volume: Math.round(stats[s.id]?.volume || 0),
-      set_count: stats[s.id]?.setCount || 0,
-      pb_exercises: [...(stats[s.id]?.pbs || [])],
-    }));
-    return json({ sessions: enriched, sets: setsResult.results });
-  }
-
   return json({ error: 'Unknown action: ' + action }, 400);
 }
 
@@ -171,7 +122,7 @@ async function handlePost(request, env) {
   const { action } = body;
 
   if (action === 'claude') {
-    const { system, messages, model = 'claude-haiku-4-5-20251001', max_tokens = 2000 } = body;
+    const { system, messages, model = 'claude-haiku-4-5-20251001', max_tokens = 1500 } = body;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -234,14 +185,6 @@ async function handlePost(request, env) {
       INSERT INTO location_config (location, config) VALUES (?, ?)
       ON CONFLICT(location) DO UPDATE SET config = excluded.config
     `).bind(location, JSON.stringify(config)).run();
-    return json({ ok: true });
-  }
-
-  if (action === 'updateSession') {
-    const { session_id, rpe, notes, pre_notes, auto_notes } = body;
-    await env.DB.prepare(
-      'UPDATE sessions SET rpe = COALESCE(?, rpe), notes = COALESCE(?, notes), pre_notes = COALESCE(?, pre_notes), auto_notes = COALESCE(?, auto_notes) WHERE id = ?'
-    ).bind(rpe ?? null, notes ?? null, pre_notes ?? null, auto_notes ?? null, session_id).run();
     return json({ ok: true });
   }
 
