@@ -263,6 +263,15 @@ async function handlePost(request, env) {
     return json({ ok: true });
   }
 
+
+  if (action === 'saveDebrief') {
+    const d = body.data || {};
+    await env.DB.prepare(
+      'INSERT INTO debriefs (session_id, date, session_type, total_volume_kg, total_sets, performance_signal, shoulder_flag, exercises_flagged, recommendation, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(d.session_id, d.date, d.session_type, d.total_volume_kg||0, d.total_sets||0, d.performance_signal||'stable', d.shoulder_flag?1:0, JSON.stringify(d.exercises_flagged||[]), d.recommendation||'', d.raw_json||'').run();
+    return json({ ok: true });
+  }
+
   return json({ error: 'Unknown action: ' + action }, 400);
 
   if (action === 'saveDebrief') {
@@ -280,3 +289,12 @@ function json(data, status = 200) {
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 }
+
+  // saveDebrief — injected
+  if (action === 'saveDebrief') {
+    const d = body.data || {};
+    await env.DB.prepare(
+      'INSERT INTO debriefs (session_id, date, session_type, total_volume_kg, total_sets, performance_signal, shoulder_flag, exercises_flagged, recommendation, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(d.session_id, d.date, d.session_type, d.total_volume_kg||0, d.total_sets||0, d.performance_signal||'stable', d.shoulder_flag?1:0, JSON.stringify(d.exercises_flagged||[]), d.recommendation||'', d.raw_json||'').run();
+    return json({ ok: true });
+  }
