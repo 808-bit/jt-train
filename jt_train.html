@@ -1089,6 +1089,19 @@ shoulder_flag: true if any flagged exercises involve the right shoulder`;
     const signal = { improving:'↑', stable:'→', declining:'↓' }[sso.performance_signal] || '→';
     const flag = sso.shoulder_flag ? '  ⚠ Shoulder flagged.' : '';
     addMsg('coach', `${sso.prose}\n\n${signal} ${sso.performance_signal.toUpperCase()}  ·  ${sso.total_sets} sets  ·  ${sso.total_volume_kg}kg${flag}`);
+    // If exercises flagged, show analyse button
+    if (sso.exercises_flagged && sso.exercises_flagged.length > 0) {
+      lastSSO = sso;
+      setTimeout(() => {
+        const btn = document.createElement('button');
+        btn.className = 'quick-btn debrief';
+        btn.style.cssText = 'margin:8px 0 0 0;';
+        btn.textContent = '⚡ Analyse trends →';
+        btn.onclick = () => { btn.remove(); analyseExerciseTrends(sso.exercises_flagged); };
+        document.getElementById('chat').appendChild(btn);
+        document.getElementById('chat').scrollTop = 9999;
+      }, 600);
+    }
     hideTyping();
     setTimeout(() => showPostSession(), 500);
   } catch (e) {
@@ -1101,6 +1114,99 @@ shoulder_flag: true if any flagged exercises involve the right shoulder`;
 function quickMsg(msg) {
   document.getElementById('msg-input').value = msg;
   sendMsg();
+}
+
+let lastSSO = null;
+
+async function analyseExerciseTrends(flaggedIds) {
+  isTyping = true;
+  showTyping();
+  try {
+    const [debriefRes, ...progResults] = await Promise.all([
+      api('getRecentDebriefs', { limit: 5 }),
+      ...flaggedIds.map(id => api('getProgressionData', { exercise_id: id, limit: 15 }))
+    ]);
+    const recentDebriefs = debriefRes.data || [];
+    const progData = {};
+    flaggedIds.forEach((id, i) => { progData[id] = progResults[i].data || []; });
+
+    const availEx = exercises
+      .filter(e => e.home_available && e.shoulder_safe && e.session_types && e.session_types.includes(sType))
+      .map(e => `${e.id}: ${e.display_name} (${e.equipment})`)
+      .join('\n');
+
+    const system = `You are The Tactical Partner. Analyse exercise trends and determine if a swap is warranted.
+Operating principle: maintain the machine, respect the load, optimise for life.
+Be surgical and data-driven. No fluff.
+
+Current session type: ${sType}
+Flagged exercises: ${flaggedIds.join(', ')}
+Recent debriefs (last 5): ${JSON.stringify(recentDebriefs.map(d => ({ date: d.date, signal: d.performance_signal, flagged: d.exercises_flagged, rec: d.recommendation })))}
+Progression data per exercise: ${JSON.stringify(progData)}
+Available swap candidates: ${availEx}
+
+Analyse each flagged exercise. For each one determine:
+1. Is the trend genuinely declining (3+ sessions of drop, incomplete sets, or consistent shoulder flag)?
+2. If yes — generate a swap recommendation.
+3. If no — state why it does not yet warrant a swap.
+
+Return ONLY valid JSON, no markdown:
+{
+  "analysis": [
+    {
+      "exercise_id": "slug",
+      "verdict": "swap",
+      "reason": "one line clinical rationale",
+      "apply_block": {
+        "from": "old_exercise_id",
+        "to": "new_exercise_id",
+        "display_name": "New Exercise Name",
+        "sets": 4,
+        "reps": "8-10",
+        "weight": "24kg",
+        "tempo": "3-0-1-0",
+        "rir": 2,
+        "notes": "cue"
+      }
+    }
+  ],
+  "summary": "one line tactical summary"
+}
+verdict options: "swap" | "monitor" | "hold"
+apply_block only included when verdict is "swap". Use exercise_ids exactly from the available swap candidates list.`;
+
+    const raw = await claude(system, [{ role: 'user', content: 'Analyse my flagged exercises.' }], SONNET);
+    const clean = raw.replace(/```json|```/g, '').trim();
+    let result;
+    try { result = JSON.parse(clean); } catch(e) { addMsg('coach', raw); hideTyping(); isTyping = false; return; }
+
+    hideTyping();
+    result.analysis.forEach(item => {
+      const icon = { swap:'🔄', monitor:'👁', hold:'✓' }[item.verdict] || '→';
+      addMsg('coach', `${icon} ${item.exercise_id.replace(/_/g,' ').toUpperCase()}\n${item.reason}`);
+      if (item.verdict === 'swap' && item.apply_block) {
+        const ab = item.apply_block;
+        const btn = document.createElement('button');
+        btn.className = 'quick-btn debrief';
+        btn.style.cssText = 'margin:8px 0 0 0;background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.4);';
+        btn.textContent = `Apply: swap → ${ab.display_name}`;
+        btn.onclick = () => {
+          const idx = plan.findIndex(p => p.exercise_id === item.exercise_id);
+          if (idx > -1) plan[idx] = { exercise_id: ab.to, display_name: ab.display_name, sets: ab.sets, reps: ab.reps, weight: ab.weight, tempo: ab.tempo, rir: ab.rir, notes: ab.notes };
+          btn.textContent = `✓ Applied — ${ab.display_name} queued for next session`;
+          btn.disabled = true;
+          btn.style.opacity = '0.5';
+        };
+        document.getElementById('chat').appendChild(btn);
+      }
+    });
+    if (result.summary) addMsg('coach', result.summary);
+    document.getElementById('chat').scrollTop = 9999;
+  } catch(e) {
+    hideTyping();
+    addMsg('coach', 'Trend analysis error: ' + e.message);
+  }
+  isTyping = false;
 }
 
 // ── Chat UI ───────────────────────────────────────────────────────────────────
