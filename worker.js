@@ -259,6 +259,7 @@ async function handlePost(request, env) {
     if (!session_id) return json({ error: 'session_id required' }, 400);
     await env.DB.prepare('DELETE FROM sets WHERE session_id = ?').bind(session_id).run();
     await env.DB.prepare('DELETE FROM session_plan WHERE session_id = ?').bind(session_id).run();
+    await env.DB.prepare('DELETE FROM debriefs WHERE session_id = ?').bind(session_id).run();
     await env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(session_id).run();
     return json({ ok: true });
   }
