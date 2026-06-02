@@ -164,6 +164,17 @@
   .corr-bar-wrap { flex: 1; margin-left: 10px; height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
   .corr-bar { height: 100%; border-radius: 3px; }
 
+  /* Timers */
+  .timer-bar { display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--bg2); }
+  .timer-bar.visible { display: flex; }
+  .timer-block { display: flex; align-items: center; gap: 7px; }
+  .timer-lbl { font-size: 9px; color: var(--text3); letter-spacing: 0.14em; }
+  .timer-val { font-size: 14px; color: var(--text); letter-spacing: 0.06em; font-weight: 500; min-width: 44px; }
+  .timer-val.rest-active { color: var(--amber); }
+  .timer-sep { width: 1px; height: 20px; background: var(--border2); }
+  .rest-stop-btn { font-family: var(--font); font-size: 10px; color: #fff; background: var(--red); border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer; letter-spacing: 0.06em; }
+  .rest-stop-btn:active { background: var(--border2); }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
@@ -181,8 +192,9 @@
       <span class="badge" id="badge">connecting...</span>
     </div>
     <div style="display:flex;gap:8px;">
+      <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
       <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
-      <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc)">⚙</button>
+      <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc);loadInjuries()">⚙</button>
     </div>
   </div>
   <div class="idle-body">
@@ -301,6 +313,18 @@
         </div>
       </div>
       <div id="sl-total" style="text-align:center;font-size:11px;color:var(--text3);margin-bottom:8px;display:none;"></div>
+      <div class="timer-bar" id="timer-bar" style="border:none;padding:6px 0 10px;background:none;justify-content:center;gap:16px;">
+        <div class="timer-block">
+          <span class="timer-lbl">SESSION</span>
+          <span class="timer-val" id="session-timer">00:00</span>
+        </div>
+        <div class="timer-sep"></div>
+        <div class="timer-block">
+          <span class="timer-lbl">REST</span>
+          <span class="timer-val" id="rest-timer">--:--</span>
+        </div>
+        <button class="rest-stop-btn" id="rest-stop-btn" onclick="stopRestTimer()" style="display:none">■ Stop</button>
+      </div>
       <button class="sl-log-btn" onclick="logSet()">LOG SET →</button>
     </div>
     <div style="padding: 10px 16px 12px;">
@@ -334,6 +358,30 @@
   </div>
   <div class="review-footer">
     <button class="btn-main" onclick="saveEquipConfig()">Save equipment →</button>
+  </div>
+</div>
+
+<!-- HISTORY -->
+<div id="s-history" class="screen">
+  <div class="header">
+    <div class="logo"><div class="dot live"></div>HISTORY</div>
+    <button class="btn-sm" onclick="goScreen('s-idle')">← Back</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px 20px 40px;">
+    <!-- Filter pills -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;" id="hist-filters">
+      <button class="pill active" onclick="setHistFilter(this,'')">All</button>
+      <button class="pill" onclick="setHistFilter(this,'Full Body A')">Full Body A</button>
+      <button class="pill" onclick="setHistFilter(this,'Full Body B')">Full Body B</button>
+      <button class="pill" onclick="setHistFilter(this,'Upper Body')">Upper Body</button>
+      <button class="pill" onclick="setHistFilter(this,'Lower Body')">Lower Body</button>
+      <button class="pill" onclick="setHistFilter(this,'Rings Only')">Rings Only</button>
+      <button class="pill" onclick="setHistFilter(this,'KB Only')">KB Only</button>
+    </div>
+    <div id="hist-list"></div>
+    <div id="hist-load-more" style="display:none;margin-top:12px;">
+      <button class="btn-sm" style="width:100%;padding:12px;" onclick="loadMoreHistory()">Load more</button>
+    </div>
   </div>
 </div>
 
@@ -438,6 +486,59 @@ let injuries = [], exercises = [], history = { sessions: [], sets: [] };
 let plan = [], chatLog = [], sessionId = '', loggedSets = [];
 let isTyping = false;
 
+// ── Timers ────────────────────────────────────────────────────────────────────
+let sessionTimerInterval = null, sessionTimerStart = null;
+let restTimerInterval = null, restTimerStart = null;
+let lastRestDuration = null;
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return String(m).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+}
+
+function startSessionTimer() {
+  sessionTimerStart = Date.now();
+  sessionTimerInterval = setInterval(() => {
+    const el = document.getElementById('session-timer');
+    if (el) el.textContent = fmtTime(Date.now() - sessionTimerStart);
+  }, 1000);
+}
+
+function stopSessionTimer() {
+  clearInterval(sessionTimerInterval);
+  sessionTimerInterval = null;
+  document.getElementById('session-timer').textContent = '00:00';
+}
+
+function startRestTimer() {
+  stopRestTimer();
+  restTimerStart = Date.now();
+  const el = document.getElementById('rest-timer');
+  const btn = document.getElementById('rest-stop-btn');
+  if (el) { el.textContent = '00:00'; el.classList.add('rest-active'); }
+  if (btn) btn.style.display = 'block';
+  restTimerInterval = setInterval(() => {
+    if (el) el.textContent = fmtTime(Date.now() - restTimerStart);
+  }, 1000);
+}
+
+function stopRestTimer() {
+  if (restTimerStart) lastRestDuration = Math.floor((Date.now() - restTimerStart) / 1000);
+  clearInterval(restTimerInterval);
+  restTimerInterval = null;
+  restTimerStart = null;
+  const el = document.getElementById('rest-timer');
+  const btn = document.getElementById('rest-stop-btn');
+  if (el) { el.textContent = '--:--'; el.classList.remove('rest-active'); }
+  if (btn) btn.style.display = 'none';
+}
+
+function stopAllTimers() {
+  stopSessionTimer();
+  stopRestTimer();
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function isTrue(v) { return v === true || v === 'TRUE' || v === 'true'; }
 function goScreen(id) {
@@ -468,10 +569,13 @@ async function apiPost(body) {
   const r = await fetch(W, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return r.json();
 }
-async function claude(system, messages) {
-  const r = await apiPost({ action: 'claude', system, messages });
+async function claude(system, messages, model) {
+  model = model || 'claude-haiku-4-5-20251001';
+  const r = await apiPost({ action: 'claude', system, messages, model });
   return r.text || '';
 }
+const SONNET = 'claude-sonnet-4-6';
+const HAIKU  = 'claude-haiku-4-5-20251001';
 
 // ── Globals ───────────────────────────────────────────────────────────────────
 let equipmentConfig = {};
@@ -708,8 +812,18 @@ async function logSet() {
     weightKg=slVals.weight; weightLabel=slVals.weight===0?'BW':slVals.weight+'kg';
   }
   const setData = { session_id:sessionId, exercise_id:ex.exercise_id, set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes:setNotes };
+
+  // TUT from tempo (e.g. "3-0-1-0" × reps)
+  const tempoMatch = (ex.tempo||'').match(/(\d+)-(\d+)-(\d+)-(\d+)/);
+  if (tempoMatch) {
+    const totalTempo = tempoMatch.slice(1).reduce((s,n) => s + parseInt(n), 0);
+    setData.tut_seconds = totalTempo * slVals.reps;
+  }
+  // Rest from timer
+  if (lastRestDuration !== null) { setData.rest_seconds = lastRestDuration; lastRestDuration = null; }
   loggedSets.push(setData);
   apiPost({ action:'appendSet', data:setData });
+  startRestTimer();
   const msg = `${ex.display_name} — Set ${setNum}: ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`;
   addMsg('you', msg);
   const plannedSets = ex.sets||4;
@@ -731,13 +845,13 @@ function endSession() {
 }
 function closeEndModal() { document.getElementById('end-modal').style.display='none'; }
 async function savePartialSession() {
-  closeEndModal(); goScreen('s-idle');
+  closeEndModal(); stopAllTimers(); goScreen('s-idle');
   document.getElementById('status').textContent='Session saved ✓';
 }
 async function discardAndDelete() {
   closeEndModal();
   if (sessionId) await apiPost({ action:'deleteSession', session_id:sessionId });
-  loggedSets=[]; sessionId=''; goScreen('s-idle');
+  loggedSets=[]; sessionId=''; stopAllTimers(); goScreen('s-idle');
   document.getElementById('status').textContent='Session discarded';
 }
 
@@ -807,7 +921,10 @@ async function generatePlan() {
     'Rings Only': 'All exercises on gymnastics rings. Push, pull, core — rings only. No KB.',
     'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
   };
-  const system = `You are an elite strength coach for James Thornton.
+  const system = `You are The Tactical Partner — an intelligent, analytical training operator for James Thornton.
+Your operating principle: maintain the machine, respect the load, optimise for life.
+You are not a motivator. You are a precision instrument. No fluff, no toxic positivity, no filler.
+
 Phase: Lean bulk Q2 2026. Hypertrophy focus.
 Session type: ${sType} — ${sessionFocus[sType] || ''}
 Equipment available: ${kitStr}
@@ -815,9 +932,17 @@ Active injuries:\n${injStr}
 Available exercises (use ONLY these exercise_ids):\n${availEx}
 History:\n${histStr}
 
+CONTEXT INTERPRETATION — if pre-session notes indicate low energy, high stress, fatigue, or life load:
+- Reduce volume (3-4 exercises, lower sets)
+- Reduce intensity (higher RIR 2-3, lighter loads)
+- Prioritise movement quality over output
+- session_notes should reflect the tactical rationale, not platitudes
+
+If notes indicate readiness or high energy — push accordingly. Match the dose to the state.
+
 Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
 {
-  "session_notes": "one line intent",
+  "session_notes": "one line tactical intent",
   "exercises": [
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
@@ -828,7 +953,7 @@ Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only 
     document.getElementById('gen-status').textContent = 'Reading your history...';
     const preNotes = document.getElementById('pre-notes').value.trim();
     const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
-    const raw = await claude(system, [{ role: 'user', content: userMsg }]);
+    const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     plan = parsed.exercises || [];
@@ -851,6 +976,7 @@ async function startSession() {
   document.getElementById('active-title').textContent = sType.toUpperCase();
   document.getElementById('chat').innerHTML = '';
   goScreen('s-active');
+  startSessionTimer();
   initSetLogger();
   apiPost({
     action: 'appendSession',
@@ -885,12 +1011,22 @@ async function getCoachReply(userMsg) {
   isTyping = true;
   showTyping();
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
-  const system = `You are an elite strength coach for James Thornton mid-workout.
+  const system = `You are The Tactical Partner — a precision training operator, mid-session.
+Operating principle: maintain the machine, respect the load, optimise for life.
+No filler. No motivation speak. Analytical, brief, direct — like a high-end consultant who also trains.
+
 Session: ${sType} | Location: ${loc}
 Active injuries:\n${injStr}
 Today's plan: ${JSON.stringify(plan)}
-Sets logged: ${JSON.stringify(loggedSets)}
-Rules: 1-3 sentences max. Be direct. When a set is logged confirm it and say what's next. If pain reported swap the exercise immediately. When all done say to type 'done' for debrief.`;
+Sets logged so far: ${JSON.stringify(loggedSets)}
+
+RESPONSE RULES:
+- 1-3 sentences max. Every word earns its place.
+- When a set is logged: confirm the data point, give one tactical instruction for the next set (load, tempo, rest, cue). Nothing more.
+- If the numbers show fatigue (rep drop, RIR creep): flag it clinically. Don't encourage — recalibrate.
+- If pain or injury is reported: swap immediately, no questions. State the replacement and why.
+- Use James's name only when delivering a decisive insight or recalibration — not as punctuation.
+- When all sets are complete: tell him to type 'done' for the debrief. One line.`;
   const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
   messages.push({ role: 'user', content: userMsg });
   try {
@@ -907,14 +1043,52 @@ Rules: 1-3 sentences max. Be direct. When a set is logged confirm it and say wha
 async function generateDebrief() {
   isTyping = true;
   showTyping();
-  const system = `You are an elite strength coach. Generate a post-workout debrief for James Thornton.
+  const system = `You are The Tactical Partner. Generate a post-session Status Summary Object for James Thornton.
+Operating principle: maintain the machine, respect the load, optimise for life.
+
 Session: ${sType} | Plan: ${JSON.stringify(plan)} | Logged sets: ${JSON.stringify(loggedSets)}
-Cover: total volume, progression vs last session, injury flags, recommendation for next session.
-Max 200 words. Specific and data-driven. James has high fitness literacy — skip basics.`;
+
+Return ONLY valid JSON — no markdown, no preamble:
+{
+  "total_volume_kg": 320,
+  "total_sets": 12,
+  "performance_signal": "stable",
+  "shoulder_flag": false,
+  "exercises_flagged": [],
+  "recommendation": "one-line tactical directive for next session",
+  "prose": "2-3 sentence analytical debrief. Volume, performance signal, shoulder flag if relevant, one forward directive. No filler. Use James's name only for a decisive insight. Max 80 words."
+}
+
+performance_signal values: "improving" | "stable" | "declining"
+exercises_flagged: array of exercise_ids where shoulder was loaded or performance decayed
+shoulder_flag: true if any flagged exercises involve the right shoulder`;
   try {
-    const reply = await claude(system, [{ role: 'user', content: 'Debrief my session.' }]);
+    const raw = await claude(system, [{ role: 'user', content: 'Debrief my session.' }], SONNET);
+    const clean = raw.replace(/```json|```/g, '').trim();
+    let sso;
+    try {
+      sso = JSON.parse(clean);
+    } catch(e) {
+      addMsg('coach', raw); return;
+    }
+    // Save SSO to D1
+    apiPost({ action: 'saveDebrief', data: {
+      session_id: sessionId,
+      date: new Date().toISOString().slice(0,10),
+      session_type: sessionType,
+      total_volume_kg: sso.total_volume_kg,
+      total_sets: sso.total_sets,
+      performance_signal: sso.performance_signal,
+      shoulder_flag: sso.shoulder_flag,
+      exercises_flagged: sso.exercises_flagged,
+      recommendation: sso.recommendation,
+      raw_json: clean
+    }});
+    // Display prose debrief
+    const signal = { improving:'↑', stable:'→', declining:'↓' }[sso.performance_signal] || '→';
+    const flag = sso.shoulder_flag ? '  ⚠ Shoulder flagged.' : '';
+    addMsg('coach', `${sso.prose}\n\n${signal} ${sso.performance_signal.toUpperCase()}  ·  ${sso.total_sets} sets  ·  ${sso.total_volume_kg}kg${flag}`);
     hideTyping();
-    addMsg('coach', '── SESSION COMPLETE ──\n\n' + reply);
     setTimeout(() => showPostSession(), 500);
   } catch (e) {
     hideTyping();
@@ -1019,28 +1193,40 @@ async function sendReviewMsg() {
   chat.scrollTop = chat.scrollHeight;
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr2 = buildKitString(loc);
-  const system = `You are an elite strength coach adjusting a workout plan for James Thornton.
+  const system = `You are The Tactical Partner — adjusting a workout plan pre-session for James Thornton.
+Operating principle: maintain the machine, respect the load, optimise for life.
+Make the requested change surgically. Don't restructure what wasn't asked about.
+
 Current plan: ${JSON.stringify(plan)}
 Available kit: ${kitStr2}
 Available exercises to substitute from (use exercise_id slugs): ${availableExList}
 Active injuries: ${injStr}
 Phase: Lean bulk Q2 2026, hypertrophy.
-The athlete wants to adjust the plan. Make the requested change and return ONLY valid JSON — same format as before, no markdown:
+
+Return ONLY valid JSON — same format, no markdown, no preamble:
 {
-  "session_notes": "updated intent",
+  "session_notes": "updated tactical intent",
   "exercises": [
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Keep what works. Only change what was asked.`;
+Keep what works. Only change what was asked. Protect the right shoulder.`;
   try {
-    const raw = await claude(system, [{ role: 'user', content: msg }]);
+    const raw = await claude(system, [{ role: 'user', content: msg }], SONNET);
     const clean = raw.replace(/\`\`\`json|\`\`\`/g, '').trim();
     const parsed = JSON.parse(clean);
     plan = parsed.exercises || [];
     renderPlanCards(parsed);
     document.getElementById('review-typing').remove();
-    addReviewMsg('coach', 'Done — plan updated. Ready to start or keep adjusting.');
+    // Generate a brief in-persona response
+    const contextReply = await claude(
+      `You are The Tactical Partner. You just adjusted a workout plan based on the athlete's input. 
+Respond in 1-2 sentences max. Acknowledge what you heard, state what you changed and why — analytically, no fluff. 
+Use James's name only if delivering a decisive recalibration. No motivation speak.`,
+      [{ role: 'user', content: msg }],
+      SONNET
+    );
+    addReviewMsg('coach', contextReply);
   } catch (e) {
     document.getElementById('review-typing')?.remove();
     addReviewMsg('coach', 'Could not parse update. Try rephrasing.');
@@ -1101,6 +1287,7 @@ async function savePostSession() {
     }
   });
   addMsg('coach', 'Session saved. RPE ' + (selectedRPE || '—') + (notes ? ' · ' + notes : '') + '\n\nRest up. See you next session.');
+  stopAllTimers();
 }
 
 function discardSession() {
@@ -1801,6 +1988,139 @@ Be specific with numbers. Skip basics. James has elite fitness literacy.`;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+// ── Session history ───────────────────────────────────────────────────────────
+let histFilter = '', histOffset = 0, histLoading = false;
+
+function initHistory() {
+  histFilter = ''; histOffset = 0;
+  document.querySelectorAll('#hist-filters .pill').forEach(p => p.classList.remove('active'));
+  const first = document.querySelector('#hist-filters .pill');
+  if (first) first.classList.add('active');
+  document.getElementById('hist-list').innerHTML = '';
+  loadHistory(true);
+}
+
+function setHistFilter(el, type) {
+  histFilter = type; histOffset = 0;
+  document.querySelectorAll('#hist-filters .pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('hist-list').innerHTML = '';
+  loadHistory(true);
+}
+
+async function loadHistory(reset) {
+  if (histLoading) return;
+  histLoading = true;
+  const list = document.getElementById('hist-list');
+  if (reset) list.innerHTML = '<div style="font-size:12px;color:var(--t3);padding:20px 0;text-align:center">Loading...</div>';
+  try {
+    const params = { limit: 20, offset: histOffset };
+    if (histFilter) params.session_type = histFilter;
+    const result = await api('getSessions', params);
+    if (reset) list.innerHTML = '';
+    const sessions = result.sessions || [];
+    const sets = result.sets || [];
+    if (!sessions.length && reset) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--t3);padding:20px 0;text-align:center">No sessions found.</div>';
+      document.getElementById('hist-load-more').style.display = 'none';
+      histLoading = false; return;
+    }
+    // Group sets by session
+    const setsBySession = {};
+    sets.forEach(s => {
+      if (!setsBySession[s.session_id]) setsBySession[s.session_id] = [];
+      setsBySession[s.session_id].push(s);
+    });
+    sessions.forEach(sess => renderSessionCard(sess, setsBySession[sess.id] || [], list));
+    histOffset += sessions.length;
+    document.getElementById('hist-load-more').style.display = sessions.length === 20 ? 'block' : 'none';
+  } catch(e) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:20px 0;">Error: ' + e.message + '</div>';
+  }
+  histLoading = false;
+}
+
+function loadMoreHistory() { loadHistory(false); }
+
+function renderSessionCard(sess, sets, container) {
+  const hasPB = sess.pb_exercises && sess.pb_exercises.length > 0;
+  const volStr = sess.volume > 0 ? sess.volume.toLocaleString() + ' kg' : '—';
+  const rpeStr = sess.rpe ? 'RPE ' + sess.rpe : '';
+  const d = new Date(sess.date + 'T00:00:00');
+  const dateStr = d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' });
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:var(--s1);border:1px solid var(--b2);border-radius:var(--r-lg);margin-bottom:10px;overflow:hidden;transition:border-color .15s;cursor:pointer';
+  card.innerHTML = '<div style="padding:14px 16px;" onclick="toggleHistSession(this)">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">' +
+      '<div>' +
+        '<div style="font-family:var(--font);font-size:14px;font-weight:500;color:var(--t1)">' + sess.session_type + '</div>' +
+        '<div style="font-family:var(--mono);font-size:11px;color:var(--t3);margin-top:2px">' + dateStr + ' · ' + (sess.location || 'Home') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        (hasPB ? '<span style="font-family:var(--font);font-size:9px;font-weight:700;padding:3px 9px;border-radius:var(--r-full);background:rgba(245,158,11,.15);color:var(--warn);letter-spacing:.08em">PB</span>' : '') +
+        '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="color:var(--t3);transition:transform .2s" class="hist-chevron"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:16px;">' +
+      '<span style="font-family:var(--mono);font-size:11px;color:var(--t3)">' + (sess.set_count || 0) + ' sets</span>' +
+      '<span style="font-family:var(--mono);font-size:11px;color:var(--t2)">' + volStr + '</span>' +
+      (rpeStr ? '<span style="font-family:var(--mono);font-size:11px;color:var(--t3)">' + rpeStr + '</span>' : '') +
+    '</div>' +
+  '</div>' +
+  '<div class="hist-sets" style="display:none;border-top:1px solid var(--b1);padding:12px 16px;">' +
+    renderHistSets(sets, sess.pb_exercises || []) +
+  '</div>';
+  container.appendChild(card);
+}
+
+function renderHistSets(sets, pbExercises) {
+  if (!sets.length) return '<div style="font-size:12px;color:var(--t3)">No sets logged.</div>';
+  const byEx = {};
+  sets.forEach(s => {
+    if (!byEx[s.exercise_id]) byEx[s.exercise_id] = { name: s.display_name, sets: [] };
+    byEx[s.exercise_id].sets.push(s);
+  });
+  return Object.entries(byEx).map(([id, ex]) => {
+    const isPB = pbExercises.includes(id);
+    const setRows = ex.sets.map(s => {
+      const wStr = s.weight_kg > 0 ? s.weight_kg + 'kg' : 'BW';
+      const e1rm = parseFloat(s.estimated_1rm) || 0;
+      return '<div style="display:flex;gap:12px;font-family:var(--mono);font-size:11px;color:var(--t3);padding:3px 0;">' +
+        '<span style="min-width:24px;color:var(--t4)">S' + s.set_num + '</span>' +
+        '<span>' + (s.reps || '—') + 'r @ ' + wStr + '</span>' +
+        (s.rir !== null && s.rir !== undefined ? '<span>RIR ' + s.rir + '</span>' : '') +
+        (e1rm > 0 ? '<span style="color:var(--accent);margin-left:auto">' + e1rm + 'kg e1rm</span>' : '') +
+      '</div>';
+    }).join('');
+    return '<div style="margin-bottom:14px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+        '<span style="font-family:var(--font);font-size:12px;font-weight:500;color:var(--t1);cursor:pointer;text-decoration:underline;text-decoration-color:var(--b3);" onclick="jumpToExercise(\x27' + id + '\x27)">' + ex.name + '</span>' +
+        (isPB ? '<span style="font-family:var(--font);font-size:9px;font-weight:700;padding:2px 7px;border-radius:var(--r-full);background:rgba(245,158,11,.15);color:var(--warn)">PB</span>' : '') +
+      '</div>' +
+      setRows +
+    '</div>';
+  }).join('');
+}
+
+function toggleHistSession(header) {
+  const setsDiv = header.parentElement.querySelector('.hist-sets');
+  const chevron = header.querySelector('.hist-chevron');
+  const open = setsDiv.style.display !== 'none';
+  setsDiv.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+function jumpToExercise(exerciseId) {
+  initProgress();
+  goScreen('s-progress');
+  setTimeout(() => {
+    const sel = document.getElementById('prog-ex-sel');
+    if (sel) { sel.value = exerciseId; loadProgress(); }
+  }, 100);
+}
+
+
 init();
 </script>
 </body>
