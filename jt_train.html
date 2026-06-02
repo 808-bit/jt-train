@@ -1189,7 +1189,15 @@ Keep what works. Only change what was asked. Protect the right shoulder.`;
     plan = parsed.exercises || [];
     renderPlanCards(parsed);
     document.getElementById('review-typing').remove();
-    addReviewMsg('coach', 'Done — plan updated. Ready to start or keep adjusting.');
+    // Generate a brief in-persona response
+    const contextReply = await claude(
+      `You are The Tactical Partner. You just adjusted a workout plan based on the athlete's input. 
+Respond in 1-2 sentences max. Acknowledge what you heard, state what you changed and why — analytically, no fluff. 
+Use James's name only if delivering a decisive recalibration. No motivation speak.`,
+      [{ role: 'user', content: msg }],
+      SONNET
+    );
+    addReviewMsg('coach', contextReply);
   } catch (e) {
     document.getElementById('review-typing')?.remove();
     addReviewMsg('coach', 'Could not parse update. Try rephrasing.');
