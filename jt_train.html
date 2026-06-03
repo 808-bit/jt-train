@@ -807,6 +807,8 @@ function toggleSide() {
   slSide = slSide === 'L' ? 'R' : 'L';
   renderFieldsUI();
 }
+
+function skipExercise() {
   const ex = plan[slExIdx];
   if (!ex) return;
   addMsg('you', `Skipped: ${ex.display_name}`);
