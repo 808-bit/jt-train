@@ -218,7 +218,7 @@
           <button class="pill" onclick="selL(this,'Gym')">Gym</button>
         </div>
       </div>
-      <div class="inj-banner" id="inj-banner"></div>
+      <div class="inj-banner" id="inj-banner" style="cursor:pointer" onclick="showInjuryModal()"></div>
       <div class="section">
         <div class="lbl">PRE-SESSION NOTES (optional)</div>
         <textarea id="pre-notes" placeholder="e.g. Shoulder sore today, skip overhead. Using floor press instead of rings. Feeling strong." style="width:100%;background:#111;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:80px;outline:none;line-height:1.6;"></textarea>
@@ -283,7 +283,10 @@
     <div class="set-logger" id="set-logger">
       <div class="sl-header">
         <select class="sl-ex-select" id="sl-ex-select" onchange="onExSelect()"></select>
-        <span class="sl-counter" id="sl-counter">Set 1</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="sl-counter" id="sl-counter">Set 1</span>
+          <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;">Skip →</button>
+        </div>
       </div>
       <div class="sl-fields" id="sl-fields">
         <div class="sl-field">
@@ -476,6 +479,19 @@
     <button class="modal-btn modal-btn-save" onclick="savePartialSession()">Save partial session →</button>
     <button class="modal-btn modal-btn-discard" onclick="discardAndDelete()">Discard — delete all data</button>
     <button class="modal-btn modal-btn-cancel" onclick="closeEndModal()">Keep going</button>
+  </div>
+</div>
+
+<!-- INJURY MODAL -->
+<div id="inj-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeInjuryModal()">
+  <div class="modal-sheet">
+    <div class="modal-title">Injury Management</div>
+    <div id="inj-list" style="margin-bottom:16px;"></div>
+    <div class="lbl" style="margin-bottom:8px;">ADD INJURY</div>
+    <input id="inj-body" placeholder="Body part (e.g. Right shoulder)" style="width:100%;background:#111;border:1px solid #333;border-radius:6px;padding:8px 12px;color:#e8e4dc;font-family:'DM Mono','Courier New',monospace;font-size:12px;outline:none;margin-bottom:8px;">
+    <input id="inj-restrict" placeholder="Restrictions (e.g. No overhead pressing)" style="width:100%;background:#111;border:1px solid #333;border-radius:6px;padding:8px 12px;color:#e8e4dc;font-family:'DM Mono','Courier New',monospace;font-size:12px;outline:none;margin-bottom:12px;">
+    <button class="modal-btn modal-btn-save" onclick="addInjury()">Add injury →</button>
+    <button class="modal-btn modal-btn-cancel" onclick="closeInjuryModal()">Close</button>
   </div>
 </div>
 
@@ -710,7 +726,7 @@ async function saveEquipConfig() {
 }
 
 // ── Set Logger ────────────────────────────────────────────────────────────────
-let slExIdx = 0, slDualMode = false, slKB1Idx = 0, slKB2Idx = 1;
+let slExIdx = 0, slDualMode = false, slKB1Idx = 0, slKB2Idx = 1, slSide = null;
 let slVals = { weight: 0, reps: 10, rir: 2 };
 let setsPerEx = {};
 
@@ -730,6 +746,8 @@ function renderSetLogger() {
   const sel = document.getElementById('sl-ex-select');
   if (sel) sel.innerHTML = plan.map((e,i) => `<option value="${i}" ${i===slExIdx?'selected':''}>${i+1}. ${e.display_name}</option>`).join('');
   slDualMode = DOUBLE_KB_IDS.includes(ex.exercise_id);
+  // Detect unilateral (bilateral=0) non-dual exercises — need L/R logging
+  slSide = (!slDualMode && ex.bilateral === false) ? 'L' : null;
   if (slDualMode) {
     const w = getKBWeights();
     const wStr = String(ex.weight || '');
@@ -764,7 +782,9 @@ function renderFieldsUI() {
     if (totalEl) { totalEl.style.display='block'; totalEl.textContent=`Total: ${kb1+kb2}kg (${kb1}+${kb2})`; }
   } else {
     const wD = slVals.weight===0?'BW':slVals.weight; const wU = slVals.weight===0?'':'kg';
+    const sideBtn = slSide ? `<div class="sl-field" style="flex:0.6"><div class="sl-field-lbl">SIDE</div><div class="sl-stepper"><button class="sl-btn" onclick="toggleSide()" style="min-width:36px;font-size:14px;">${slSide}</button></div></div>` : '';
     fieldsEl.innerHTML = `
+      ${sideBtn}
       <div class="sl-field"><div class="sl-field-lbl">WEIGHT</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('weight',-2)">−</button><span class="sl-val" id="val-weight">${wD}</span><span class="sl-unit">${wU}</span><button class="sl-btn" onclick="adjustVal('weight',2)">+</button></div></div>
       <div class="sl-field"><div class="sl-field-lbl">REPS</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('reps',-1)">−</button><span class="sl-val" id="val-reps">${slVals.reps}</span><button class="sl-btn" onclick="adjustVal('reps',1)">+</button></div></div>
       <div class="sl-field"><div class="sl-field-lbl">RIR</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
@@ -781,6 +801,22 @@ function updateSetCounter() {
 function onExSelect() {
   const sel = document.getElementById('sl-ex-select'); if (!sel) return;
   slExIdx = parseInt(sel.value); renderSetLogger();
+}
+
+function toggleSide() {
+  slSide = slSide === 'L' ? 'R' : 'L';
+  renderFieldsUI();
+}
+  const ex = plan[slExIdx];
+  if (!ex) return;
+  addMsg('you', `Skipped: ${ex.display_name}`);
+  if (slExIdx < plan.length - 1) {
+    slExIdx++;
+    renderSetLogger();
+    addMsg('coach', `${ex.display_name} skipped. Moving to ${plan[slExIdx].display_name}.`);
+  } else {
+    addMsg('coach', `${ex.display_name} skipped. All exercises covered — type 'done' for debrief.`);
+  }
 }
 
 function adjustVal(field, delta) {
@@ -812,7 +848,7 @@ async function logSet() {
   } else {
     weightKg=slVals.weight; weightLabel=slVals.weight===0?'BW':slVals.weight+'kg';
   }
-  const setData = { session_id:sessionId, exercise_id:ex.exercise_id, set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes:setNotes };
+  const setData = { session_id:sessionId, exercise_id:ex.exercise_id, set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes: (slSide ? slSide + ' side' + (setNotes ? ' · '+setNotes : '') : setNotes) };
 
   // TUT from tempo (e.g. "3-0-1-0" × reps)
   const tempoMatch = (ex.tempo||'').match(/(\d+)-(\d+)-(\d+)-(\d+)/);
@@ -825,7 +861,10 @@ async function logSet() {
   loggedSets.push(setData);
   apiPost({ action:'appendSet', data:setData });
   startRestTimer();
-  const msg = `${ex.display_name} — Set ${setNum}: ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`;
+  // Auto-toggle side for unilateral exercises
+  if (slSide) { slSide = slSide === 'L' ? 'R' : 'L'; renderFieldsUI(); }
+  const sideLabel = setData.notes && setData.notes.includes('side') ? ` (${setData.notes.split(' ')[0]})` : '';
+  const msg = `${ex.display_name} — Set ${setNum}${sideLabel}: ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`;
   addMsg('you', msg);
   const plannedSets = ex.sets||4;
   if (setNum >= plannedSets) {
@@ -845,6 +884,46 @@ function endSession() {
   document.getElementById('end-modal').style.display='flex';
 }
 function closeEndModal() { document.getElementById('end-modal').style.display='none'; }
+
+function showInjuryModal() {
+  renderInjuryList();
+  document.getElementById('inj-modal').style.display='flex';
+}
+function closeInjuryModal() { document.getElementById('inj-modal').style.display='none'; }
+function renderInjuryList() {
+  const list = document.getElementById('inj-list');
+  if (!list) return;
+  if (!injuries.length) { list.innerHTML='<div style="color:var(--text3);font-size:12px;">No active injuries.</div>'; return; }
+  list.innerHTML = injuries.map((inj,i) =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:12px;color:var(--text)">${inj.body_part}</span>
+      <button onclick="resolveInjury(${inj.id})" style="font-family:var(--font);font-size:10px;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:4px;padding:2px 8px;cursor:pointer;">Resolve</button>
+    </div>`
+  ).join('');
+}
+async function resolveInjury(id) {
+  await apiPost({ action:'updateInjury', id, active: 0 });
+  injuries = injuries.filter(i => i.id !== id);
+  renderInjuryList();
+  const b = document.getElementById('inj-banner');
+  if (!injuries.length) b.style.display='none';
+  else b.textContent = '⚠ Active: ' + injuries.map(i=>i.body_part).join(', ') + ' — exercises filtered';
+}
+async function addInjury() {
+  const body = document.getElementById('inj-body').value.trim();
+  const restrict = document.getElementById('inj-restrict').value.trim();
+  if (!body) return;
+  const r = await apiPost({ action:'addInjury', body_part: body, restrictions: restrict });
+  if (r.ok) {
+    injuries.push({ id: r.id, body_part: body, restrictions: restrict, active: 1 });
+    document.getElementById('inj-body').value='';
+    document.getElementById('inj-restrict').value='';
+    renderInjuryList();
+    const b = document.getElementById('inj-banner');
+    b.style.display='block';
+    b.textContent = '⚠ Active: ' + injuries.map(i=>i.body_part).join(', ') + ' — exercises filtered';
+  }
+}
 async function savePartialSession() {
   closeEndModal(); stopAllTimers(); goScreen('s-idle');
   document.getElementById('status').textContent='Session saved ✓';
@@ -1012,17 +1091,31 @@ async function getCoachReply(userMsg) {
   isTyping = true;
   showTyping();
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
+  const cfg = (equipmentConfig[loc] || DEFAULT_CONFIG[loc] || {});
+  const availKB = cfg.kb_weights || [16,20,24,32,44];
+  const hasPairs = cfg.kb_pairs || false;
+  const kbStr = hasPairs
+    ? `Matching pairs available: ${availKB.map(w=>w+'kg').join(', ')}`
+    : `Single bells only (no pairs): ${availKB.map(w=>w+'kg').join(', ')} — double KB load = two different bells combined`;
+  const activeShoulderInjury = injuries.some(i => i.active && /shoulder/i.test(i.body_part));
+  const shoulderRule = activeShoulderInjury
+    ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. On every push/press movement, cue the corkscrew technique and flag if any overhead loading occurs. Never suggest overhead movements.`
+    : `SHOULDER NOTE: No active shoulder injury. Standard movement cues apply. No overhead restrictions.`;
   const system = `You are The Tactical Partner — a precision training operator, mid-session.
 Operating principle: maintain the machine, respect the load, optimise for life.
 No filler. No motivation speak. Analytical, brief, direct — like a high-end consultant who also trains.
 
 Session: ${sType} | Location: ${loc}
-Active injuries:\n${injStr}
-Today's plan: ${JSON.stringify(plan)}
-Sets logged so far: ${JSON.stringify(loggedSets)}
+Active injuries: ${injStr}
+${shoulderRule}
+Available KB equipment: ${kbStr}
+Today's plan (prescribed): ${JSON.stringify(plan)}
+Sets logged so far (ACTUAL performance — use this for load recommendations, not the plan): ${JSON.stringify(loggedSets)}
 
 RESPONSE RULES:
 - 1-3 sentences max. Every word earns its place.
+- Load suggestions MUST reference actual logged weights from sets above, not prescribed plan weights.
+- Weight progression suggestions MUST only use weights available in the KB list above. For double KB, suggest two specific bells from the available list.
 - When a set is logged: confirm the data point, give one tactical instruction for the next set (load, tempo, rest, cue). Nothing more.
 - If the numbers show fatigue (rep drop, RIR creep): flag it clinically. Don't encourage — recalibrate.
 - If pain or injury is reported: swap immediately, no questions. State the replacement and why.
@@ -1031,7 +1124,7 @@ RESPONSE RULES:
   const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
   messages.push({ role: 'user', content: userMsg });
   try {
-    const reply = await claude(system, messages);
+    const reply = await claude(system, messages, SONNET);
     hideTyping();
     addMsg('coach', reply);
   } catch (e) {
@@ -2076,11 +2169,11 @@ async function generateNarrative() {
 
   const system = `You are an elite strength coach for James Thornton.
 Phase: Lean bulk Q2 2026, hypertrophy. Equipment: rings, kettlebells, parallettes, bands.
-Active injury: right shoulder impingement since 2026-03-10.
+${injuries.filter(i=>i.active).length ? 'Active injuries: ' + injuries.filter(i=>i.active).map(i=>i.body_part+' ('+i.restrictions+')').join('; ') : 'No active injuries.'}
 Write a data-driven coaching narrative in exactly 3 paragraphs, max 220 words.
 Para 1: strongest progressors and 4-week trajectory.
 Para 2: plateau/regression risks and specific programming interventions.
-Para 3: shoulder impact findings and recovery implication for training design.
+Para 3: ${injuries.filter(i=>i.active).some(i=>/shoulder/i.test(i.body_part)) ? 'shoulder impact findings and recovery implication for training design.' : 'injury risk indicators and structural balance findings.'}
 Be specific with numbers. Skip basics. James has elite fitness literacy.`;
 
   try {

@@ -275,6 +275,22 @@ async function handlePost(request, env) {
     return json({ ok: true });
   }
 
+
+  if (action === 'addInjury') {
+    const { body_part, restrictions } = body;
+    const r = await env.DB.prepare(
+      'INSERT INTO injuries (body_part, restrictions, active, date_start) VALUES (?, ?, 1, ?)'
+    ).bind(body_part, restrictions||'', new Date().toISOString().slice(0,10)).run();
+    return json({ ok: true, id: r.meta?.last_row_id });
+  }
+
+  if (action === 'updateInjury') {
+    const { id, active } = body;
+    await env.DB.prepare('UPDATE injuries SET active = ?, date_end = ? WHERE id = ?')
+      .bind(active, active===0 ? new Date().toISOString().slice(0,10) : null, id).run();
+    return json({ ok: true });
+  }
+
   return json({ error: 'Unknown action: ' + action }, 400);
 
 }
