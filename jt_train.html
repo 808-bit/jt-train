@@ -353,6 +353,20 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
+  /* ── Mobile ──────────────────────────────────────────────────────────────── */
+  @media (max-width: 480px) {
+    .sl-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .sl-val { font-size: 52px; }
+    .sl-btn { width: 36px; height: 36px; font-size: 20px; }
+    .sl-field { padding: 12px 4px 10px; }
+    .sl-log-btn { padding: 16px; font-size: 14px; }
+    .timer-val { font-size: 30px; }
+    .sl-ex-select { max-width: 160px; font-size: 11px; }
+    .msg-bubble { font-size: 12px; }
+    .idle-body { padding: 20px 18px; align-items: flex-start; padding-top: 32px; }
+    .pill { font-size: 11px; padding: 7px 13px; }
+  }
+
   /* ── History screen ──────────────────────────────────────────────────────── */
   .hist-card { border-bottom: 1px solid var(--border); padding: 14px 0; cursor: pointer; }
   .hist-session-title { font-family: var(--font-ui); font-size: 14px; font-weight: 600; color: var(--text); }
