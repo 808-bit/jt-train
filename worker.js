@@ -165,11 +165,18 @@ async function handleGet(request, env) {
 
 
   if (action === 'getRecentDebriefs') {
-    const exerciseId  = searchParams.get('exercise_id');
-    const limit       = parseInt(searchParams.get('limit') || '5');
-    const { results } = await env.DB.prepare(
-      'SELECT * FROM debriefs ORDER BY date DESC LIMIT ?'
-    ).bind(limit).all();
+    const exerciseId   = searchParams.get('exercise_id');
+    const sessionType  = searchParams.get('session_type') || '';
+    const limit        = parseInt(searchParams.get('limit') || '5');
+    let query, binds;
+    if (sessionType) {
+      query = 'SELECT * FROM debriefs WHERE session_type = ? ORDER BY date DESC LIMIT ?';
+      binds = [sessionType, limit];
+    } else {
+      query = 'SELECT * FROM debriefs ORDER BY date DESC LIMIT ?';
+      binds = [limit];
+    }
+    const { results } = await env.DB.prepare(query).bind(...binds).all();
     return json({ data: results });
   }
   return json({ error: 'Unknown action: ' + action }, 400);
