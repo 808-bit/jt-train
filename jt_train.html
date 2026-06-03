@@ -598,11 +598,12 @@ const HAIKU  = 'claude-haiku-4-5-20251001';
 let equipmentConfig = {};
 const ALL_KB = [8,12,16,20,24,28,32,36,40,44,48];
 const DEFAULT_CONFIG = {
-  Home:   { rings:true,  pull_up_bar:true,  parallettes:true,  bands:true,  kb_weights:[16,20,24,32,44], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
+  Home:   { rings:true,  pull_up_bar:true,  parallettes:true,  bands:true,  kb_weights:[16,20,24,32], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
   Travel: { rings:false, pull_up_bar:false, parallettes:false, bands:true,  kb_weights:[],               kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
   Gym:    { rings:false, pull_up_bar:true,  parallettes:false, bands:true,  kb_weights:[8,12,16,20,24,28,32,36,40,44,48], kb_pairs:true, barbell:true, dumbbells:true, cable_machine:true }
 };
-const DOUBLE_KB_IDS = ['double_kb_front_squat','double_kb_deadlift','double_kb_swing','double_kb_clean','kb_floor_press','racked_squat','kb_renegade_row','kb_farmers_carry'];
+const DOUBLE_KB_IDS = ['double_kb_front_squat','double_kb_deadlift','double_kb_swing','double_kb_clean','racked_squat','kb_renegade_row','kb_farmers_carry'];
+const PER_ARM_IDS   = ['kb_floor_press']; // dual KB but pressed per arm — label LEFT/RIGHT
 
 // ── Equipment config ──────────────────────────────────────────────────────────
 let equipLoc = 'Home';
@@ -726,7 +727,7 @@ async function saveEquipConfig() {
 }
 
 // ── Set Logger ────────────────────────────────────────────────────────────────
-let slExIdx = 0, slDualMode = false, slKB1Idx = 0, slKB2Idx = 1, slSide = null;
+let slExIdx = 0, slDualMode = false, slKB1Idx = 0, slKB2Idx = 1, slSide = null, slIsPerArm = false;
 let slVals = { weight: 0, reps: 10, rir: 2 };
 let setsPerEx = {};
 
@@ -745,9 +746,10 @@ function renderSetLogger() {
   if (!ex) return;
   const sel = document.getElementById('sl-ex-select');
   if (sel) sel.innerHTML = plan.map((e,i) => `<option value="${i}" ${i===slExIdx?'selected':''}>${i+1}. ${e.display_name}</option>`).join('');
-  slDualMode = DOUBLE_KB_IDS.includes(ex.exercise_id);
+  slDualMode = DOUBLE_KB_IDS.includes(ex.exercise_id) || PER_ARM_IDS.includes(ex.exercise_id);
+  slIsPerArm = PER_ARM_IDS.includes(ex.exercise_id);
   // Detect unilateral (bilateral=0) non-dual exercises — need L/R logging
-  slSide = (!slDualMode && ex.bilateral === false) ? 'L' : null;
+  slSide = (!slDualMode && !ex.bilateral) ? 'L' : null;
   if (slDualMode) {
     const w = getKBWeights();
     const wStr = String(ex.weight || '');
@@ -774,9 +776,11 @@ function renderFieldsUI() {
   if (slDualMode) {
     const w = getKBWeights();
     const kb1 = w[slKB1Idx] ?? w[0]; const kb2 = w[slKB2Idx] ?? w[1];
+    const lbl1 = slIsPerArm ? 'LEFT' : 'KB 1';
+    const lbl2 = slIsPerArm ? 'RIGHT' : 'KB 2';
     fieldsEl.innerHTML = `
-      <div class="sl-field" style="flex:1"><div class="sl-field-lbl">KB 1</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(1,-1)">−</button><span class="sl-val" id="val-kb1">${kb1}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(1,1)">+</button></div></div>
-      <div class="sl-field" style="flex:1"><div class="sl-field-lbl">KB 2</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(2,-1)">−</button><span class="sl-val" id="val-kb2">${kb2}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(2,1)">+</button></div></div>
+      <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl1}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(1,-1)">−</button><span class="sl-val" id="val-kb1">${kb1}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(1,1)">+</button></div></div>
+      <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl2}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(2,-1)">−</button><span class="sl-val" id="val-kb2">${kb2}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(2,1)">+</button></div></div>
       <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">REPS</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('reps',-1)">−</button><span class="sl-val" id="val-reps">${slVals.reps}</span><button class="sl-btn" onclick="adjustVal('reps',1)">+</button></div></div>
       <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">RIR</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
     if (totalEl) { totalEl.style.display='block'; totalEl.textContent=`Total: ${kb1+kb2}kg (${kb1}+${kb2})`; }
