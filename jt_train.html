@@ -1193,6 +1193,9 @@ async function loadHistory() {
 // ── Generate plan ─────────────────────────────────────────────────────────────
 async function generatePlan() {
   goScreen('s-generating');
+  document.getElementById('gen-status').textContent = 'Reading your history...';
+  await loadHistory();
+  const ssoContext = await fetchSSOContext(3, sType);
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterExercises(exercises, loc, sType)
@@ -1222,8 +1225,12 @@ Phase: Lean bulk Q2 2026. Hypertrophy focus.
 Session type: ${sType} — ${sessionFocus[sType] || ''}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
+
+RECENT DEBRIEF INTELLIGENCE (last 3 ${sType} sessions — use this to drive load, volume, and exercise selection):
+${ssoContext}
+
 Available exercises (use ONLY these exercise_ids):\n${availEx}
-History:\n${histStr}
+Raw set history:\n${histStr}
 
 CONTEXT INTERPRETATION — if pre-session notes indicate low energy, high stress, fatigue, or life load:
 - Reduce volume (3-4 exercises, lower sets)
@@ -1243,7 +1250,7 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
 Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercises from the provided list.`;
 
   try {
-    document.getElementById('gen-status').textContent = 'Reading your history...';
+    document.getElementById('gen-status').textContent = 'Building your plan...';
     const preNotes = document.getElementById('pre-notes').value.trim();
     const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
