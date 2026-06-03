@@ -746,10 +746,10 @@ function renderSetLogger() {
   if (!ex) return;
   const sel = document.getElementById('sl-ex-select');
   if (sel) sel.innerHTML = plan.map((e,i) => `<option value="${i}" ${i===slExIdx?'selected':''}>${i+1}. ${e.display_name}</option>`).join('');
-  const exId = ex.exercise_id || ex.id || '';
+  const exId = (ex.exercise_id || ex.id || '').replace(/-/g, '_');
   slDualMode = DOUBLE_KB_IDS.includes(exId) || PER_ARM_IDS.includes(exId);
   slIsPerArm = PER_ARM_IDS.includes(exId);
-  const exFull = exercises.find(e => e.id === exId) || {};
+  const exFull = exercises.find(e => e.id === exId || e.id === (ex.exercise_id || ex.id || '')) || {};
   slSide = (!slDualMode && exFull.bilateral === 0) ? 'L' : null;
   if (slDualMode) {
     const w = getKBWeights();
@@ -855,7 +855,7 @@ async function logSet() {
   } else {
     weightKg=slVals.weight; weightLabel=slVals.weight===0?'BW':slVals.weight+'kg';
   }
-  const setData = { session_id:sessionId, exercise_id:ex.exercise_id, set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes: (slSide ? slSide + ' side' + (setNotes ? ' · '+setNotes : '') : setNotes) };
+  const setData = { session_id:sessionId, exercise_id:(ex.exercise_id||ex.id||'').replace(/-/g,'_'), set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes: (slSide ? slSide + ' side' + (setNotes ? ' · '+setNotes : '') : setNotes) };
 
   // TUT from tempo (e.g. "3-0-1-0" × reps)
   const tempoMatch = (ex.tempo||'').match(/(\d+)-(\d+)-(\d+)-(\d+)/);
