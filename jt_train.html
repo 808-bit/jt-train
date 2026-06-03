@@ -1190,6 +1190,21 @@ async function loadHistory() {
   }
 }
 
+// ── SSO Context Builder ───────────────────────────────────────────────────────
+async function fetchSSOContext(limit, sessionTypeFilter) {
+  try {
+    const params = { limit: limit || 3 };
+    if (sessionTypeFilter) params.session_type = sessionTypeFilter;
+    const res = await api('getRecentDebriefs', params);
+    const debriefs = res.data || [];
+    if (!debriefs.length) return 'No previous debrief data available.';
+    return debriefs.map(d => {
+      const flagged = (() => { try { return JSON.parse(d.exercises_flagged || '[]'); } catch { return []; } })();
+      return `[${d.date} ${d.session_type}] Signal: ${d.performance_signal} | Volume: ${d.total_volume_kg}kg / ${d.total_sets} sets${d.shoulder_flag ? ' | ⚠ Shoulder flagged' : ''}${flagged.length ? ' | Flagged: ' + flagged.join(', ') : ''} | Rec: ${d.recommendation}`;
+    }).join('\n');
+  } catch(e) { return 'SSO context unavailable.'; }
+}
+
 // ── Generate plan ─────────────────────────────────────────────────────────────
 async function generatePlan() {
   goScreen('s-generating');
