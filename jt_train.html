@@ -746,10 +746,10 @@ function renderSetLogger() {
   if (!ex) return;
   const sel = document.getElementById('sl-ex-select');
   if (sel) sel.innerHTML = plan.map((e,i) => `<option value="${i}" ${i===slExIdx?'selected':''}>${i+1}. ${e.display_name}</option>`).join('');
-  slDualMode = DOUBLE_KB_IDS.includes(ex.exercise_id) || PER_ARM_IDS.includes(ex.exercise_id);
-  slIsPerArm = PER_ARM_IDS.includes(ex.exercise_id);
-  // Look up bilateral from exercises array (plan objects don't carry this field)
-  const exFull = exercises.find(e => e.id === ex.exercise_id) || {};
+  const exId = ex.exercise_id || ex.id || '';
+  slDualMode = DOUBLE_KB_IDS.includes(exId) || PER_ARM_IDS.includes(exId);
+  slIsPerArm = PER_ARM_IDS.includes(exId);
+  const exFull = exercises.find(e => e.id === exId) || {};
   slSide = (!slDualMode && exFull.bilateral === 0) ? 'L' : null;
   if (slDualMode) {
     const w = getKBWeights();
