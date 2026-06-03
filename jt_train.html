@@ -920,6 +920,12 @@ async function addInjury() {
   const body = document.getElementById('inj-body').value.trim();
   const restrict = document.getElementById('inj-restrict').value.trim();
   if (!body) return;
+  const ssoCtx = await fetchSSOContext(5);
+  const correlationCheck = await claude(
+    `You are The Tactical Partner. An athlete has logged a new injury. Check if recent debrief history suggests this injury correlates with any flagged exercises or declining patterns. Respond in 1 sentence — clinical, no fluff. If no correlation found, say "No debrief correlation found."`,
+    [{ role: 'user', content: `New injury: ${body}. Restrictions: ${restrict || 'none specified'}.\n\nRecent debriefs:\n${ssoCtx}` }],
+    SONNET
+  );
   const r = await apiPost({ action:'addInjury', body_part: body, restrictions: restrict });
   if (r.ok) {
     injuries.push({ id: r.id, body_part: body, restrictions: restrict, active: 1 });
@@ -928,7 +934,11 @@ async function addInjury() {
     renderInjuryList();
     const b = document.getElementById('inj-banner');
     b.style.display='block';
-    b.textContent = '⚠ Active: ' + injuries.map(i=>i.body_part).join(', ') + ' — exercises filtered';
+    b.textContent = '⚠ Active: ' + injuries.map(i=>i.body_part).join(', ') + ' — tap to manage';
+    const insight = document.createElement('div');
+    insight.style.cssText = 'font-size:11px;color:var(--amber);padding:8px 0;border-top:1px solid var(--border);margin-top:8px;';
+    insight.textContent = '⚡ ' + correlationCheck;
+    document.getElementById('inj-list').appendChild(insight);
   }
 }
 async function savePartialSession() {
@@ -999,6 +1009,9 @@ async function generatePlan() {
         (s.rir ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
       ).join('\n')
     : 'No recent history for ' + sType;
+
+  document.getElementById('gen-status').textContent = 'Reading your history...';
+  const ssoContext = await fetchSSOContext(3, sType);
   const sessionFocus = {
     'Full Body A': 'Compound lower body + push + pull. Squat or hinge pattern, horizontal push, vertical or horizontal pull.',
     'Full Body B': 'Compound lower body + push + pull. Different pattern to Full Body A — hinge or lunge, different push/pull combo.',
@@ -1015,8 +1028,12 @@ Phase: Lean bulk Q2 2026. Hypertrophy focus.
 Session type: ${sType} — ${sessionFocus[sType] || ''}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
+
+RECENT DEBRIEF INTELLIGENCE (last 3 ${sType} sessions — use this to inform load, volume, and exercise selection):
+${ssoContext}
+
 Available exercises (use ONLY these exercise_ids):\n${availEx}
-History:\n${histStr}
+Raw set history:\n${histStr}
 
 CONTEXT INTERPRETATION — if pre-session notes indicate low energy, high stress, fatigue, or life load:
 - Reduce volume (3-4 exercises, lower sets)
@@ -1036,7 +1053,7 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
 Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercises from the provided list.`;
 
   try {
-    document.getElementById('gen-status').textContent = 'Reading your history...';
+    document.getElementById('gen-status').textContent = 'Building your plan...';
     const preNotes = document.getElementById('pre-notes').value.trim();
     const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
@@ -1107,6 +1124,7 @@ async function getCoachReply(userMsg) {
   const shoulderRule = activeShoulderInjury
     ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. On every push/press movement, cue the corkscrew technique and flag if any overhead loading occurs. Never suggest overhead movements.`
     : `SHOULDER NOTE: No active shoulder injury. Standard movement cues apply. No overhead restrictions.`;
+  const lastDebrief = await fetchSSOContext(1, sType);
   const system = `You are The Tactical Partner — a precision training operator, mid-session.
 Operating principle: maintain the machine, respect the load, optimise for life.
 No filler. No motivation speak. Analytical, brief, direct — like a high-end consultant who also trains.
@@ -1115,6 +1133,7 @@ Session: ${sType} | Location: ${loc}
 Active injuries: ${injStr}
 ${shoulderRule}
 Available KB equipment: ${kbStr}
+Last session debrief: ${lastDebrief}
 Today's plan (prescribed): ${JSON.stringify(plan)}
 Sets logged so far (ACTUAL performance — use this for load recommendations, not the plan): ${JSON.stringify(loggedSets)}
 
@@ -1216,6 +1235,23 @@ function quickMsg(msg) {
 }
 
 let lastSSO = null;
+
+// ── SSO Context Builder ───────────────────────────────────────────────────────
+async function fetchSSOContext(limit = 3, sessionTypeFilter = null) {
+  try {
+    const params = { limit };
+    if (sessionTypeFilter) params.session_type = sessionTypeFilter;
+    const res = await api('getRecentDebriefs', params);
+    const debriefs = res.data || [];
+    if (!debriefs.length) return 'No previous debrief data available.';
+    return debriefs.map(d => {
+      const flagged = (() => { try { return JSON.parse(d.exercises_flagged || '[]'); } catch { return []; } })();
+      return `[${d.date} ${d.session_type}] Signal: ${d.performance_signal} | Volume: ${d.total_volume_kg}kg / ${d.total_sets} sets${d.shoulder_flag ? ' | ⚠ Shoulder flagged' : ''}${flagged.length ? ' | Flagged: ' + flagged.join(', ') : ''} | Rec: ${d.recommendation}`;
+    }).join('\n');
+  } catch(e) {
+    return 'SSO context unavailable.';
+  }
+}
 
 async function analyseExerciseTrends(flaggedIds) {
   isTyping = true;
@@ -1399,9 +1435,13 @@ async function sendReviewMsg() {
   chat.scrollTop = chat.scrollHeight;
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr2 = buildKitString(loc);
+  const ssoCtx = await fetchSSOContext(2, sType);
   const system = `You are The Tactical Partner — adjusting a workout plan pre-session for James Thornton.
 Operating principle: maintain the machine, respect the load, optimise for life.
 Make the requested change surgically. Don't restructure what wasn't asked about.
+
+Recent debrief context (last 2 ${sType} sessions):
+${ssoCtx}
 
 Current plan: ${JSON.stringify(plan)}
 Available kit: ${kitStr2}
