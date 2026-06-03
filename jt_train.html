@@ -748,8 +748,9 @@ function renderSetLogger() {
   if (sel) sel.innerHTML = plan.map((e,i) => `<option value="${i}" ${i===slExIdx?'selected':''}>${i+1}. ${e.display_name}</option>`).join('');
   slDualMode = DOUBLE_KB_IDS.includes(ex.exercise_id) || PER_ARM_IDS.includes(ex.exercise_id);
   slIsPerArm = PER_ARM_IDS.includes(ex.exercise_id);
-  // Detect unilateral (bilateral=0) non-dual exercises — need L/R logging
-  slSide = (!slDualMode && !ex.bilateral) ? 'L' : null;
+  // Look up bilateral from exercises array (plan objects don't carry this field)
+  const exFull = exercises.find(e => e.id === ex.exercise_id) || {};
+  slSide = (!slDualMode && exFull.bilateral === 0) ? 'L' : null;
   if (slDualMode) {
     const w = getKBWeights();
     const wStr = String(ex.weight || '');
