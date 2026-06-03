@@ -194,7 +194,7 @@
     <div style="display:flex;gap:8px;">
       <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
       <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
-      <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc);loadInjuries()">⚙</button>
+      <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc)">⚙</button>
     </div>
   </div>
   <div class="idle-body">
@@ -218,7 +218,7 @@
           <button class="pill" onclick="selL(this,'Gym')">Gym</button>
         </div>
       </div>
-      <div class="inj-banner" id="inj-banner" style="cursor:pointer" onclick="showInjuryModal()"></div>
+      <div class="inj-banner" id="inj-banner" style="cursor:pointer;display:block;" onclick="showInjuryModal()">⚕ Manage injuries</div>
       <div class="section">
         <div class="lbl">PRE-SESSION NOTES (optional)</div>
         <textarea id="pre-notes" placeholder="e.g. Shoulder sore today, skip overhead. Using floor press instead of rings. Feeling strong." style="width:100%;background:#111;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:80px;outline:none;line-height:1.6;"></textarea>
@@ -952,8 +952,7 @@ async function init() {
 
     if (injuries.length) {
       const b = document.getElementById('inj-banner');
-      b.style.display = 'block';
-      b.textContent = '⚠ Active: ' + injuries.map(i => i.body_part).join(', ') + ' — exercises filtered';
+      b.textContent = '⚠ Active: ' + injuries.map(i => i.body_part).join(', ') + ' — tap to manage';
     }
 
     document.getElementById('dot').classList.add('live');
