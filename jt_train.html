@@ -537,7 +537,7 @@
           </div>
         </div>
         <div class="sl-field">
-          <div class="sl-field-lbl">LEFT</div>
+          <div class="sl-field-lbl">RESERVE</div>
           <div class="sl-stepper">
             <button class="sl-btn" onclick="adjustVal('rir',-1)">−</button>
             <span class="sl-val" id="val-rir">2</span>
@@ -1024,7 +1024,7 @@ function renderFieldsUI() {
       <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl1}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(1,-1)">−</button><span class="sl-val" id="val-kb1">${kb1}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(1,1)">+</button></div></div>
       <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl2}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(2,-1)">−</button><span class="sl-val" id="val-kb2">${kb2}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(2,1)">+</button></div></div>
       <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">REPS</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('reps',-1)">−</button><span class="sl-val" id="val-reps">${slVals.reps}</span><button class="sl-btn" onclick="adjustVal('reps',1)">+</button></div></div>
-      <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">LEFT</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
+      <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">RESERVE</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
     if (totalEl) { totalEl.style.display='block'; totalEl.textContent=`Total: ${kb1+kb2}kg (${kb1}+${kb2})`; }
   } else {
     const wD = slVals.weight===0?'BW':slVals.weight; const wU = slVals.weight===0?'':'kg';
@@ -1033,7 +1033,7 @@ function renderFieldsUI() {
       ${sideBtn}
       <div class="sl-field"><div class="sl-field-lbl">WEIGHT</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('weight',-2)">−</button><span class="sl-val" id="val-weight">${wD}</span><span class="sl-unit">${wU}</span><button class="sl-btn" onclick="adjustVal('weight',2)">+</button></div></div>
       <div class="sl-field"><div class="sl-field-lbl">REPS</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('reps',-1)">−</button><span class="sl-val" id="val-reps">${slVals.reps}</span><button class="sl-btn" onclick="adjustVal('reps',1)">+</button></div></div>
-      <div class="sl-field"><div class="sl-field-lbl">LEFT</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
+      <div class="sl-field"><div class="sl-field-lbl">RESERVE</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
     if (totalEl) totalEl.style.display='none';
   }
 }
@@ -1491,17 +1491,17 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
         </div>
         <!-- Stats row -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--border);">
-          <div style="padding:10px 12px;border-right:1px solid var(--border);text-align:center;">
-            <div style="font-family:var(--font-display);font-size:24px;color:var(--text);">${sso.total_sets}</div>
-            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">SETS</div>
+          <div style="padding:12px 12px 10px;border-right:1px solid var(--border);text-align:center;">
+            <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1;">${sso.total_sets}</div>
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-top:4px;">SETS</div>
           </div>
-          <div style="padding:10px 12px;border-right:1px solid var(--border);text-align:center;">
-            <div style="font-family:var(--font-display);font-size:24px;color:var(--text);">${Math.round(sso.total_volume_kg)}</div>
-            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">KG</div>
+          <div style="padding:12px 12px 10px;border-right:1px solid var(--border);text-align:center;">
+            <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1;">${Math.round(sso.total_volume_kg)}</div>
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-top:4px;">KG</div>
           </div>
-          <div style="padding:10px 12px;text-align:center;">
-            <div style="font-family:var(--font-display);font-size:24px;color:var(--text);">${plan.length}</div>
-            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">EXERCISES</div>
+          <div style="padding:12px 12px 10px;text-align:center;">
+            <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1;">${plan.length}</div>
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-top:4px;">EXERCISES</div>
           </div>
         </div>
         <!-- Headline -->
