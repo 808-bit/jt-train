@@ -537,7 +537,7 @@
           </div>
         </div>
         <div class="sl-field">
-          <div class="sl-field-lbl">RIR</div>
+          <div class="sl-field-lbl">LEFT</div>
           <div class="sl-stepper">
             <button class="sl-btn" onclick="adjustVal('rir',-1)">−</button>
             <span class="sl-val" id="val-rir">2</span>
@@ -1024,7 +1024,7 @@ function renderFieldsUI() {
       <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl1}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(1,-1)">−</button><span class="sl-val" id="val-kb1">${kb1}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(1,1)">+</button></div></div>
       <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl2}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(2,-1)">−</button><span class="sl-val" id="val-kb2">${kb2}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(2,1)">+</button></div></div>
       <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">REPS</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('reps',-1)">−</button><span class="sl-val" id="val-reps">${slVals.reps}</span><button class="sl-btn" onclick="adjustVal('reps',1)">+</button></div></div>
-      <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">RIR</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
+      <div class="sl-field" style="flex:0.8"><div class="sl-field-lbl">LEFT</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
     if (totalEl) { totalEl.style.display='block'; totalEl.textContent=`Total: ${kb1+kb2}kg (${kb1}+${kb2})`; }
   } else {
     const wD = slVals.weight===0?'BW':slVals.weight; const wU = slVals.weight===0?'':'kg';
@@ -1033,7 +1033,7 @@ function renderFieldsUI() {
       ${sideBtn}
       <div class="sl-field"><div class="sl-field-lbl">WEIGHT</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('weight',-2)">−</button><span class="sl-val" id="val-weight">${wD}</span><span class="sl-unit">${wU}</span><button class="sl-btn" onclick="adjustVal('weight',2)">+</button></div></div>
       <div class="sl-field"><div class="sl-field-lbl">REPS</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('reps',-1)">−</button><span class="sl-val" id="val-reps">${slVals.reps}</span><button class="sl-btn" onclick="adjustVal('reps',1)">+</button></div></div>
-      <div class="sl-field"><div class="sl-field-lbl">RIR</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
+      <div class="sl-field"><div class="sl-field-lbl">LEFT</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustVal('rir',-1)">−</button><span class="sl-val" id="val-rir">${slVals.rir}</span><button class="sl-btn" onclick="adjustVal('rir',1)">+</button></div></div>`;
     if (totalEl) totalEl.style.display='none';
   }
 }
@@ -1364,7 +1364,7 @@ async function startSession() {
           <span style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${i+1}. ${e.display_name}</span>
           <span style="font-family:var(--font);font-size:10px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:4px;border:1px solid var(--border);">${e.sets}×${e.reps}</span>
         </div>
-        <div style="font-family:var(--font);font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-bottom:${e.notes ? '5px' : '0'};">${e.weight} &nbsp;·&nbsp; ${e.tempo} &nbsp;·&nbsp; RIR ${e.rir}</div>
+        <div style="font-family:var(--font);font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-bottom:${e.notes ? '5px' : '0'};">${e.weight} &nbsp;·&nbsp; ${e.reps} reps &nbsp;·&nbsp; ${e.rir} left</div>
         ${e.notes ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);font-style:italic;line-height:1.55;">${e.notes}</div>` : ''}
       </div>`).join('')}
     <div style="font-family:var(--font);font-size:11px;color:var(--text3);padding:4px 2px;">Start with ${plan[0]?.display_name}. Log each set as you go.</div>`;
@@ -1410,14 +1410,15 @@ Today's plan (prescribed): ${JSON.stringify(plan)}
 Sets logged so far (ACTUAL performance — use this for load recommendations, not the plan): ${JSON.stringify(loggedSets)}
 
 RESPONSE RULES:
-- 2 sentences MAX. Absolute limit. On mobile, brevity is non-negotiable.
-- Load suggestions MUST reference actual logged weights from sets above, not prescribed plan weights.
-- Weight progression suggestions MUST only use weights available in the KB list above. For double KB, suggest two specific bells from the available list.
-- When a set is logged: confirm the data point, give one tactical instruction for the next set (load, tempo, rest, cue). Nothing more.
-- If the numbers show fatigue (rep drop, RIR creep): flag it clinically. Don't encourage — recalibrate.
-- If pain or injury is reported: swap immediately, no questions. State the replacement and why.
-- Use James's name only when delivering a decisive insight or recalibration — not as punctuation.
-- When all sets are complete: tell him to type 'done' for the debrief. One line.`;
+- The athlete can already see their set data — DO NOT echo it back. No "Set 2 logged: X reps @ Ykg".
+- Give ONE directive only: what to do next and why. 1-2 sentences max.
+- Plain language. No jargon. Say "2 reps left" not "RIR 2". Say "slow the lowering" not "increase eccentric tempo".
+- Load suggestions MUST use actual logged weights, not prescribed plan weights.
+- For double KB, suggest two specific bells from the available list.
+- If load or rest was wrong: say what to fix, briefly.
+- If pain or injury reported: swap immediately, state the replacement.
+- Use James's name only for a decisive correction — not every message.
+- When all sets done: one line telling him to hit Done — debrief.`;
   const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
   messages.push({ role: 'user', content: userMsg });
   try {
@@ -1434,8 +1435,8 @@ RESPONSE RULES:
 async function generateDebrief() {
   isTyping = true;
   showTyping();
-  const system = `You are The Tactical Partner. Generate a post-session Status Summary Object for James Thornton.
-Operating principle: maintain the machine, respect the load, optimise for life.
+  const system = `You are a training coach. Generate a post-session summary for James.
+Plain language only — no jargon, no "RIR", no "tactical", no "SSO". Write like a smart coach texting after a session.
 
 Session: ${sType} | Plan: ${JSON.stringify(plan)} | Logged sets: ${JSON.stringify(loggedSets)}
 
@@ -1446,22 +1447,19 @@ Return ONLY valid JSON — no markdown, no preamble:
   "performance_signal": "stable",
   "shoulder_flag": false,
   "exercises_flagged": [],
-  "recommendation": "one-line tactical directive for next session",
-  "prose": "2-3 sentence analytical debrief. Volume, performance signal, shoulder flag if relevant, one forward directive. No filler. Use James's name only for a decisive insight. Max 80 words."
+  "headline": "One plain-English sentence. The single most important thing about this session. What happened and why it matters.",
+  "recommendation": "One plain-English sentence. What to do differently or focus on next session."
 }
 
-performance_signal values: "improving" | "stable" | "declining"
-exercises_flagged: array of exercise_ids where shoulder was loaded or performance decayed
-shoulder_flag: true if any flagged exercises involve the right shoulder`;
+performance_signal: "improving" | "stable" | "declining"
+exercises_flagged: exercise_ids where form broke down, sets were missed, or load was wrong
+shoulder_flag: true only if right shoulder was loaded in a risky way`;
   try {
-    const raw = await claude(system, [{ role: 'user', content: 'Debrief my session.' }], SONNET);
+    const raw = await claude(system, [{ role: 'user', content: 'Summarise my session.' }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     let sso;
-    try {
-      sso = JSON.parse(clean);
-    } catch(e) {
-      addMsg('coach', raw); return;
-    }
+    try { sso = JSON.parse(clean); } catch(e) { addMsg('coach', raw); hideTyping(); isTyping = false; return; }
+
     // Save SSO to D1
     apiPost({ action: 'saveDebrief', data: {
       session_id: sessionId,
@@ -1475,11 +1473,48 @@ shoulder_flag: true if any flagged exercises involve the right shoulder`;
       recommendation: sso.recommendation,
       raw_json: clean
     }});
-    // Display prose debrief
-    const signal = { improving:'↑', stable:'→', declining:'↓' }[sso.performance_signal] || '→';
-    const flag = sso.shoulder_flag ? '  ⚠ Shoulder flagged.' : '';
-    addMsg('coach', `${sso.prose}\n\n${signal} ${sso.performance_signal.toUpperCase()}  ·  ${sso.total_sets} sets  ·  ${sso.total_volume_kg}kg${flag}`);
-    // If exercises flagged, show analyse button
+
+    // Render as structured UI card
+    const signalColour = { improving: 'var(--green)', stable: 'var(--text2)', declining: 'var(--amber)' }[sso.performance_signal] || 'var(--text2)';
+    const signalIcon = { improving: '↑', stable: '→', declining: '↓' }[sso.performance_signal] || '→';
+    const signalLabel = { improving: 'Looking stronger', stable: 'Holding steady', declining: 'Needs attention' }[sso.performance_signal] || '';
+
+    const debriefEl = document.createElement('div');
+    debriefEl.className = 'msg coach';
+    debriefEl.innerHTML = `
+      <div class="msg-label">SESSION SUMMARY</div>
+      <div class="msg-bubble" style="padding:0;overflow:hidden;min-width:240px;">
+        <!-- Signal header -->
+        <div style="padding:12px 14px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-family:var(--font-display);font-size:22px;color:${signalColour};letter-spacing:0.04em;">${signalIcon} ${signalLabel.toUpperCase()}</span>
+          ${sso.shoulder_flag ? '<span style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:var(--amber);background:rgba(245,158,11,0.1);padding:3px 8px;border-radius:4px;">⚠ SHOULDER</span>' : ''}
+        </div>
+        <!-- Stats row -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--border);">
+          <div style="padding:10px 12px;border-right:1px solid var(--border);text-align:center;">
+            <div style="font-family:var(--font-display);font-size:24px;color:var(--text);">${sso.total_sets}</div>
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">SETS</div>
+          </div>
+          <div style="padding:10px 12px;border-right:1px solid var(--border);text-align:center;">
+            <div style="font-family:var(--font-display);font-size:24px;color:var(--text);">${Math.round(sso.total_volume_kg)}</div>
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">KG</div>
+          </div>
+          <div style="padding:10px 12px;text-align:center;">
+            <div style="font-family:var(--font-display);font-size:24px;color:var(--text);">${plan.length}</div>
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">EXERCISES</div>
+          </div>
+        </div>
+        <!-- Headline -->
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-family:var(--font);font-size:12px;color:var(--text);line-height:1.6;">${sso.headline}</div>
+        <!-- Recommendation -->
+        <div style="padding:10px 14px;font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.6;">
+          <span style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">NEXT SESSION → </span>${sso.recommendation}
+        </div>
+      </div>`;
+    document.getElementById('chat').appendChild(debriefEl);
+    document.getElementById('chat').scrollTop = 9999;
+
+    // Analyse trends button if flagged
     if (sso.exercises_flagged && sso.exercises_flagged.length > 0) {
       lastSSO = sso;
       setTimeout(() => {
@@ -1490,7 +1525,7 @@ shoulder_flag: true if any flagged exercises involve the right shoulder`;
         btn.onclick = () => { btn.remove(); analyseExerciseTrends(sso.exercises_flagged); };
         document.getElementById('chat').appendChild(btn);
         document.getElementById('chat').scrollTop = 9999;
-      }, 600);
+      }, 400);
     }
     hideTyping();
     setTimeout(() => showPostSession(), 500);
