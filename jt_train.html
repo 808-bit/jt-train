@@ -143,8 +143,8 @@
     border-left: 2px solid rgba(34,197,94,0.35);
     border-radius: 3px 12px 12px 12px;
   }
-  .typing { display: flex; gap: 4px; padding: 12px 15px; background: var(--bg2); border: 1px solid var(--border); border-left: 2px solid rgba(34,197,94,0.2); border-radius: 3px 12px 12px 12px; }
-  .typing span { width: 5px; height: 5px; border-radius: 50%; background: var(--text3); animation: pulse 1.2s infinite; }
+  .typing { display: flex; gap: 5px; padding: 14px 16px; background: var(--bg2); border: 1px solid var(--border); border-left: 2px solid rgba(34,197,94,0.2); border-radius: 3px 12px 12px 12px; align-items: center; min-height: 46px; }
+  .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); animation: pulse 1.2s infinite; flex-shrink: 0; }
   .typing span:nth-child(2) { animation-delay: 0.2s; }
   .typing span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes pulse { 0%,100%{opacity:0.2;transform:scale(0.8)} 50%{opacity:1;transform:scale(1)} }
@@ -413,7 +413,7 @@
       <div class="inj-banner" id="inj-banner" style="cursor:pointer;display:block;" onclick="showInjuryModal()">⚕ Manage injuries</div>
       <div class="section">
         <div class="lbl">PRE-SESSION NOTES (optional)</div>
-        <textarea id="pre-notes" placeholder="e.g. Shoulder sore today, skip overhead. Using floor press instead of rings. Feeling strong." style="width:100%;background:#111;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:80px;outline:none;line-height:1.6;"></textarea>
+        <textarea id="pre-notes" placeholder="e.g. Tired today, slept badly. Knee a bit stiff. Feeling strong and ready to push." style="width:100%;background:#111;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:80px;outline:none;line-height:1.6;"></textarea>
       </div>
       <button class="btn-main" id="gen-btn" onclick="generatePlan()" disabled>Generate session →</button>
       <div class="status-line" id="status">Loading your data...</div>
@@ -456,7 +456,7 @@
         <button class="quick-btn" onclick="reviewQuick('Swap the last exercise')">Swap last</button>
         <button class="quick-btn" onclick="reviewQuick('Make it shorter — 4 exercises only')">Shorter</button>
         <button class="quick-btn" onclick="reviewQuick('Add a core exercise')">Add core</button>
-        <button class="quick-btn" onclick="reviewQuick('Shoulder is sore today, adjust accordingly')">Shoulder sore</button>
+        <button class="quick-btn" onclick="reviewQuick('Something feels off today, adjust accordingly')">Not feeling it</button>
       </div>
     </div>
   </div>
@@ -536,7 +536,7 @@
     <div style="padding: 10px 16px 12px;">
       <div class="sl-divider"><div class="sl-divider-line"></div><div class="sl-divider-lbl">ASK COACH</div><div class="sl-divider-line"></div></div>
       <div class="input-row" style="margin-bottom:8px;">
-        <input class="msg-input" id="msg-input" placeholder="Shoulder sore? Swap? Ask anything..." onkeydown="if(event.key==='Enter')sendMsg()"/>
+        <input class="msg-input" id="msg-input" placeholder="Swap? Adjust? Ask anything..." onkeydown="if(event.key==='Enter')sendMsg()"/>
         <button class="send-btn" id="send-btn" onclick="sendMsg()">→</button>
       </div>
       <div class="quick-btns" id="quick-btns-container">
@@ -1262,7 +1262,7 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercises from the provided list.`;
+Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the provided list.`;
 
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
@@ -1325,6 +1325,7 @@ async function startSession() {
     <div style="font-family:var(--font);font-size:11px;color:var(--text3);padding:4px 2px;">Start with ${plan[0]?.display_name}. Log each set as you go.</div>`;
   chat.appendChild(planWrap);
   chat.scrollTop = 0;
+  setTimeout(() => { chat.scrollTop = 0; }, 50);
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
