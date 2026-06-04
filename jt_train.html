@@ -412,8 +412,35 @@
       </div>
       <div class="inj-banner" id="inj-banner" style="cursor:pointer;display:block;" onclick="showInjuryModal()">⚕ Manage injuries</div>
       <div class="section">
+        <div class="lbl">PRE-SESSION SIGNALS</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">SLEEP</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('sleep',-1)">−</button>
+              <span id="sig-sleep" style="font-family:var(--font-display);font-size:32px;color:var(--text);min-width:24px;line-height:1;">3</span>
+              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('sleep',1)">+</button>
+            </div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">ENERGY</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('energy',-1)">−</button>
+              <span id="sig-energy" style="font-family:var(--font-display);font-size:32px;color:var(--text);min-width:24px;line-height:1;">3</span>
+              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('energy',1)">+</button>
+            </div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
+            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">SORENESS</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('soreness',-1)">−</button>
+              <span id="sig-soreness" style="font-family:var(--font-display);font-size:32px;color:var(--text);min-width:24px;line-height:1;">3</span>
+              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('soreness',1)">+</button>
+            </div>
+          </div>
+        </div>
         <div class="lbl">PRE-SESSION NOTES (optional)</div>
-        <textarea id="pre-notes" placeholder="e.g. Tired today, slept badly. Knee a bit stiff. Feeling strong and ready to push." style="width:100%;background:#111;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e8e4dc;font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:80px;outline:none;line-height:1.6;"></textarea>
+        <textarea id="pre-notes" placeholder="e.g. Tired today, slept badly. Knee a bit stiff. Feeling strong and ready to push." style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:72px;outline:none;line-height:1.6;"></textarea>
       </div>
       <button class="btn-main" id="gen-btn" onclick="generatePlan()" disabled>Generate session →</button>
       <div class="status-line" id="status">Loading your data...</div>
@@ -702,6 +729,17 @@
 const W = 'https://jt-workout-worke.james-thornton88.workers.dev';
 
 let sType = 'Full Body A', loc = 'Home';
+let preSleep = 3, preEnergy = 3, preSoreness = 3;
+
+function adjustSignal(key, delta) {
+  if (key === 'sleep')    { preSleep    = Math.min(5, Math.max(1, preSleep    + delta)); document.getElementById('sig-sleep').textContent    = preSleep; }
+  if (key === 'energy')   { preEnergy   = Math.min(5, Math.max(1, preEnergy   + delta)); document.getElementById('sig-energy').textContent   = preEnergy; }
+  if (key === 'soreness') { preSoreness = Math.min(5, Math.max(1, preSoreness + delta)); document.getElementById('sig-soreness').textContent = preSoreness; }
+  // Colour code: low values go amber
+  const el = document.getElementById('sig-' + key);
+  const val = key === 'sleep' ? preSleep : key === 'energy' ? preEnergy : preSoreness;
+  el.style.color = val <= 2 ? 'var(--amber)' : val >= 4 ? 'var(--green)' : 'var(--text)';
+}
 let injuries = [], exercises = [], history = { sessions: [], sets: [] };
 let plan = [], chatLog = [], sessionId = '', loggedSets = [];
 let isTyping = false;
@@ -1247,7 +1285,11 @@ ${ssoContext}
 Available exercises (use ONLY these exercise_ids):\n${availEx}
 Raw set history:\n${histStr}
 
-CONTEXT INTERPRETATION — if pre-session notes indicate low energy, high stress, fatigue, or life load:
+PRE-SESSION SIGNALS (1=worst, 5=best):
+Sleep: ${preSleep}/5 | Energy: ${preEnergy}/5 | Soreness: ${preSoreness}/5
+${(preSleep <= 2 || preEnergy <= 2) ? '⚠ LOW READINESS — reduce volume, increase RIR, prioritise quality over output.' : (preSleep >= 4 && preEnergy >= 4) ? '✓ HIGH READINESS — push load and volume accordingly.' : 'MODERATE READINESS — standard prescription.'}
+
+CONTEXT INTERPRETATION — if pre-session notes or signals indicate low energy, high stress, fatigue, or life load:
 - Reduce volume (3-4 exercises, lower sets)
 - Reduce intensity (higher RIR 2-3, lighter loads)
 - Prioritise movement quality over output
@@ -1305,6 +1347,9 @@ async function startSession() {
       session_type: sType,
       location: loc,
       ai_plan_used: true,
+      pre_sleep: preSleep,
+      pre_energy: preEnergy,
+      pre_soreness: preSoreness,
     }
   });
 
