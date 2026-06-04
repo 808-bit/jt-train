@@ -207,13 +207,14 @@ async function handlePost(request, env) {
     const r = body.data || {};
     await env.DB.prepare(`
       INSERT INTO sessions (id, phase_id, date, session_type, location, rpe, notes, ai_plan_used, pre_sleep, pre_energy, pre_soreness)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET rpe = excluded.rpe, notes = excluded.notes
     `).bind(
       r.session_id || '', r.phase_id || 'lean-bulk-q2-2026',
       r.date || new Date().toISOString().slice(0, 10),
       r.session_type || '', r.location || 'Home',
       r.rpe_session || null, r.notes || null, r.ai_plan_used ? 1 : 0,
+      r.pre_sleep || null, r.pre_energy || null, r.pre_soreness || null,
       r.pre_sleep || null, r.pre_energy || null, r.pre_soreness || null,
     ).run();
     return json({ ok: true });
@@ -223,7 +224,7 @@ async function handlePost(request, env) {
     const r = body.data || {};
     await env.DB.prepare(`
       INSERT INTO sets (session_id, exercise_id, set_num, reps, weight_kg, rir, tempo, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       r.session_id || '', r.exercise_id || '', r.set_num || 1,
       r.reps || null, r.weight_kg || 0, r.rir || null, r.tempo || null, r.notes || null,
