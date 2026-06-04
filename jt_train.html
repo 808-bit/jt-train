@@ -1324,7 +1324,7 @@ Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the p
 
 // ── Start session ─────────────────────────────────────────────────────────────
 async function startSession() {
-  sessionId = new Date().toISOString().slice(0, 10) + '-A';
+  sessionId = new Date().toLocaleDateString('en-CA') + '-A';
   loggedSets = [];
   chatLog = [];
   document.getElementById('active-title').textContent = sType.toUpperCase();
@@ -1338,7 +1338,7 @@ async function startSession() {
     action: 'appendSession',
     data: {
       session_id: sessionId,
-      date: new Date().toISOString().slice(0, 10),
+      date: new Date().toLocaleDateString("en-CA"),
       week_type: 'training',
       phase: 'Lean Bulk Q2 2026',
       session_type: sType,
@@ -1469,7 +1469,7 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
     // Save SSO to D1
     apiPost({ action: 'saveDebrief', data: {
       session_id: sessionId,
-      date: new Date().toISOString().slice(0,10),
+      date: new Date().toLocaleDateString("en-CA"),
       session_type: sType,
       total_volume_kg: sso.total_volume_kg,
       total_sets: sso.total_sets,
@@ -1845,7 +1845,7 @@ async function savePostSession() {
     action: 'appendSession',
     data: {
       session_id: sessionId,
-      date: new Date().toISOString().slice(0, 10),
+      date: new Date().toLocaleDateString("en-CA"),
       week_type: 'training',
       phase: 'Lean Bulk Q2 2026',
       session_type: sType,
