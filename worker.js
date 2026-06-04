@@ -303,7 +303,7 @@ async function handlePost(request, env) {
   if (action === 'saveDebrief') {
     const d = body.data || {};
     await env.DB.prepare(
-      'INSERT INTO debriefs (session_id, date, session_type, total_volume_kg, total_sets, performance_signal, outcome, shoulder_flag, exercises_flagged, recommendation, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO debriefs (session_id, date, session_type, total_volume_kg, total_sets, performance_signal, outcome, shoulder_flag, exercises_flagged, recommendation, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(d.session_id, d.date, d.session_type, d.total_volume_kg||0, d.total_sets||0, d.performance_signal||'stable', d.outcome||'maintained', d.shoulder_flag?1:0, JSON.stringify(d.exercises_flagged||[]), d.recommendation||'', d.raw_json||'').run();
     return json({ ok: true });
   }
