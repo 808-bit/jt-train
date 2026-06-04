@@ -232,7 +232,7 @@ async function handlePost(request, env) {
     const r = body.data || {};
     await env.DB.prepare(`
       INSERT INTO sessions (id, phase_id, date, session_type, location, rpe, notes, ai_plan_used, pre_sleep, pre_energy, pre_soreness)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET rpe = excluded.rpe, notes = excluded.notes
     `).bind(
       r.session_id || '', r.phase_id || 'lean-bulk-q2-2026',
