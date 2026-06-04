@@ -1068,7 +1068,9 @@ async function logSet() {
   // Rest from timer
   if (lastRestDuration !== null) { setData.rest_seconds = lastRestDuration; lastRestDuration = null; }
   loggedSets.push(setData);
-  apiPost({ action:'appendSet', data:setData });
+  apiPost({ action:'appendSet', data:setData })
+    .then(r => { if (!r.ok) console.error('appendSet failed:', r, setData); })
+    .catch(e => console.error('appendSet error:', e, setData));
   startRestTimer();
   updateProgress();
   // Flash the set logger on log
@@ -1411,6 +1413,7 @@ RESPONSE RULES:
 }
 
 async function generateDebrief() {
+  console.log('generateDebrief — sessionId:', sessionId, 'sets:', loggedSets.length);
   isTyping = true;
   showTyping();
   const system = `You are a training coach. Generate a post-session summary for James.
@@ -1459,7 +1462,8 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
       exercises_flagged: sso.exercises_flagged,
       recommendation: sso.recommendation,
       raw_json: clean
-    }});
+    }}).then(r => { if (!r.ok) console.error('saveDebrief failed:', r); })
+      .catch(e => console.error('saveDebrief error:', e));
 
     // Render as structured UI card
     const signalColour = { improving: 'var(--green)', stable: 'var(--text2)', declining: 'var(--amber)' }[sso.performance_signal] || 'var(--text2)';
