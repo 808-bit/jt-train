@@ -1440,7 +1440,7 @@ Plain language only — no jargon, no "RIR", no "tactical", no "SSO". Write like
 
 Session: ${sType} | Plan: ${JSON.stringify(plan)} | Logged sets: ${JSON.stringify(loggedSets)}
 
-Return ONLY valid JSON — no markdown, no preamble:
+Return ONLY the JSON object. No working out. No explanation. No markdown. Just the JSON, starting with { and ending with }.
 {
   "total_volume_kg": 320,
   "total_sets": 12,
@@ -1456,7 +1456,9 @@ exercises_flagged: exercise_ids where form broke down, sets were missed, or load
 shoulder_flag: true only if right shoulder was loaded in a risky way`;
   try {
     const raw = await claude(system, [{ role: 'user', content: 'Summarise my session.' }], SONNET);
-    const clean = raw.replace(/```json|```/g, '').trim();
+    const jsonStart = raw.indexOf('{');
+    const jsonEnd = raw.lastIndexOf('}');
+    const clean = (jsonStart >= 0 && jsonEnd > jsonStart) ? raw.slice(jsonStart, jsonEnd + 1) : raw.replace(/```json|```/g, '').trim();
     let sso;
     try { sso = JSON.parse(clean); } catch(e) { addMsg('coach', raw); hideTyping(); isTyping = false; return; }
 
