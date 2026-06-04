@@ -248,7 +248,7 @@ async function handlePost(request, env) {
   if (action === 'appendSet') {
     const r = body.data || {};
     await env.DB.prepare(`
-      INSERT INTO sets (session_id, exercise_id, set_num, reps, weight_kg, rir, tempo, notes)
+      INSERT INTO sets (session_id, exercise_id, set_num, reps, weight_kg, rir, tempo, notes, tut_seconds, rest_seconds)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       r.session_id || '', r.exercise_id || '', r.set_num || 1,
