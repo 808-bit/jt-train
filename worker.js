@@ -240,7 +240,6 @@ async function handlePost(request, env) {
       r.session_type || '', r.location || 'Home',
       r.rpe_session || null, r.notes || null, r.ai_plan_used ? 1 : 0,
       r.pre_sleep || null, r.pre_energy || null, r.pre_soreness || null,
-      r.pre_sleep || null, r.pre_energy || null, r.pre_soreness || null,
     ).run();
     return json({ ok: true });
   }
