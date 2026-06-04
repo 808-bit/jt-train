@@ -626,22 +626,32 @@
   </div>
   <div class="prog-body">
     <div class="prog-tabs">
-      <button class="prog-tab active" id="ptab-exercise" onclick="switchProgTab('exercise')">EXERCISE</button>
-      <button class="prog-tab" id="ptab-overview" onclick="switchProgTab('overview')">OVERVIEW</button>
+      <button class="prog-tab" id="ptab-exercise" onclick="switchProgTab('exercise')">EXERCISE</button>
+      <button class="prog-tab active" id="ptab-overview" onclick="switchProgTab('overview')">OVERVIEW</button>
     </div>
 
     <!-- EXERCISE TAB -->
-    <div id="prog-exercise-tab">
-      <select id="prog-ex-sel" class="prog-ex-sel" onchange="loadExerciseProgress()" style="margin-bottom:14px;">
-        <option value="">— Select exercise —</option>
-      </select>
+    <div id="prog-exercise-tab" style="display:none;">
+      <!-- Pattern filter chips -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;" id="pattern-filters">
+        <button class="pill active" id="pf-all" onclick="filterExPicker('all',this)">All</button>
+        <button class="pill" id="pf-pull" onclick="filterExPicker('pull',this)">Pull</button>
+        <button class="pill" id="pf-push" onclick="filterExPicker('push',this)">Push</button>
+        <button class="pill" id="pf-hinge" onclick="filterExPicker('hinge',this)">Hinge</button>
+        <button class="pill" id="pf-squat" onclick="filterExPicker('squat',this)">Squat</button>
+        <button class="pill" id="pf-core" onclick="filterExPicker('core',this)">Core</button>
+        <button class="pill" id="pf-carry" onclick="filterExPicker('carry',this)">Carry</button>
+      </div>
+      <!-- Exercise grid -->
+      <div id="ex-picker-grid" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
+      <!-- Exercise content -->
       <div id="prog-ex-content">
-        <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Select an exercise above</div>
+        <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:24px 0;">Select an exercise above</div>
       </div>
     </div>
 
     <!-- OVERVIEW TAB -->
-    <div id="prog-overview-tab" style="display:none;">
+    <div id="prog-overview-tab">
       <div id="prog-overview-content">
         <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading...</div>
       </div>
@@ -1832,14 +1842,48 @@ function discardSession() {
 let progData = [], progMetric = 'e1rm', progChart = null, progIsBW = false, progAllSets = [];
 
 function initProgress() {
-  const sel = document.getElementById('prog-ex-sel');
-  if (!sel) return;
-  const seen = new Set();
-  const opts = exercises
-    .filter(e => { if (seen.has(e.id)) return false; seen.add(e.id); return true; })
+  renderExPicker('all');
+  loadOverview();
+}
+
+function renderExPicker(pattern) {
+  const grid = document.getElementById('ex-picker-grid');
+  if (!grid) return;
+  const filtered = exercises
+    .filter(e => pattern === 'all' || e.movement_pattern === pattern)
     .sort((a,b) => a.display_name.localeCompare(b.display_name));
-  sel.innerHTML = '<option value="">— Select exercise —</option>' +
-    opts.map(e => `<option value="${e.id}">${e.display_name}</option>`).join('');
+  grid.innerHTML = filtered.map(e =>
+    `<button onclick="selectExercise('${e.id}')" id="expill-${e.id}"
+      style="font-family:var(--font-ui);font-size:10px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid var(--border2);color:var(--text2);background:var(--bg2);cursor:pointer;letter-spacing:0.03em;transition:all 0.12s;"
+      onmouseover="this.style.borderColor='var(--text3)';this.style.color='var(--text)'"
+      onmouseout="if(!this.classList.contains('active')){this.style.borderColor='var(--border2)';this.style.color='var(--text2)'}"
+    >${e.display_name}</button>`
+  ).join('');
+}
+
+function filterExPicker(pattern, el) {
+  document.querySelectorAll('#pattern-filters .pill').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderExPicker(pattern);
+}
+
+let selectedExId = null;
+function selectExercise(id) {
+  selectedExId = id;
+  document.querySelectorAll('#ex-picker-grid button').forEach(b => {
+    b.classList.remove('active');
+    b.style.background = 'var(--bg2)';
+    b.style.borderColor = 'var(--border2)';
+    b.style.color = 'var(--text2)';
+  });
+  const btn = document.getElementById('expill-' + id);
+  if (btn) {
+    btn.classList.add('active');
+    btn.style.background = 'var(--text)';
+    btn.style.borderColor = 'var(--text)';
+    btn.style.color = 'var(--bg)';
+  }
+  loadExerciseProgress(id);
 }
 
 function switchProgTab(tab) {
@@ -1850,8 +1894,8 @@ function switchProgTab(tab) {
   if (tab === 'overview') loadOverview();
 }
 
-async function loadExerciseProgress() {
-  const exerciseId = document.getElementById('prog-ex-sel').value;
+async function loadExerciseProgress(exerciseId) {
+  if (!exerciseId) exerciseId = selectedExId;
   const content = document.getElementById('prog-ex-content');
   if (!exerciseId) { content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Select an exercise above</div>'; return; }
   content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading...</div>';
