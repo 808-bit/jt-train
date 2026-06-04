@@ -1445,6 +1445,7 @@ Return ONLY the JSON object. No working out. No explanation. No markdown. Just t
   "total_volume_kg": 320,
   "total_sets": 12,
   "performance_signal": "stable",
+  "outcome": "maintained",
   "shoulder_flag": false,
   "exercises_flagged": [],
   "headline": "One plain-English sentence. The single most important thing about this session. What happened and why it matters.",
@@ -1452,6 +1453,11 @@ Return ONLY the JSON object. No working out. No explanation. No markdown. Just t
 }
 
 performance_signal: "improving" | "stable" | "declining"
+outcome: "progressed" | "maintained" | "declined" | "incomplete"
+  - progressed: load or reps increased vs last session
+  - maintained: consistent output, no regression
+  - declined: load or reps dropped, or form broke down
+  - incomplete: significant sets missed or session cut short
 exercises_flagged: exercise_ids where form broke down, sets were missed, or load was wrong
 shoulder_flag: true only if right shoulder was loaded in a risky way`;
   try {
@@ -1470,6 +1476,7 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
       total_volume_kg: sso.total_volume_kg,
       total_sets: sso.total_sets,
       performance_signal: sso.performance_signal,
+      outcome: sso.outcome || 'maintained',
       shoulder_flag: sso.shoulder_flag,
       exercises_flagged: sso.exercises_flagged,
       recommendation: sso.recommendation,
