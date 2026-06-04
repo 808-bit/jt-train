@@ -2021,9 +2021,17 @@ async function loadOverview() {
   const progRules = progTreeRes.data || [];
 
   // ── Streak ────────────────────────────────────────────────────────────────
-  const getWeekKey = d => { const dt = new Date(d); const mon = new Date(dt - ((dt.getDay()||7)-1)*86400000); return mon.toISOString().slice(0,10); };
-  const thisWeek = getWeekKey(new Date().toISOString().slice(0,10));
-  const lastWeek = getWeekKey(new Date(Date.now()-7*86400000).toISOString().slice(0,10));
+  const getWeekKey = dateStr => {
+    const [y,m,d] = dateStr.slice(0,10).split('-').map(Number);
+    const dt = new Date(y, m-1, d); // local date, no UTC shift
+    const day = dt.getDay() || 7; // 1=Mon, 7=Sun
+    const mon = new Date(y, m-1, d - (day-1));
+    return mon.toISOString().slice(0,10);
+  };
+  const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
+  const lastWeekStr = (() => { const d = new Date(); d.setDate(d.getDate()-7); return d.toLocaleDateString('en-CA'); })();
+  const thisWeek = getWeekKey(todayStr);
+  const lastWeek = getWeekKey(lastWeekStr);
   const sessionsByWeek = {};
   allSets.forEach(s => { const w = getWeekKey(s.date); sessionsByWeek[w] = sessionsByWeek[w] || new Set(); sessionsByWeek[w].add(s.date); });
   const thisCount = (sessionsByWeek[thisWeek]?.size || 0);
