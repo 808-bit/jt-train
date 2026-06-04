@@ -164,6 +164,20 @@ async function handleGet(request, env) {
   }
 
 
+  if (action === 'getProgressionTree') {
+    const exerciseId = searchParams.get('exercise_id');
+    if (exerciseId) {
+      const { results } = await env.DB.prepare(
+        'SELECT pr.*, e.display_name, e.matrix_level, e.modality FROM progression_rules pr JOIN exercises e ON pr.exercise_id = e.id WHERE pr.exercise_id = ?'
+      ).bind(exerciseId).all();
+      return json({ data: results });
+    }
+    const { results } = await env.DB.prepare(
+      'SELECT pr.*, e.display_name, e.matrix_level, e.modality FROM progression_rules pr JOIN exercises e ON pr.exercise_id = e.id ORDER BY e.modality, e.matrix_level'
+    ).all();
+    return json({ data: results });
+  }
+
   if (action === 'getBenchmarks') {
     const exerciseId = searchParams.get('exercise_id');
     const query = exerciseId

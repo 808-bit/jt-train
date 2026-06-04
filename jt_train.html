@@ -1248,7 +1248,18 @@ async function generatePlan() {
   goScreen('s-generating');
   document.getElementById('gen-status').textContent = 'Reading your history...';
   await loadHistory();
-  const ssoContext = await fetchSSOContext(3, sType);
+  const [ssoContext, progRes] = await Promise.all([
+    fetchSSOContext(3, sType),
+    api('getProgressionTree')
+  ]);
+  const progRules = progRes.data || [];
+  // Build progression context string for exercises in this session
+  const progContext = progRules.length
+    ? progRules.map(p => {
+        const levers = (() => { try { return JSON.parse(p.intensity_levers || '[]'); } catch { return []; } })();
+        return `${p.display_name}: target ${p.rep_target} @ RIR ${p.rir_target} for ${p.sessions_to_confirm} sessions → next: ${p.next_exercise_id || 'peak'}${p.next_requires ? ' (needs '+p.next_requires+')' : ''}. Levers: ${levers.slice(0,2).join(', ')}`;
+      }).join('\n')
+    : 'No progression data.';
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterExercises(exercises, loc, sType)
@@ -1281,6 +1292,9 @@ Active injuries:\n${injStr}
 
 RECENT DEBRIEF INTELLIGENCE (last 3 ${sType} sessions — use this to drive load, volume, and exercise selection):
 ${ssoContext}
+
+PROGRESSION TREE (rep targets and next tiers — use to determine if an exercise should advance):
+${progContext}
 
 Available exercises (use ONLY these exercise_ids):\n${availEx}
 Raw set history:\n${histStr}
