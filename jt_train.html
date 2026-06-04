@@ -690,6 +690,7 @@ const W = 'https://jt-workout-worke.james-thornton88.workers.dev';
 
 let sType = 'Full Body A', loc = 'Home';
 let preSleep = 3, preEnergy = 3, preSoreness = 3;
+let pendingProgressions = []; // queued exercise progressions for next plan gen
 
 function adjustSignal(key, delta) {
   if (key === 'sleep')    { preSleep    = Math.min(5, Math.max(1, preSleep    + delta)); document.getElementById('sig-sleep').textContent    = preSleep; }
@@ -1256,6 +1257,8 @@ ${ssoContext}
 PROGRESSION TREE (rep targets and next tiers — use to determine if an exercise should advance):
 ${progContext}
 
+${pendingProgressions.length ? `CONFIRMED PROGRESSIONS (athlete has approved these — include the new exercise, not the old one):\n${pendingProgressions.map(p => `- SWAP ${p.fromName} → ${p.toName || 'consolidate at peak'}`).join('\n')}` : ''}
+
 Available exercises (use ONLY these exercise_ids):\n${availEx}
 Raw set history:\n${histStr}
 
@@ -1288,6 +1291,7 @@ Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the p
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     plan = parsed.exercises || [];
+    pendingProgressions = [];
     document.getElementById('review-title').textContent = sType;
     document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
     document.getElementById('review-chat').innerHTML = '';
@@ -2007,38 +2011,136 @@ async function loadExerciseProgress(exerciseId) {
 
 async function loadOverview() {
   const content = document.getElementById('prog-overview-content');
-  const [debriefRes, allSetsRes] = await Promise.all([
+  const [debriefRes, allSetsRes, progTreeRes] = await Promise.all([
     api('getRecentDebriefs', { limit: 10 }),
-    api('getAllProgressionData', { limit: 2000 })
+    api('getAllProgressionData', { limit: 2000 }),
+    api('getProgressionTree')
   ]);
-  const debriefs = debriefRes.data || [];
-  const allSets  = allSetsRes.data || [];
+  const debriefs  = debriefRes.data  || [];
+  const allSets   = allSetsRes.data  || [];
+  const progRules = progTreeRes.data || [];
 
-  const weekVols = {};
+  // ── Streak ────────────────────────────────────────────────────────────────
+  const getWeekKey = d => { const dt = new Date(d); const mon = new Date(dt - ((dt.getDay()||7)-1)*86400000); return mon.toISOString().slice(0,10); };
+  const thisWeek = getWeekKey(new Date().toISOString().slice(0,10));
+  const lastWeek = getWeekKey(new Date(Date.now()-7*86400000).toISOString().slice(0,10));
+  const sessionsByWeek = {};
+  allSets.forEach(s => { const w = getWeekKey(s.date); sessionsByWeek[w] = sessionsByWeek[w] || new Set(); sessionsByWeek[w].add(s.date); });
+  const thisCount = (sessionsByWeek[thisWeek]?.size || 0);
+  const lastCount = (sessionsByWeek[lastWeek]?.size || 0);
+  const streakDelta = thisCount - lastCount;
+
+  // ── PBs this month ─────────────────────────────────────────────────────────
+  const thisMonth = new Date().toISOString().slice(0,7);
+  const allTimeMax = {};
+  const monthMax   = {};
   allSets.forEach(s => {
-    const d = new Date(s.date);
-    const mon = new Date(d - ((d.getDay()||7)-1)*86400000).toISOString().slice(0,10);
-    if (!weekVols[mon]) weekVols[mon] = 0;
-    weekVols[mon] += (parseInt(s.reps)||0) * (parseFloat(s.estimated_1rm)||1);
+    const e1rm = parseFloat(s.estimated_1rm) || 0;
+    if (!allTimeMax[s.exercise_id] || e1rm > allTimeMax[s.exercise_id]) allTimeMax[s.exercise_id] = e1rm;
+    if (s.date?.startsWith(thisMonth)) {
+      if (!monthMax[s.exercise_id] || e1rm > monthMax[s.exercise_id]) monthMax[s.exercise_id] = e1rm;
+    }
   });
+  const pbs = Object.entries(monthMax)
+    .filter(([id, v]) => v > 0 && v >= (allTimeMax[id] || 0))
+    .map(([id]) => exercises.find(e => e.id === id)?.display_name || id)
+    .slice(0, 4);
+
+  // ── Progression proximity ──────────────────────────────────────────────────
+  // For each exercise with a rule, check how many recent sessions hit the rep target
+  const progScores = [];
+  for (const rule of progRules) {
+    const exSets = allSets.filter(s => s.exercise_id === rule.exercise_id);
+    if (!exSets.length) continue;
+    const targetReps = parseInt((rule.rep_target||'').match(/\d+$/)?.[0]) || 0;
+    const targetSets = parseInt((rule.rep_target||'').match(/^(\d+)x/)?.[1]) || 3;
+    // Group by session
+    const bySess = {};
+    exSets.forEach(s => { bySess[s.date] = bySess[s.date] || []; bySess[s.date].push(s); });
+    const sessionsHit = Object.values(bySess).filter(sets => {
+      const qualSets = sets.filter(s => (parseInt(s.reps)||0) >= targetReps);
+      return qualSets.length >= targetSets;
+    }).length;
+    const needed = rule.sessions_to_confirm || 2;
+    const pct = Math.min(100, Math.round((sessionsHit / needed) * 100));
+    const ex = exercises.find(e => e.id === rule.exercise_id);
+    if (!ex) continue;
+    progScores.push({ id: rule.exercise_id, name: ex.display_name, sessionsHit, needed, pct, next: rule.next_exercise_id, nextReq: rule.next_requires, ready: sessionsHit >= needed });
+  }
+  progScores.sort((a,b) => b.pct - a.pct);
+  const readyItems = progScores.filter(p => p.ready).slice(0,3);
+  const closeItems = progScores.filter(p => !p.ready && p.pct >= 40).slice(0,4);
+
+  // ── Weekly volume ──────────────────────────────────────────────────────────
+  const weekVols = {};
+  allSets.forEach(s => { const w = getWeekKey(s.date); if (!weekVols[w]) weekVols[w] = 0; weekVols[w] += (parseInt(s.reps)||0)*(parseFloat(s.estimated_1rm)||1); });
   const weeks   = Object.keys(weekVols).sort().slice(-8);
   const weekMax = Math.max(...weeks.map(w=>weekVols[w]), 1);
 
+  // ── Movement patterns ──────────────────────────────────────────────────────
   const patternSets = {};
-  allSets.forEach(s => {
-    const ex = exercises.find(e => e.id === s.exercise_id);
-    const p  = ex?.movement_pattern || 'other';
-    patternSets[p] = (patternSets[p]||0) + 1;
-  });
+  allSets.forEach(s => { const ex = exercises.find(e=>e.id===s.exercise_id); const p=ex?.movement_pattern||'other'; patternSets[p]=(patternSets[p]||0)+1; });
   const totalPS = Object.values(patternSets).reduce((a,b)=>a+b,0);
-
   const outcomeColour = { progressed:'var(--green)', maintained:'var(--text2)', declined:'var(--amber)', incomplete:'var(--text3)' };
 
   content.innerHTML =
+    // ── Streak + PBs ──────────────────────────────────────────────────────────
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">THIS WEEK</div>
+        <div style="font-family:var(--font-display);font-size:36px;color:var(--text);line-height:1;">${thisCount}</div>
+        <div style="font-family:var(--font);font-size:10px;color:${streakDelta>0?'var(--green)':streakDelta<0?'var(--amber)':'var(--text3)'};margin-top:4px;">${streakDelta>0?'↑ +'+streakDelta+' vs last week':streakDelta<0?'↓ '+streakDelta+' vs last week':'→ same as last week'}</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">PBs THIS MONTH</div>
+        ${pbs.length
+          ? `<div style="font-family:var(--font-display);font-size:36px;color:var(--green);line-height:1;">${pbs.length}</div>
+             <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">${pbs.slice(0,2).join(', ')}${pbs.length>2?' +'+( pbs.length-2)+' more':''}</div>`
+          : `<div style="font-family:var(--font-display);font-size:36px;color:var(--text3);line-height:1;">0</div>
+             <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">none yet this month</div>`}
+      </div>
+    </div>` +
+
+    // ── Earned it ──────────────────────────────────────────────────────────────
+    (readyItems.length ? `
+    <div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;margin-bottom:10px;">🏆 TARGET HIT</div>
+      ${readyItems.map(p => {
+        const alreadyQueued = pendingProgressions.some(q => q.from === p.id);
+        return `<div style="padding:8px 0;border-bottom:1px solid rgba(34,197,94,0.12);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
+            <button id="apply-prog-${p.id}" onclick="applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?.replace(/_/g,' ')||''}')"
+              style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${alreadyQueued?'var(--text3)':'var(--green)'};background:none;border:1px solid ${alreadyQueued?'var(--border2)':'rgba(34,197,94,0.3)'};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;">
+              ${alreadyQueued ? '✓ Queued' : 'Apply →'}
+            </button>
+          </div>
+          ${p.next ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);">Ready for ${p.next.replace(/_/g,' ')}${p.nextReq?' (needs '+p.nextReq+')':''}</div>` : '<div style="font-family:var(--font);font-size:10px;color:var(--text3);">Peak tier — consolidate load</div>'}
+        </div>`;
+      }).join('')}
+    </div>` : '') +
+
+    // ── Closest to progression ─────────────────────────────────────────────────
+    (closeItems.length ? `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">CLOSEST TO NEXT LEVEL</div>
+      ${closeItems.map(p=>`
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="switchProgTab('exercise');selectExercise('${p.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+            <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
+            <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${p.sessionsHit}/${p.needed} sessions</div>
+          </div>
+          <div style="height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;">
+            <div style="height:100%;background:var(--amber);width:${p.pct}%;border-radius:2px;box-shadow:0 0 4px rgba(245,158,11,0.3);transition:width 0.4s;"></div>
+          </div>
+        </div>`).join('')}
+    </div>` : '') +
+
+    // ── Weekly volume ──────────────────────────────────────────────────────────
     `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
       <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">WEEKLY VOLUME</div>
-      <div style="display:flex;align-items:flex-end;gap:4px;height:56px;">
-        ${weeks.map((w,i)=>{const h=Math.max(4,Math.round((weekVols[w]/weekMax)*56));return `<div style="flex:1;height:${h}px;background:${i===weeks.length-1?'var(--green)':'var(--border2)'};border-radius:2px 2px 0 0;"></div>`;}).join('')}
+      <div style="display:flex;align-items:flex-end;gap:4px;height:48px;">
+        ${weeks.map((w,i)=>{const h=Math.max(4,Math.round((weekVols[w]/weekMax)*48));return `<div style="flex:1;height:${h}px;background:${i===weeks.length-1?'var(--green)':'var(--border2)'};border-radius:2px 2px 0 0;"></div>`;}).join('')}
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:4px;">
         <span style="font-family:var(--font);font-size:9px;color:var(--text3);">${weeks[0]?.slice(5)||''}</span>
@@ -2046,23 +2148,25 @@ async function loadOverview() {
       </div>
     </div>` +
 
+    // ── Movement patterns ──────────────────────────────────────────────────────
     `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
-      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">MOVEMENT PATTERNS</div>
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">MOVEMENT BALANCE</div>
       ${Object.entries(patternSets).sort((a,b)=>b[1]-a[1]).map(([p,n])=>{
         const pct=Math.round((n/totalPS)*100);
         return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
-          <div style="font-family:var(--font-ui);font-size:9px;font-weight:600;color:var(--text2);width:70px;flex-shrink:0;text-transform:uppercase;">${p}</div>
+          <div style="font-family:var(--font-ui);font-size:9px;font-weight:600;color:var(--text2);width:60px;flex-shrink:0;text-transform:uppercase;">${p}</div>
           <div style="flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;"><div style="height:100%;background:var(--text3);width:${pct}%;border-radius:2px;"></div></div>
           <div style="font-family:var(--font);font-size:10px;color:var(--text3);width:28px;text-align:right;">${pct}%</div>
         </div>`;
       }).join('')}
     </div>` +
 
+    // ── Recent sessions ────────────────────────────────────────────────────────
     (debriefs.length ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
       <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">RECENT SESSIONS</div>
       ${debriefs.map(d=>{
-        const oc = d.outcome||d.performance_signal||'';
-        const col = outcomeColour[oc]||'var(--text3)';
+        const oc=d.outcome||d.performance_signal||'';
+        const col=outcomeColour[oc]||'var(--text3)';
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
           <div>
             <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${d.session_type}</div>
@@ -2074,10 +2178,23 @@ async function loadOverview() {
     </div>` : '');
 }
 
-function loadProgress() { loadExerciseProgress(); }
-
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
+function applyProgression(fromId, toId, fromName, toName) {
+  const already = pendingProgressions.findIndex(p => p.from === fromId);
+  if (already >= 0) {
+    pendingProgressions.splice(already, 1);
+    const btn = document.getElementById('apply-prog-' + fromId);
+    if (btn) { btn.textContent = 'Apply →'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'rgba(34,197,94,0.3)'; }
+    return;
+  }
+  pendingProgressions.push({ from: fromId, to: toId, fromName, toName });
+  const btn = document.getElementById('apply-prog-' + fromId);
+  if (btn) { btn.textContent = '✓ Queued'; btn.style.color = 'var(--text3)'; btn.style.borderColor = 'var(--border2)'; }
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--green);border-radius:8px;padding:8px 16px;font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--green);letter-spacing:0.06em;z-index:200;white-space:nowrap;';
+  toast.textContent = toName ? `${toName} queued for next session` : `${fromName} — peak tier noted`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2500);
+}
 // ── Session history ───────────────────────────────────────────────────────────
 let histFilter = '', histOffset = 0, histLoading = false;
 
