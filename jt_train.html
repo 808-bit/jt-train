@@ -2011,14 +2011,16 @@ async function loadExerciseProgress(exerciseId) {
 
 async function loadOverview() {
   const content = document.getElementById('prog-overview-content');
-  const [debriefRes, allSetsRes, progTreeRes] = await Promise.all([
+  const [debriefRes, allSetsRes, progTreeRes, sessionsRes] = await Promise.all([
     api('getRecentDebriefs', { limit: 10 }),
     api('getAllProgressionData', { limit: 2000 }),
-    api('getProgressionTree')
+    api('getProgressionTree'),
+    api('getSessions', { limit: 50 })
   ]);
   const debriefs  = debriefRes.data  || [];
   const allSets   = allSetsRes.data  || [];
   const progRules = progTreeRes.data || [];
+  const sessions  = sessionsRes.sessions || [];
 
   // ── Streak ────────────────────────────────────────────────────────────────
   const getWeekKey = dateStr => {
@@ -2033,7 +2035,11 @@ async function loadOverview() {
   const thisWeek = getWeekKey(todayStr);
   const lastWeek = getWeekKey(lastWeekStr);
   const sessionsByWeek = {};
-  allSets.forEach(s => { const w = getWeekKey(s.date); sessionsByWeek[w] = sessionsByWeek[w] || new Set(); sessionsByWeek[w].add(s.date); });
+  sessions.forEach(s => {
+    const w = getWeekKey(s.date);
+    sessionsByWeek[w] = sessionsByWeek[w] || new Set();
+    sessionsByWeek[w].add(s.date);
+  });
   const thisCount = (sessionsByWeek[thisWeek]?.size || 0);
   const lastCount = (sessionsByWeek[lastWeek]?.size || 0);
   const streakDelta = thisCount - lastCount;
