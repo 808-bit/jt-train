@@ -252,7 +252,7 @@ async function handlePost(request, env) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       r.session_id || '', r.exercise_id || '', r.set_num || 1,
-      r.reps || null, r.weight_kg || 0, r.rir || null, r.tempo || null, r.notes || null,
+      r.reps || null, r.weight_kg || 0, r.rir || null, r.tempo || null, r.notes || null, r.tut_seconds || null, r.rest_seconds || null,
     ).run();
     return json({ ok: true });
   }
