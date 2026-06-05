@@ -1944,6 +1944,10 @@ async function loadExerciseProgress(exerciseId) {
   const bestWeight = Math.max(0, ...sets.map(s => parseFloat(s.weight_kg) || 0));
   const recentSets = sets.slice(0, 8);
 
+  // Best set details for PB card
+  const bestE1rm = Math.max(0, ...sets.map(s => parseFloat(s.estimated_1rm) || 0));
+  const pbSet = sets.find(s => parseFloat(s.estimated_1rm) >= bestE1rm) || sets[0];
+
   const bySession = {};
   sets.forEach(s => {
     const k = s.date;
@@ -1977,6 +1981,19 @@ async function loadExerciseProgress(exerciseId) {
         <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-top:3px;">TOTAL SETS</div>
       </div>
     </div>` +
+
+    // PB highlight card
+    (pbSet ? `<div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;margin-bottom:4px;">🏆 PERSONAL BEST</div>
+        <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1;">${isBW ? bestReps + ' reps' : bestWeight + 'kg'}</div>
+        ${!isBW && bestE1rm > 0 ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:2px;">e1RM ${bestE1rm.toFixed(1)}kg</div>` : ''}
+      </div>
+      <div style="text-align:right;">
+        <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${pbSet.date?.slice(5) || ''}</div>
+        <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:2px;">${pbSet.reps} reps${pbSet.weight_kg > 0 ? ' @ '+pbSet.weight_kg+'kg' : ''}</div>
+      </div>
+    </div>` : '') +
 
     // Tier card
     (rule ? `<div style="background:var(--bg2);border:1px solid var(--border);border-left:2px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
@@ -2219,7 +2236,28 @@ async function loadOverview() {
           <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:${col};letter-spacing:0.1em;padding:3px 8px;border:1px solid ${col};border-radius:4px;opacity:0.8;">${oc.toUpperCase()}</div>
         </div>`;
       }).join('')}
-    </div>` : '');
+    </div>` : '') +
+
+    // ── All-time PBs ──────────────────────────────────────────────────────────
+    (() => {
+      const pbRows = Object.entries(allTimeMax)
+        .filter(([id, v]) => v > 0)
+        .sort((a,b) => b[1]-a[1])
+        .slice(0, 12)
+        .map(([id, v]) => {
+          const exName = exercises.find(e => e.id === id)?.display_name || id;
+          const bestSet = allSets.filter(s => s.exercise_id === id)
+            .sort((a,b) => (parseFloat(b.estimated_1rm)||0) - (parseFloat(a.estimated_1rm)||0))[0];
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
+            <div style="font-family:var(--font-ui);font-size:11px;font-weight:500;color:var(--text2);">${exName}</div>
+            <div style="font-family:var(--font);font-size:11px;color:var(--text);white-space:nowrap;">${bestSet ? bestSet.reps+'r'+(bestSet.weight_kg>0?' @ '+bestSet.weight_kg+'kg':'') : '—'}</div>
+          </div>`;
+        }).join('');
+      return pbRows ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">🏆 ALL-TIME BESTS</div>
+        ${pbRows}
+      </div>` : '';
+    })();
 }
 
 function applyProgression(fromId, toId, fromName, toName) {
