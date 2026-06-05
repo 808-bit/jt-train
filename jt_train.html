@@ -2107,6 +2107,18 @@ async function loadOverview() {
   const readyItems = progScores.filter(p => p.ready).slice(0,3);
   const closeItems = progScores.filter(p => !p.ready && p.pct >= 40).slice(0,4);
 
+  // ── Weekly volume ──────────────────────────────────────────────────────────
+  const weekVols = {};
+  allSets.forEach(s => { const w = getWeekKey(s.date); if (!weekVols[w]) weekVols[w] = 0; weekVols[w] += (parseInt(s.reps)||0)*(parseFloat(s.estimated_1rm)||1); });
+  const weeks   = Object.keys(weekVols).sort().slice(-8);
+  const weekMax = Math.max(...weeks.map(w=>weekVols[w]), 1);
+
+  // ── Movement patterns ──────────────────────────────────────────────────────
+  const patternSets = {};
+  allSets.forEach(s => { const ex = exercises.find(e=>e.id===s.exercise_id); const p=ex?.movement_pattern||'other'; patternSets[p]=(patternSets[p]||0)+1; });
+  const totalPS = Object.values(patternSets).reduce((a,b)=>a+b,0);
+  const outcomeColour = { progressed:'var(--green)', maintained:'var(--text2)', declined:'var(--amber)', incomplete:'var(--text3)' };
+
   // ── Progression tier groupings ────────────────────────────────────────────
   const accomplished = progScores.filter(p => p.ready);
   const thisClose    = progScores.filter(p => !p.ready && p.pct >= 50);
