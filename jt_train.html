@@ -2086,12 +2086,17 @@ async function loadOverview() {
   // ── PBs this month ─────────────────────────────────────────────────────────
   const thisMonth = new Date().toLocaleDateString('en-CA').slice(0,7);
   const allTimeMax = {};
+  const allTimeBestSet = {}; // best set per exercise for display
   const monthMax   = {};
   allSets.forEach(s => {
     const e1rm = parseFloat(s.estimated_1rm) || 0;
     const wt   = parseFloat(s.weight_kg) || 0;
-    const val  = e1rm > 0 ? e1rm : wt; // fallback to weight for BW exercises
-    if (!allTimeMax[s.exercise_id] || val > allTimeMax[s.exercise_id]) allTimeMax[s.exercise_id] = val;
+    const reps = parseInt(s.reps) || 0;
+    const val  = e1rm > 0 ? e1rm : (wt > 0 ? wt : reps); // fallback chain
+    if (!allTimeMax[s.exercise_id] || val > allTimeMax[s.exercise_id]) {
+      allTimeMax[s.exercise_id] = val;
+      allTimeBestSet[s.exercise_id] = s;
+    }
     if (s.date?.startsWith(thisMonth)) {
       if (!monthMax[s.exercise_id] || val > monthMax[s.exercise_id]) monthMax[s.exercise_id] = val;
     }
@@ -2244,10 +2249,9 @@ async function loadOverview() {
         .filter(([id, v]) => v > 0)
         .sort((a,b) => b[1]-a[1])
         .slice(0, 12)
-        .map(([id, v]) => {
+        .map(([id]) => {
           const exName = exercises.find(e => e.id === id)?.display_name || id;
-          const bestSet = allSets.filter(s => s.exercise_id === id)
-            .sort((a,b) => (parseFloat(b.estimated_1rm)||0) - (parseFloat(a.estimated_1rm)||0))[0];
+          const bestSet = allTimeBestSet[id];
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
             <div style="font-family:var(--font-ui);font-size:11px;font-weight:500;color:var(--text2);">${exName}</div>
             <div style="font-family:var(--font);font-size:11px;color:var(--text);white-space:nowrap;">${bestSet ? bestSet.reps+'r'+(bestSet.weight_kg>0?' @ '+bestSet.weight_kg+'kg':'') : '—'}</div>
