@@ -2067,20 +2067,22 @@ async function loadOverview() {
   const streakDelta = thisCount - lastCount;
 
   // ── PBs this month ─────────────────────────────────────────────────────────
-  const thisMonth = new Date().toISOString().slice(0,7);
+  const thisMonth = new Date().toLocaleDateString('en-CA').slice(0,7);
   const allTimeMax = {};
   const monthMax   = {};
   allSets.forEach(s => {
     const e1rm = parseFloat(s.estimated_1rm) || 0;
-    if (!allTimeMax[s.exercise_id] || e1rm > allTimeMax[s.exercise_id]) allTimeMax[s.exercise_id] = e1rm;
+    const wt   = parseFloat(s.weight_kg) || 0;
+    const val  = e1rm > 0 ? e1rm : wt; // fallback to weight for BW exercises
+    if (!allTimeMax[s.exercise_id] || val > allTimeMax[s.exercise_id]) allTimeMax[s.exercise_id] = val;
     if (s.date?.startsWith(thisMonth)) {
-      if (!monthMax[s.exercise_id] || e1rm > monthMax[s.exercise_id]) monthMax[s.exercise_id] = e1rm;
+      if (!monthMax[s.exercise_id] || val > monthMax[s.exercise_id]) monthMax[s.exercise_id] = val;
     }
   });
   const pbs = Object.entries(monthMax)
     .filter(([id, v]) => v > 0 && v >= (allTimeMax[id] || 0))
     .map(([id]) => exercises.find(e => e.id === id)?.display_name || id)
-    .slice(0, 4);
+    .slice(0, 6);
 
   // ── Progression proximity ──────────────────────────────────────────────────
   // For each exercise with a rule, check how many recent sessions hit the rep target
@@ -2167,7 +2169,7 @@ async function loadOverview() {
         <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">PBs THIS MONTH</div>
         ${pbs.length
           ? `<div style="font-family:var(--font-display);font-size:36px;color:var(--green);line-height:1;">${pbs.length}</div>
-             <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">${pbs.slice(0,2).join(', ')}${pbs.length>2?' +'+( pbs.length-2)+' more':''}</div>`
+             <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;line-height:1.6;">${pbs.join('<br>')}</div>`
           : `<div style="font-family:var(--font-display);font-size:36px;color:var(--text3);line-height:1;">0</div>
              <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">none yet this month</div>`}
       </div>
