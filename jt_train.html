@@ -690,7 +690,7 @@ const W = 'https://jt-workout-worke.james-thornton88.workers.dev';
 
 let sType = 'Full Body A', loc = 'Home';
 let preSleep = 3, preEnergy = 3, preSoreness = 3;
-let pendingProgressions = []; // queued exercise progressions for next plan gen
+let pendingProgressions = JSON.parse(localStorage.getItem('pendingProgressions') || '[]');
 
 function adjustSignal(key, delta) {
   if (key === 'sleep')    { preSleep    = Math.min(5, Math.max(1, preSleep    + delta)); document.getElementById('sig-sleep').textContent    = preSleep; }
@@ -1311,6 +1311,7 @@ Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the p
     const parsed = JSON.parse(clean);
     plan = parsed.exercises || [];
     pendingProgressions = [];
+    localStorage.removeItem('pendingProgressions');
     document.getElementById('review-title').textContent = sType;
     document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
     document.getElementById('review-chat').innerHTML = '';
@@ -2106,8 +2107,41 @@ async function loadOverview() {
   const readyItems = progScores.filter(p => p.ready).slice(0,3);
   const closeItems = progScores.filter(p => !p.ready && p.pct >= 40).slice(0,4);
 
-  // ── Weekly volume ──────────────────────────────────────────────────────────
-  const weekVols = {};
+  // ── Progression tier groupings ────────────────────────────────────────────
+  const accomplished = progScores.filter(p => p.ready);
+  const thisClose    = progScores.filter(p => !p.ready && p.pct >= 50);
+  const building     = progScores.filter(p => !p.ready && p.pct > 0 && p.pct < 50);
+
+  const renderProgTier = (items, tier) => {
+    if (!items.length) return '';
+    const configs = {
+      accomplished: { label:'🏆 ACCOMPLISHED', colour:'var(--green)', borderColour:'rgba(34,197,94,0.3)', bg:'rgba(34,197,94,0.05)', barColour:'var(--green)' },
+      thisClose:    { label:'⚡ THIS CLOSE',   colour:'var(--amber)', borderColour:'rgba(245,158,11,0.3)', bg:'rgba(245,158,11,0.05)', barColour:'var(--amber)' },
+      building:     { label:'🎯 BUILDING',     colour:'var(--text3)', borderColour:'var(--border)',        bg:'var(--bg2)',            barColour:'var(--text3)' },
+    };
+    const c = configs[tier];
+    return `<div style="background:${c.bg};border:1px solid ${c.borderColour};border-radius:10px;padding:12px 14px;margin-bottom:10px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:${c.colour};letter-spacing:0.18em;margin-bottom:10px;">${c.label}</div>
+      ${items.map(p => {
+        const alreadyQueued = pendingProgressions.some(q => q.from === p.id);
+        return `<div style="padding:8px 0;border-bottom:1px solid ${c.borderColour};cursor:pointer;" onclick="switchProgTab('exercise');selectExercise('${p.id}')">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${tier==='building'?'0':'5px'};">
+            <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${p.sessionsHit}/${p.needed}</div>
+              ${tier === 'accomplished' ? `<button id="apply-prog-${p.id}" onclick="event.stopPropagation();applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?p.next.replace(/_/g,' '):''}')"
+                style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${alreadyQueued?'var(--text3)':'var(--green)'};background:none;border:1px solid ${alreadyQueued?'var(--border2)':'rgba(34,197,94,0.4)'};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;">
+                ${alreadyQueued ? '✓ Queued' : 'Apply →'}
+              </button>` : ''}
+            </div>
+          </div>
+          ${tier !== 'building' ? `<div style="height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-bottom:4px;"><div style="height:100%;background:${c.barColour};width:${Math.min(100,p.pct)}%;border-radius:2px;box-shadow:0 0 4px ${c.borderColour};"></div></div>` : ''}
+          ${tier === 'accomplished' && p.next ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);">→ ${p.next.replace(/_/g,' ')}${p.nextReq?' (needs '+p.nextReq+')':''}</div>` : ''}
+          ${tier === 'thisClose' ? `<div style="font-family:var(--font);font-size:10px;color:var(--amber);">One more session at target → advance</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+  };
   allSets.forEach(s => { const w = getWeekKey(s.date); if (!weekVols[w]) weekVols[w] = 0; weekVols[w] += (parseInt(s.reps)||0)*(parseFloat(s.estimated_1rm)||1); });
   const weeks   = Object.keys(weekVols).sort().slice(-8);
   const weekMax = Math.max(...weeks.map(w=>weekVols[w]), 1);
@@ -2136,40 +2170,10 @@ async function loadOverview() {
       </div>
     </div>` +
 
-    // ── Earned it ──────────────────────────────────────────────────────────────
-    (readyItems.length ? `
-    <div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
-      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;margin-bottom:10px;">🏆 TARGET HIT</div>
-      ${readyItems.map(p => {
-        const alreadyQueued = pendingProgressions.some(q => q.from === p.id);
-        return `<div style="padding:8px 0;border-bottom:1px solid rgba(34,197,94,0.12);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
-            <button id="apply-prog-${p.id}" onclick="applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?.replace(/_/g,' ')||''}')"
-              style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${alreadyQueued?'var(--text3)':'var(--green)'};background:none;border:1px solid ${alreadyQueued?'var(--border2)':'rgba(34,197,94,0.3)'};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;">
-              ${alreadyQueued ? '✓ Queued' : 'Apply →'}
-            </button>
-          </div>
-          ${p.next ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);">Ready for ${p.next.replace(/_/g,' ')}${p.nextReq?' (needs '+p.nextReq+')':''}</div>` : '<div style="font-family:var(--font);font-size:10px;color:var(--text3);">Peak tier — consolidate load</div>'}
-        </div>`;
-      }).join('')}
-    </div>` : '') +
-
-    // ── Closest to progression ─────────────────────────────────────────────────
-    (closeItems.length ? `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
-      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">CLOSEST TO NEXT LEVEL</div>
-      ${closeItems.map(p=>`
-        <div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="switchProgTab('exercise');selectExercise('${p.id}')">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
-            <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
-            <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${p.sessionsHit}/${p.needed} sessions</div>
-          </div>
-          <div style="height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;">
-            <div style="height:100%;background:var(--amber);width:${p.pct}%;border-radius:2px;box-shadow:0 0 4px rgba(245,158,11,0.3);transition:width 0.4s;"></div>
-          </div>
-        </div>`).join('')}
-    </div>` : '') +
+    // ── Progression tiers ──────────────────────────────────────────────────────
+    renderProgTier(accomplished, 'accomplished') +
+    renderProgTier(thisClose, 'thisClose') +
+    renderProgTier(building, 'building') +
 
     // ── Weekly volume ──────────────────────────────────────────────────────────
     `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
@@ -2217,11 +2221,13 @@ function applyProgression(fromId, toId, fromName, toName) {
   const already = pendingProgressions.findIndex(p => p.from === fromId);
   if (already >= 0) {
     pendingProgressions.splice(already, 1);
+    localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
     const btn = document.getElementById('apply-prog-' + fromId);
     if (btn) { btn.textContent = 'Apply →'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'rgba(34,197,94,0.3)'; }
     return;
   }
   pendingProgressions.push({ from: fromId, to: toId, fromName, toName });
+  localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
   const btn = document.getElementById('apply-prog-' + fromId);
   if (btn) { btn.textContent = '✓ Queued'; btn.style.color = 'var(--text3)'; btn.style.borderColor = 'var(--border2)'; }
   const toast = document.createElement('div');
