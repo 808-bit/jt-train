@@ -2155,12 +2155,6 @@ async function loadOverview() {
     </div>`;
   };
 
-  // ── Movement patterns ──────────────────────────────────────────────────────
-  const patternSets = {};
-  allSets.forEach(s => { const ex = exercises.find(e=>e.id===s.exercise_id); const p=ex?.movement_pattern||'other'; patternSets[p]=(patternSets[p]||0)+1; });
-  const totalPS = Object.values(patternSets).reduce((a,b)=>a+b,0);
-  const outcomeColour = { progressed:'var(--green)', maintained:'var(--text2)', declined:'var(--amber)', incomplete:'var(--text3)' };
-
   content.innerHTML =
     // ── Streak + PBs ──────────────────────────────────────────────────────────
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
