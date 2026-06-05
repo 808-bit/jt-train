@@ -2154,9 +2154,6 @@ async function loadOverview() {
       }).join('')}
     </div>`;
   };
-  allSets.forEach(s => { const w = getWeekKey(s.date); if (!weekVols[w]) weekVols[w] = 0; weekVols[w] += (parseInt(s.reps)||0)*(parseFloat(s.estimated_1rm)||1); });
-  const weeks   = Object.keys(weekVols).sort().slice(-8);
-  const weekMax = Math.max(...weeks.map(w=>weekVols[w]), 1);
 
   // ── Movement patterns ──────────────────────────────────────────────────────
   const patternSets = {};
