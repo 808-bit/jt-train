@@ -1,0 +1,15 @@
+{
+  "name": "JT.TRAIN",
+  "short_name": "JT.TRAIN",
+  "description": "Personal AI workout coach",
+  "start_url": "/jt-train/jt_train.html",
+  "scope": "/jt-train/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/jt-train/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/jt-train/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

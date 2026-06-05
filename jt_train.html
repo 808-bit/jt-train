@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JT.TRAIN">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>JT.TRAIN</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1107,6 +1113,7 @@ async function logSet() {
 
 // ── End session modal ─────────────────────────────────────────────────────────
 function endSession() {
+  releaseWakeLock();
   const exDone = new Set(loggedSets.map(s=>s.exercise_id)).size;
   const totalSets = loggedSets.length;
   const statsEl = document.getElementById('modal-stats');
@@ -1333,6 +1340,7 @@ async function startSession() {
   chat.innerHTML = '';
   goScreen('s-active');
   startSessionTimer();
+  requestWakeLock();
   initSetLogger();
   renderQuickChips();
   apiPost({
@@ -2425,6 +2433,38 @@ function jumpToExercise(exerciseId) {
 
 
 init();
+</script>
+<script>
+// ── Service Worker ────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/jt-train/sw.js').catch(e => console.log('SW:', e));
+}
+
+// ── Wake Lock — prevent screen sleep during active session ────────────────────
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    console.log('Wake lock active');
+  } catch (e) {
+    console.log('Wake lock failed:', e.message);
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock) {
+    wakeLock.release().then(() => { wakeLock = null; console.log('Wake lock released'); });
+  }
+}
+
+// Re-acquire wake lock if page becomes visible again (e.g. after background)
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && sessionId && !wakeLock) {
+    await requestWakeLock();
+  }
+});
 </script>
 </body>
 </html>
