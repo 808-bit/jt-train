@@ -664,8 +664,9 @@
     <!-- EXERCISE TAB -->
     <div id="prog-exercise-tab" style="display:none;">
       <!-- Category filter -->
-      <div style="display:flex;gap:6px;margin-bottom:8px;" id="category-filters">
-        <button class="pill active" id="pcat-all" onclick="filterExCategory('all',this)">All</button>
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;" id="category-filters">
+        <button class="pill" id="pcat-all" onclick="filterExCategory('all',this)">All</button>
+        <button class="pill active" id="pcat-data" onclick="filterExCategory('data',this)">Has Data</button>
         <button class="pill" id="pcat-calisthenics" onclick="filterExCategory('calisthenics',this)">Calisthenics</button>
         <button class="pill" id="pcat-loaded" onclick="filterExCategory('loaded',this)">Loaded</button>
         <button class="pill" id="pcat-rules" onclick="filterExCategory('rules',this)">Has Progression</button>
@@ -2033,14 +2034,19 @@ function discardSession() {
 // ── Progress screen ───────────────────────────────────────────────────────────
 let progData = [], progMetric = 'e1rm', progChart = null, progIsBW = false, progAllSets = [];
 
-let exCategory = 'all';
+let exCategory = 'data'; // default to exercises with data
 let exPattern = 'all';
-let progRuleIds = new Set(); // exercise IDs with progression rules
+let progRuleIds = new Set();
+let exercisesWithData = new Set();
 
 function initProgress() {
-  // Load progression rule IDs for filtering
-  api('getProgressionTree').then(r => {
-    progRuleIds = new Set((r.data||[]).map(p => p.exercise_id));
+  // Load progression rules + set history to know which exercises have data
+  Promise.all([
+    api('getProgressionTree'),
+    api('getAllProgressionData', { limit: 2000 })
+  ]).then(([progRes, setsRes]) => {
+    progRuleIds = new Set((progRes.data||[]).map(p => p.exercise_id));
+    (setsRes.data||[]).forEach(s => exercisesWithData.add(s.exercise_id));
     renderExPicker();
   });
   renderExPicker();
@@ -2069,6 +2075,7 @@ function renderExPicker() {
   if (!grid) return;
   let filtered = exercises.filter(e => {
     if (exPattern !== 'all' && e.movement_pattern !== exPattern) return false;
+    if (exCategory === 'data') return exercisesWithData.has(e.id);
     if (exCategory === 'calisthenics') {
       const eq = (e.equipment||'').toLowerCase();
       return CALISTHENICS_EQUIPMENT.some(c => eq.includes(c)) || (!e.weight_kg && e.weight_kg !== 0);
