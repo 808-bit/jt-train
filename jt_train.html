@@ -658,6 +658,7 @@
       <button class="prog-tab" id="ptab-exercise" onclick="switchProgTab('exercise')">EXERCISE</button>
       <button class="prog-tab active" id="ptab-overview" onclick="switchProgTab('overview')">OVERVIEW</button>
       <button class="prog-tab" id="ptab-tree" onclick="switchProgTab('tree')">TREE</button>
+      <button class="prog-tab" id="ptab-review" onclick="switchProgTab('review')">REVIEW</button>
     </div>
 
     <!-- EXERCISE TAB -->
@@ -698,6 +699,17 @@
     <div id="prog-tree-tab" style="display:none;">
       <div id="prog-tree-content">
         <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading progression tree...</div>
+      </div>
+    </div>
+
+    <!-- REVIEW TAB -->
+    <div id="prog-review-tab" style="display:none;">
+      <div id="prog-review-content">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;">
+          <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">6-WEEK COACH REVIEW</div>
+          <div style="font-family:var(--font);font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6;">A full sports science analysis of your training. Volume trends, movement balance, progression velocity, recovery patterns.</div>
+          <button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:12px;font-weight:700;color:var(--bg);background:var(--green);border:none;border-radius:8px;padding:12px 24px;cursor:pointer;letter-spacing:0.06em;">Generate Review →</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2099,6 +2111,7 @@ function switchProgTab(tab) {
   document.getElementById('prog-exercise-tab').style.display = tab === 'exercise' ? '' : 'none';
   document.getElementById('prog-overview-tab').style.display  = tab === 'overview'  ? '' : 'none';
   document.getElementById('prog-tree-tab').style.display      = tab === 'tree'      ? '' : 'none';
+  document.getElementById('prog-review-tab').style.display    = tab === 'review'    ? '' : 'none';
   document.querySelectorAll('.prog-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('ptab-' + tab).classList.add('active');
   if (tab === 'overview') loadOverview();
@@ -2284,6 +2297,109 @@ async function loadTreeTab() {
       </div>
     </div>`;
   }).join('');
+}
+
+// ── Coach Review ──────────────────────────────────────────────────────────────
+async function generateCoachReview() {
+  const content = document.getElementById('prog-review-content');
+  content.innerHTML = `<div style="text-align:center;padding:48px 0;">
+    <div style="font-family:var(--font);font-size:12px;color:var(--text3);margin-bottom:8px;">Analysing 6 weeks of training data...</div>
+    <div class="typing" style="justify-content:center;"><span></span><span></span><span></span></div>
+  </div>`;
+
+  try {
+    const sixWeeksAgo = new Date();
+    sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
+    const cutoff = sixWeeksAgo.toLocaleDateString('en-CA');
+
+    const [allSetsRes, debriefRes, sessionsRes] = await Promise.all([
+      api('getAllProgressionData', { limit: 2000 }),
+      api('getRecentDebriefs', { limit: 20 }),
+      api('getSessions', { limit: 30 })
+    ]);
+
+    const allSets  = (allSetsRes.data     || []).filter(s => s.date >= cutoff);
+    const debriefs = (debriefRes.data     || []).filter(d => d.date >= cutoff);
+    const sessions = (sessionsRes.sessions|| []).filter(s => s.date >= cutoff);
+
+    const totalVolume = allSets.reduce((s,e) => s + (parseInt(e.reps)||0)*(parseFloat(e.weight_kg)||1), 0);
+    const byPattern = {};
+    allSets.forEach(s => { const ex = exercises.find(e=>e.id===s.exercise_id); const p=ex?.movement_pattern||'other'; byPattern[p]=(byPattern[p]||0)+1; });
+    const weeklyVols = {};
+    allSets.forEach(s => { const d=new Date(s.date); const mon=new Date(d-((d.getDay()||7)-1)*86400000); const w=mon.toISOString().slice(0,10); weeklyVols[w]=(weeklyVols[w]||0)+(parseInt(s.reps)||0)*(parseFloat(s.weight_kg)||1); });
+
+    const system = `You are a sports scientist reviewing 6 weeks of training data for James. Be direct, specific, evidence-based. No filler. Reference actual numbers.
+
+TRAINING DATA (last 6 weeks):
+Sessions: ${sessions.length}
+Total sets: ${allSets.length}
+Total volume: ${Math.round(totalVolume)}kg
+Movement pattern breakdown: ${Object.entries(byPattern).map(([p,n])=>`${p}: ${n} sets`).join(', ')}
+Weekly volume trend: ${Object.entries(weeklyVols).sort().map(([w,v])=>`${w.slice(5)}: ${Math.round(v)}kg`).join(', ')}
+
+DEBRIEFS:
+${debriefs.map(d=>`${d.date} ${d.session_type}: ${d.performance_signal}, ${d.outcome||''}, ${d.total_sets}sets ${d.total_volume_kg}kg. ${d.recommendation}`).join('\n')}
+
+Return ONLY valid JSON, no markdown:
+{
+  "period": "date range covered",
+  "headline": "One sentence overall assessment",
+  "signal": "improving|stable|declining",
+  "sections": [
+    {"title":"Volume & Load","finding":"2-3 sentences with specific numbers","status":"good|warning|attention","action":"One specific actionable change"},
+    {"title":"Movement Balance","finding":"Push/pull/hinge/squat distribution analysis","status":"good|warning|attention","action":"One specific actionable change"},
+    {"title":"Recovery & Readiness","finding":"How readiness signals correlate with performance","status":"good|warning|attention","action":"One specific actionable change"},
+    {"title":"Progression Velocity","finding":"Which exercises are moving, which are stalling","status":"good|warning|attention","action":"One specific actionable change"}
+  ],
+  "next_6_weeks": "3 specific priorities for the next training block. Be directive.",
+  "risk_flags": ["Any injury risk or overtraining signals worth flagging"]
+}`;
+
+    const raw = await claude(system, [{ role:'user', content:'Analyse my last 6 weeks.' }], SONNET);
+    const jsonStart = raw.indexOf('{');
+    const jsonEnd   = raw.lastIndexOf('}');
+    const review = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+
+    const sigCol = { improving:'var(--green)', stable:'var(--text2)', declining:'var(--amber)' }[review.signal] || 'var(--text2)';
+    const sigIcon = { improving:'↑', stable:'→', declining:'↓' }[review.signal] || '→';
+    const stCol = { good:'var(--green)', warning:'var(--amber)', attention:'#ef4444' };
+    const stLbl = { good:'✓ GOOD', warning:'⚠ WATCH', attention:'⚡ FIX' };
+
+    content.innerHTML =
+      `<div style="background:var(--bg2);border:1px solid var(--border);border-left:2px solid ${sigCol};border-radius:10px;padding:14px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;">6-WEEK REVIEW · ${review.period}</div>
+          <div style="font-family:var(--font-display);font-size:20px;color:${sigCol};">${sigIcon} ${review.signal.toUpperCase()}</div>
+        </div>
+        <div style="font-family:var(--font);font-size:13px;color:var(--text);line-height:1.6;">${review.headline}</div>
+      </div>` +
+
+      review.sections.map(s => `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--text);">${s.title}</div>
+          <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:${stCol[s.status]||'var(--text3)'};letter-spacing:0.1em;">${stLbl[s.status]||s.status}</div>
+        </div>
+        <div style="font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:8px;">${s.finding}</div>
+        <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--green);background:rgba(34,197,94,0.06);border-radius:6px;padding:6px 10px;">→ ${s.action}</div>
+      </div>`).join('') +
+
+      `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;">
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">NEXT 6 WEEKS</div>
+        <div style="font-family:var(--font);font-size:12px;color:var(--text);line-height:1.7;">${review.next_6_weeks}</div>
+      </div>` +
+
+      (review.risk_flags?.length ? `
+      <div style="background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:12px 14px;margin-bottom:10px;">
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:#ef4444;letter-spacing:0.18em;margin-bottom:8px;">⚠ FLAGS</div>
+        ${review.risk_flags.map(f=>`<div style="font-family:var(--font);font-size:11px;color:var(--text2);margin-bottom:4px;">· ${f}</div>`).join('')}
+      </div>` : '') +
+
+      `<button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:6px;padding:8px 16px;cursor:pointer;width:100%;letter-spacing:0.06em;">↺ Regenerate</button>`;
+
+  } catch(e) {
+    content.innerHTML = `<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Review failed — ${e.message}<br><br><button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;color:var(--green);background:none;border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:6px 14px;cursor:pointer;">Retry</button></div>`;
+  }
 }
 
 async function loadExerciseProgress(exerciseId) {
