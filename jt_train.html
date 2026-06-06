@@ -756,6 +756,9 @@ function adjustSignal(key, delta) {
   const el = document.getElementById('sig-' + key);
   const val = key === 'sleep' ? preSleep : key === 'energy' ? preEnergy : preSoreness;
   el.style.color = val <= 2 ? 'var(--amber)' : val >= 4 ? 'var(--green)' : 'var(--text)';
+  // Debounce — wait 800ms after last change before re-running recommendation
+  clearTimeout(window._signalTimer);
+  window._signalTimer = setTimeout(() => autoRecommend(), 800);
 }
 let injuries = [], exercises = [], history = { sessions: [], sets: [] };
 let plan = [], chatLog = [], sessionId = '', loggedSets = [];
@@ -1525,8 +1528,8 @@ async function startSession() {
           <span style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${i+1}. ${e.display_name}</span>
           <span style="font-family:var(--font);font-size:10px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:4px;border:1px solid var(--border);">${e.sets}×${e.reps}</span>
         </div>
-        <div style="font-family:var(--font);font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-bottom:${e.notes ? '5px' : '0'};">${e.weight} &nbsp;·&nbsp; ${e.reps} reps &nbsp;·&nbsp; ${e.rir} left</div>
-        ${e.notes ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);font-style:italic;line-height:1.55;">${e.notes}</div>` : ''}
+        <div style="font-family:var(--font);font-size:11px;color:var(--text2);letter-spacing:0.04em;margin-bottom:${e.notes ? '5px' : '0'};">${e.weight} &nbsp;·&nbsp; ${e.reps} reps &nbsp;·&nbsp; ${e.rir} left</div>
+        ${e.notes ? `<div style="font-family:var(--font);font-size:11px;color:var(--text2);font-style:italic;line-height:1.6;margin-top:4px;">${e.notes}</div>` : ''}
       </div>`).join('')}
     <div style="font-family:var(--font);font-size:11px;color:var(--text3);padding:4px 2px;">Start with ${plan[0]?.display_name}. Log each set as you go.</div>`;
   chat.appendChild(planWrap);
@@ -1867,7 +1870,7 @@ function renderPlanCards(parsed) {
   cards.innerHTML = '';
   if (parsed.session_notes) {
     const note = document.createElement('div');
-    note.style.cssText = 'font-size:12px;color:#555;margin-bottom:16px;font-style:italic;';
+    note.style.cssText = 'font-size:12px;color:var(--text2);margin-bottom:16px;font-style:italic;line-height:1.6;';
     note.textContent = parsed.session_notes;
     cards.appendChild(note);
   }
