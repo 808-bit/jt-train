@@ -399,22 +399,65 @@
   </div>
   <div class="idle-body">
     <div class="idle-inner">
-      <!-- Auto recommendation -->
-      <div id="rec-card" style="display:none;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px 14px;margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;">COACH RECOMMENDS</div>
-          <button onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:9px;color:var(--text3);background:none;border:none;cursor:pointer;letter-spacing:0.06em;">↺ Refresh</button>
+
+      <!-- Location + signals row (compact) -->
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <div class="pills" id="loc-pills" style="flex-shrink:0;">
+          <button class="pill active" onclick="selL(this,'Home')">Home</button>
+          <button class="pill" onclick="selL(this,'Travel')">Travel</button>
+          <button class="pill" onclick="selL(this,'Gym')">Gym</button>
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;">
-          <div>
-            <div id="rec-type" style="font-family:var(--font-ui);font-size:18px;font-weight:700;color:var(--text);"></div>
-            <div id="rec-reason" style="font-family:var(--font);font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5;max-width:240px;"></div>
+        <div style="display:flex;gap:6px;margin-left:auto;flex-shrink:0;">
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;min-width:52px;">
+            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">SLEEP</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('sleep',-1)">−</button>
+              <span id="sig-sleep" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('sleep',1)">+</button>
+            </div>
           </div>
-          <button type="button" onclick="acceptRecommendation()" style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--bg);background:var(--green);border:none;border-radius:6px;padding:8px 14px;cursor:pointer;letter-spacing:0.06em;flex-shrink:0;margin-left:12px;">Accept →</button>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;min-width:52px;">
+            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">ENERGY</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('energy',-1)">−</button>
+              <span id="sig-energy" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('energy',1)">+</button>
+            </div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;min-width:52px;">
+            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">SORE</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('soreness',-1)">−</button>
+              <span id="sig-soreness" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('soreness',1)">+</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="section">
-        <div class="lbl">SESSION TYPE</div>
+
+      <!-- Coach recommendation — hero card -->
+      <div id="rec-card" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;min-height:120px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;">COACH</div>
+          <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:9px;color:var(--text3);background:none;border:none;cursor:pointer;letter-spacing:0.06em;padding:0;">↺ Refresh</button>
+        </div>
+        <div id="rec-loading" style="font-family:var(--font);font-size:11px;color:var(--text3);">Analysing your training...</div>
+        <div id="rec-content" style="display:none;">
+          <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px;"></div>
+          <div id="rec-brief" style="font-family:var(--font);font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;"></div>
+          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text3);font-style:italic;"></div>
+        </div>
+      </div>
+
+      <!-- Injuries + override -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div class="inj-banner" id="inj-banner" style="cursor:pointer;flex:1;margin-right:8px;" onclick="showInjuryModal()">⚕ Manage injuries</div>
+        <button type="button" onclick="toggleOverride()" style="font-family:var(--font-ui);font-size:9px;font-weight:600;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:6px;padding:6px 10px;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;">Override ↓</button>
+      </div>
+
+      <!-- Override session type (hidden by default) -->
+      <div id="override-panel" style="display:none;margin-bottom:14px;">
+        <div class="lbl" style="margin-bottom:8px;">SESSION TYPE OVERRIDE</div>
         <div class="pills" id="session-pills">
           <button class="pill active" onclick="selS(this,'Full Body A')">Full Body A</button>
           <button class="pill" onclick="selS(this,'Full Body B')">Full Body B</button>
@@ -424,46 +467,10 @@
           <button class="pill" onclick="selS(this,'KB Only')">KB Only</button>
         </div>
       </div>
-      <div class="section">
-        <div class="lbl">LOCATION</div>
-        <div class="pills" id="loc-pills">
-          <button class="pill active" onclick="selL(this,'Home')">Home</button>
-          <button class="pill" onclick="selL(this,'Travel')">Travel</button>
-          <button class="pill" onclick="selL(this,'Gym')">Gym</button>
-        </div>
-      </div>
-      <div class="inj-banner" id="inj-banner" style="cursor:pointer;display:block;" onclick="showInjuryModal()">⚕ Manage injuries</div>
-      <div class="section">
-        <div class="lbl">PRE-SESSION SIGNALS</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
-            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">SLEEP</div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
-              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('sleep',-1)">−</button>
-              <span id="sig-sleep" style="font-family:var(--font-display);font-size:32px;color:var(--text);min-width:24px;line-height:1;">3</span>
-              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('sleep',1)">+</button>
-            </div>
-          </div>
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
-            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">ENERGY</div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
-              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('energy',-1)">−</button>
-              <span id="sig-energy" style="font-family:var(--font-display);font-size:32px;color:var(--text);min-width:24px;line-height:1;">3</span>
-              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('energy',1)">+</button>
-            </div>
-          </div>
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;">
-            <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">SORENESS</div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
-              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('soreness',-1)">−</button>
-              <span id="sig-soreness" style="font-family:var(--font-display);font-size:32px;color:var(--text);min-width:24px;line-height:1;">3</span>
-              <button class="sl-btn" style="width:26px;height:26px;font-size:14px;" onclick="adjustSignal('soreness',1)">+</button>
-            </div>
-          </div>
-        </div>
-        <div class="lbl">PRE-SESSION NOTES (optional)</div>
-        <textarea id="pre-notes" placeholder="e.g. Tired today, slept badly. Knee a bit stiff. Feeling strong and ready to push." style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:72px;outline:none;line-height:1.6;"></textarea>
-      </div>
+
+      <!-- Notes -->
+      <textarea id="pre-notes" placeholder="Anything to flag for the coach..." style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-size:12px;font-family:'DM Mono','Courier New',monospace;resize:none;height:60px;outline:none;line-height:1.6;margin-bottom:14px;"></textarea>
+
       <button class="btn-main" id="gen-btn" onclick="generatePlan()" disabled>Generate session →</button>
       <div class="status-line" id="status">Loading your data...</div>
     </div>
@@ -1260,14 +1267,11 @@ async function loadHistory() {
 
 // ── Auto session recommendation ───────────────────────────────────────────────
 let recommendedType = null;
+let coachBrief = null;
 
 async function autoRecommend() {
-  const card = document.getElementById('rec-card');
-  const recType = document.getElementById('rec-type');
-  const recReason = document.getElementById('rec-reason');
-  recType.textContent = '...';
-  recReason.textContent = 'Analysing your training...';
-  card.style.display = 'block';
+  document.getElementById('rec-loading').style.display = 'block';
+  document.getElementById('rec-content').style.display = 'none';
 
   try {
     const [sessRes, debriefRes] = await Promise.all([
@@ -1285,7 +1289,7 @@ async function autoRecommend() {
       `${d.date} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
     ).join('\n') || 'No debrief data';
 
-    const system = `You are a strength and conditioning coach. Recommend the next training session for James.
+    const system = `You are a strength and conditioning coach prescribing today's session for James.
 
 RECENT SESSIONS:
 ${sessionSummary}
@@ -1296,18 +1300,22 @@ ${debriefSummary}
 TODAY'S READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
 LOCATION: ${loc}
 ACTIVE INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
+AVAILABLE: ${buildKitString(loc)}
 
-Available session types: Full Body A, Full Body B, Upper Body, Lower Body, Rings Only, KB Only
+Think about:
+- Which muscle groups need recovery
+- What movement patterns haven't been trained recently
+- Readiness level and what it can support
+- Any injury constraints
+- What exercises are primed for progression
 
-Consider:
-- Which muscle groups need recovery based on recent sessions
-- Readiness signals — low sleep/energy means lower volume
-- Progression — what patterns haven't been hit recently
-- Injury constraints
-- Location equipment
-
-Return ONLY valid JSON, no markdown. Reason must be 1-2 sentences max, plain English:
-{"session_type":"Full Body A","reason":"One or two plain-English sentences max explaining why."}`;
+Return ONLY valid JSON, no markdown:
+{
+  "session_type": "Full Body A",
+  "headline": "Max 8 words. The session in a phrase.",
+  "brief": "2-3 sentences. Specific coaching prescription — which movement patterns, why, what to focus on. Name specific exercise types not just categories.",
+  "reason": "1 sentence. Why this, why now, based on the data."
+}`;
 
     const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], HAIKU);
     const jsonStart = raw.indexOf('{');
@@ -1315,27 +1323,37 @@ Return ONLY valid JSON, no markdown. Reason must be 1-2 sentences max, plain Eng
     const rec = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
 
     recommendedType = rec.session_type;
-    recType.textContent   = rec.session_type;
-    recReason.textContent = rec.reason;
-    autoSelectPill(rec.session_type);
+    coachBrief = rec.brief;
+    sType = rec.session_type;
+
+    document.getElementById('rec-loading').style.display = 'none';
+    document.getElementById('rec-content').style.display = 'block';
+    document.getElementById('rec-type').textContent   = rec.headline || rec.session_type;
+    document.getElementById('rec-brief').textContent  = rec.brief;
+    document.getElementById('rec-reason').textContent = rec.reason;
+
+    // Auto-select the matching pill
+    document.querySelectorAll('#session-pills .pill').forEach(p => {
+      p.classList.remove('active');
+      if (p.textContent.trim() === rec.session_type) p.classList.add('active');
+    });
+
   } catch(e) {
-    card.style.display = 'none';
+    document.getElementById('rec-loading').textContent = 'Could not load recommendation. Try refreshing.';
     console.log('Recommendation failed:', e);
   }
 }
 
-function autoSelectPill(type) {
-  document.querySelectorAll('#session-pills .pill').forEach(p => {
-    p.classList.remove('active');
-    if (p.textContent.trim() === type) p.classList.add('active');
-  });
-  sType = type;
+function toggleOverride() {
+  const panel = document.getElementById('override-panel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
 }
 
 function acceptRecommendation() {
-  autoSelectPill(recommendedType);
+  // Already applied on load — just dismiss if somehow shown
   document.getElementById('rec-card').style.display = 'none';
 }
+
 async function fetchSSOContext(limit, sessionTypeFilter) {
   try {
     const params = { limit: limit || 3 };
@@ -1392,7 +1410,10 @@ async function generatePlan() {
 Your operating principle: maintain the machine, respect the load, optimise for life.
 You are not a motivator. You are a precision instrument. No fluff, no toxic positivity, no filler.
 
-Phase: Lean bulk Q2 2026. Hypertrophy focus.
+${coachBrief ? `COACH PRESCRIPTION (follow this closely — it overrides generic session type):
+${coachBrief}
+
+` : ''}Phase: Lean bulk Q2 2026. Hypertrophy focus.
 Session type: ${sType} — ${sessionFocus[sType] || ''}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
