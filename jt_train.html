@@ -638,6 +638,13 @@
 
     <!-- EXERCISE TAB -->
     <div id="prog-exercise-tab" style="display:none;">
+      <!-- Category filter -->
+      <div style="display:flex;gap:6px;margin-bottom:8px;" id="category-filters">
+        <button class="pill active" id="pcat-all" onclick="filterExCategory('all',this)">All</button>
+        <button class="pill" id="pcat-calisthenics" onclick="filterExCategory('calisthenics',this)">Calisthenics</button>
+        <button class="pill" id="pcat-loaded" onclick="filterExCategory('loaded',this)">Loaded</button>
+        <button class="pill" id="pcat-rules" onclick="filterExCategory('rules',this)">Has Progression</button>
+      </div>
       <!-- Pattern filter chips -->
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;" id="pattern-filters">
         <button class="pill active" id="pf-all" onclick="filterExPicker('all',this)">All</button>
@@ -806,9 +813,9 @@ const HAIKU  = 'claude-haiku-4-5-20251001';
 let equipmentConfig = {};
 const ALL_KB = [8,12,16,20,24,28,32,36,40,44,48];
 const DEFAULT_CONFIG = {
-  Home:   { rings:true,  pull_up_bar:true,  parallettes:true,  bands:true,  kb_weights:[16,20,24,32], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
-  Travel: { rings:false, pull_up_bar:false, parallettes:false, bands:true,  kb_weights:[],               kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
-  Gym:    { rings:false, pull_up_bar:true,  parallettes:false, bands:true,  kb_weights:[8,12,16,20,24,28,32,36,40,44,48], kb_pairs:true, barbell:true, dumbbells:true, cable_machine:true }
+  Home:   { rings:true,  pull_up_bar:true,  parallettes_high:true,  parallettes_low:true,  bands:true,  kb_weights:[16,20,24,32], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
+  Travel: { rings:false, pull_up_bar:false, parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[],               kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
+  Gym:    { rings:false, pull_up_bar:true,  parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[8,12,16,20,24,28,32,36,40,44,48], kb_pairs:true, barbell:true, dumbbells:true, cable_machine:true }
 };
 const DOUBLE_KB_IDS = ['double_kb_front_squat','double_kb_deadlift','double_kb_swing','double_kb_clean','racked_squat','kb_renegade_row','kb_farmers_carry'];
 const PER_ARM_IDS   = ['kb_floor_press']; // dual KB but pressed per arm — label LEFT/RIGHT
@@ -821,7 +828,11 @@ function buildKitString(l) {
   const parts = [];
   if (cfg.rings)        parts.push('Gymnastics rings');
   if (cfg.pull_up_bar)  parts.push('Pull-up bar');
-  if (cfg.parallettes)  parts.push('Parallettes');
+  if (cfg.parallettes_high) parts.push('Parallettes (high — dips, L-sit, support hold)');
+  if (cfg.parallettes_low)  parts.push('Parallettes (low — push-ups, planche progressions)');
+  // Explicit note for plan gen
+  if (cfg.parallettes_high && !cfg.parallettes_low) parts.push('NOTE: High parallettes only — do NOT prescribe parallette push-ups');
+  if (cfg.parallettes_low && !cfg.parallettes_high) parts.push('NOTE: Low parallettes only — do NOT prescribe parallette dips or L-sit');
   if (cfg.bands)        parts.push('Resistance bands');
   if (cfg.kb_weights && cfg.kb_weights.length) {
     const w = cfg.kb_weights;
@@ -859,7 +870,9 @@ function filterExercises(exList, l, sType) {
     } else if (l === 'Home') {
       if (!isTrue(e.home_available)) return false;
       if (eq.includes('Rings') && !cfg.rings) return false;
-      if (eq.includes('Parallettes') && !cfg.parallettes) return false;
+      if (eq.includes('Parallettes') && !cfg.parallettes_high && !cfg.parallettes_low) return false;
+      if (eq.includes('Parallettes (high)') && !cfg.parallettes_high) return false;
+      if (eq.includes('Parallettes (low)') && !cfg.parallettes_low) return false;
       if (eq.includes('Band') && !cfg.bands) return false;
     }
     if (injuries.length && !isTrue(e.shoulder_safe)) return false;
@@ -897,7 +910,8 @@ function renderEquipConfig(l) {
   html += togRow('rings', 'Gymnastics rings', '', cfg.rings);
   html += togRow('pull_up_bar', 'Pull-up bar', '', cfg.pull_up_bar);
   html += '<div class="eq-section-lbl">ACCESSORIES</div>';
-  html += togRow('parallettes', 'Parallettes', '', cfg.parallettes);
+  html += togRow('parallettes_high', 'Parallettes (high)', 'Dips · L-sit · support hold', cfg.parallettes_high);
+  html += togRow('parallettes_low',  'Parallettes (low)',  'Push-ups · planche progressions', cfg.parallettes_low);
   html += togRow('bands', 'Resistance bands', '', cfg.bands);
   if (l === 'Gym') {
     html += '<div class="eq-section-lbl">GYM EQUIPMENT</div>';
@@ -1317,8 +1331,10 @@ Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the p
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     plan = parsed.exercises || [];
-    pendingProgressions = [];
-    localStorage.removeItem('pendingProgressions');
+    // Only clear progressions whose 'from' exercise was replaced in this plan
+    const planIds = new Set(plan.map(e => e.exercise_id));
+    pendingProgressions = pendingProgressions.filter(p => planIds.has(p.to) ? false : true);
+    localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
     document.getElementById('review-title').textContent = sType;
     document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
     document.getElementById('review-chat').innerHTML = '';
@@ -1875,30 +1891,62 @@ function discardSession() {
 // ── Progress screen ───────────────────────────────────────────────────────────
 let progData = [], progMetric = 'e1rm', progChart = null, progIsBW = false, progAllSets = [];
 
+let exCategory = 'all';
+let exPattern = 'all';
+let progRuleIds = new Set(); // exercise IDs with progression rules
+
 function initProgress() {
-  renderExPicker('all');
+  // Load progression rule IDs for filtering
+  api('getProgressionTree').then(r => {
+    progRuleIds = new Set((r.data||[]).map(p => p.exercise_id));
+    renderExPicker();
+  });
+  renderExPicker();
   loadOverview();
 }
 
-function renderExPicker(pattern) {
-  const grid = document.getElementById('ex-picker-grid');
-  if (!grid) return;
-  const filtered = exercises
-    .filter(e => pattern === 'all' || e.movement_pattern === pattern)
-    .sort((a,b) => a.display_name.localeCompare(b.display_name));
-  grid.innerHTML = filtered.map(e =>
-    `<button onclick="selectExercise('${e.id}')" id="expill-${e.id}"
-      style="font-family:var(--font-ui);font-size:10px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid var(--border2);color:var(--text2);background:var(--bg2);cursor:pointer;letter-spacing:0.03em;transition:all 0.12s;"
-      onmouseover="this.style.borderColor='var(--text3)';this.style.color='var(--text)'"
-      onmouseout="if(!this.classList.contains('active')){this.style.borderColor='var(--border2)';this.style.color='var(--text2)'}"
-    >${e.display_name}</button>`
-  ).join('');
+function filterExCategory(cat, el) {
+  exCategory = cat;
+  document.querySelectorAll('#category-filters .pill').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderExPicker();
 }
 
 function filterExPicker(pattern, el) {
+  exPattern = pattern;
   document.querySelectorAll('#pattern-filters .pill').forEach(p => p.classList.remove('active'));
   if (el) el.classList.add('active');
-  renderExPicker(pattern);
+  renderExPicker();
+}
+
+const CALISTHENICS_EQUIPMENT = ['rings','parallettes','bodyweight','pull_up_bar','bands'];
+const LOADED_EQUIPMENT = ['kettlebell','barbell','dumbbell','cable'];
+
+function renderExPicker() {
+  const grid = document.getElementById('ex-picker-grid');
+  if (!grid) return;
+  let filtered = exercises.filter(e => {
+    if (exPattern !== 'all' && e.movement_pattern !== exPattern) return false;
+    if (exCategory === 'calisthenics') {
+      const eq = (e.equipment||'').toLowerCase();
+      return CALISTHENICS_EQUIPMENT.some(c => eq.includes(c)) || (!e.weight_kg && e.weight_kg !== 0);
+    }
+    if (exCategory === 'loaded') {
+      const eq = (e.equipment||'').toLowerCase();
+      return LOADED_EQUIPMENT.some(c => eq.includes(c));
+    }
+    if (exCategory === 'rules') return progRuleIds.has(e.id);
+    return true;
+  }).sort((a,b) => a.display_name.localeCompare(b.display_name));
+  
+  grid.innerHTML = filtered.map(e => {
+    const hasRule = progRuleIds.has(e.id);
+    return `<button onclick="selectExercise('${e.id}')" id="expill-${e.id}"
+      style="font-family:var(--font-ui);font-size:10px;font-weight:600;padding:5px 11px;border-radius:14px;border:1px solid ${hasRule?'var(--green)':'var(--border2)'};color:${hasRule?'var(--green)':'var(--text2)'};background:var(--bg2);cursor:pointer;letter-spacing:0.03em;transition:all 0.12s;"
+      onmouseover="this.style.borderColor='var(--text3)';this.style.color='var(--text)'"
+      onmouseout="if(!this.classList.contains('active')){this.style.borderColor='${hasRule?'var(--green)':'var(--border2)'}';this.style.color='${hasRule?'var(--green)':'var(--text2)'}'}"
+    >${e.display_name}${hasRule?' ↑':''}</button>`;
+  }).join('');
 }
 
 let selectedExId = null;
@@ -2156,6 +2204,22 @@ async function loadOverview() {
   const thisClose    = progScores.filter(p => !p.ready && p.pct >= 50);
   const building     = progScores.filter(p => !p.ready && p.pct > 0 && p.pct < 50);
 
+  // ── Estimated time to graduation ───────────────────────────────────────────
+  // Sessions per week from last 4 weeks
+  const fourWeeksAgo = new Date(); fourWeeksAgo.setDate(fourWeeksAgo.getDate()-28);
+  const recentSessions = sessions.filter(s => new Date(s.date) >= fourWeeksAgo).length;
+  const sessionsPerWeek = Math.max(recentSessions / 4, 0.5);
+
+  const addEta = items => items.map(p => {
+    const sessionsLeft = Math.max(0, p.needed - p.sessionsHit);
+    const weeks = sessionsLeft / sessionsPerWeek;
+    const days  = Math.round(weeks * 7);
+    p.eta = sessionsLeft === 0 ? 'now' : days <= 7 ? `~${days}d` : `~${Math.round(weeks)}wk`;
+    return p;
+  });
+
+  addEta(accomplished); addEta(thisClose); addEta(building);
+
   const renderProgTier = (items, tier) => {
     if (!items.length) return '';
     const configs = {
@@ -2173,6 +2237,7 @@ async function loadOverview() {
             <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
             <div style="display:flex;align-items:center;gap:8px;">
               <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${p.sessionsHit}/${p.needed}</div>
+              ${p.eta && tier !== 'accomplished' ? `<div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);background:var(--bg3);padding:2px 6px;border-radius:4px;">${p.eta}</div>` : ''}
               ${tier === 'accomplished' ? `<button id="apply-prog-${p.id}" onclick="event.stopPropagation();applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?p.next.replace(/_/g,' '):''}')"
                 style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${alreadyQueued?'var(--text3)':'var(--green)'};background:none;border:1px solid ${alreadyQueued?'var(--border2)':'rgba(34,197,94,0.4)'};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;">
                 ${alreadyQueued ? '✓ Queued' : 'Apply →'}
