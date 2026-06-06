@@ -2087,9 +2087,15 @@ async function loadTreeTab() {
   const progressions = patternsRes.progressions || [];
   const allSets      = allSetsRes.data          || [];
 
-  // Only show patterns that have progressions seeded
+  // Only show patterns that have progressions, deduplicate by name
   const patternIdsWithData = new Set(progressions.map(p => p.pattern_id));
-  const activePatterns = patterns.filter(p => patternIdsWithData.has(p.id));
+  const seenNames = new Set();
+  const activePatterns = patterns.filter(p => {
+    if (!patternIdsWithData.has(p.id)) return false;
+    if (seenNames.has(p.name)) return false;
+    seenNames.add(p.name);
+    return true;
+  });
 
   if (!patterns.length) {
     content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">No patterns yet</div>';
