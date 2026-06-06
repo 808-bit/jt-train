@@ -2208,6 +2208,66 @@ function renderStrengthChart(sets, benchmarks, isBW) {
   </div>`;
 }
 
+// ── Pattern progression chart ─────────────────────────────────────────────────
+function renderPatternChart(chain, allSets) {
+  // Build level history from first-seen dates of each unique exercise
+  const seenIds = new Set();
+  const dataPoints = [];
+  for (const prog of chain) {
+    if (seenIds.has(prog.exercise_id)) continue;
+    seenIds.add(prog.exercise_id);
+    const exSets = allSets.filter(s => s.exercise_id === prog.exercise_id);
+    if (exSets.length) {
+      const firstDate = exSets.map(s=>s.date).sort()[0];
+      dataPoints.push({ level: prog.level, name: prog.exercise_name, date: firstDate, x: dayNum(firstDate) });
+    }
+  }
+  if (!dataPoints.length) return `<div style="font-family:var(--font);font-size:9px;color:var(--text3);padding:6px 0 10px;">No data yet — start logging sets</div>`;
+
+  const maxLevel = chain[chain.length-1].level;
+  const curDP = dataPoints[dataPoints.length-1];
+  const curLevel = curDP.level;
+  const nextNode = chain.find(p => p.level === curLevel + 1);
+
+  // Project next level date
+  let proj = null;
+  if (nextNode && dataPoints.length >= 2) {
+    const levGained = curLevel - dataPoints[0].level;
+    const daysElapsed = curDP.x - dataPoints[0].x;
+    const daysPerLevel = levGained > 0 ? daysElapsed / levGained : 42;
+    const projX = curDP.x + daysPerLevel;
+    const projDate = new Date(projX * 86400000).toISOString().slice(0,10);
+    proj = { level: curLevel + 1, name: nextNode.exercise_name, date: projDate, x: projX };
+  } else if (nextNode && dataPoints.length === 1) {
+    // Default 6 weeks projection
+    const projX = curDP.x + 42;
+    const projDate = new Date(projX * 86400000).toISOString().slice(0,10);
+    proj = { level: curLevel + 1, name: nextNode.exercise_name, date: projDate, x: projX };
+  }
+
+  const W=300, H=80, PL=26, PR=proj?56:16, PT=8, PB=20;
+  const cW = W-PL-PR, cH = H-PT-PB;
+  const allX = [...dataPoints.map(p=>p.x), proj?.x].filter(Boolean);
+  const minX = Math.min(...allX)-3, maxX = Math.max(...allX)+5;
+  const sx = d => PL + (d-minX)/(maxX-minX)*cW;
+  const sy = l => PT + cH - (l-1)/(Math.max(maxLevel-1,1))*cH;
+
+  const linePath = dataPoints.map((p,i) => `${i?'L':'M'}${sx(p.x).toFixed(1)},${sy(p.level).toFixed(1)}`).join('');
+  const projPath = proj ? `M${sx(curDP.x).toFixed(1)},${sy(curLevel).toFixed(1)} L${sx(proj.x).toFixed(1)},${sy(proj.level).toFixed(1)}` : '';
+
+  return `<div style="background:var(--bg3);border-radius:6px;padding:8px 10px 4px;margin-bottom:12px;">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;overflow:visible;">
+      ${Array.from({length:maxLevel},(_,i)=>{const l=i+1,y=sy(l).toFixed(1);return `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/><text x="${PL-3}" y="${(parseFloat(y)+3).toFixed(1)}" text-anchor="end" font-size="7" fill="rgba(255,255,255,0.2)" font-family="DM Mono,monospace">L${l}</text>`;}).join('')}
+      ${projPath?`<path d="${projPath}" stroke="rgba(34,197,94,0.35)" stroke-width="1.5" stroke-dasharray="4,3" fill="none"/>`:''}
+      ${dataPoints.length>1?`<path d="${linePath}" stroke="var(--green)" stroke-width="2" fill="none"/>`:''}
+      ${dataPoints.map(p=>`<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.level).toFixed(1)}" r="3" fill="var(--green)"/>`).join('')}
+      ${proj?`<circle cx="${sx(proj.x).toFixed(1)}" cy="${sy(proj.level).toFixed(1)}" r="3.5" fill="none" stroke="rgba(34,197,94,0.5)" stroke-width="1.5"/>`:''}
+      <text x="${sx(dataPoints[0].x).toFixed(1)}" y="${H}" text-anchor="middle" font-size="7" fill="rgba(255,255,255,0.2)" font-family="DM Mono,monospace">${dataPoints[0].date.slice(5)}</text>
+      ${dataPoints.length>1?`<text x="${sx(curDP.x).toFixed(1)}" y="${H}" text-anchor="middle" font-size="7" fill="rgba(255,255,255,0.3)" font-family="DM Mono,monospace">${curDP.date.slice(5)}</text>`:''}
+      ${proj?`<text x="${W-PR+3}" y="${(sy(proj.level)+4).toFixed(1)}" text-anchor="start" font-size="7" fill="rgba(34,197,94,0.6)" font-family="DM Mono,monospace">${proj.date.slice(5)}</text>`:''}
+    </svg>
+    ${proj?`<div style="font-family:var(--font);font-size:9px;color:rgba(34,197,94,0.7);margin-top:0px;padding-bottom:2px;">→ ${proj.name} · est. ${proj.date.slice(5)}</div>`:''}</div>`;}
+
 // ── Progression Tree Tab ───────────────────────────────────────────────────────
 async function loadTreeTab() {
   const content = document.getElementById('prog-tree-content');
@@ -2257,8 +2317,9 @@ async function loadTreeTab() {
     const curLvl = currentLevel[pat.id] || 0;
 
     return `
-    <div style="margin-bottom:24px;">
+    <div style="margin-bottom:28px;">
       <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">${pat.name.toUpperCase()}</div>
+      ${renderPatternChart(chain, allSets)}
       <div style="display:flex;flex-direction:column;gap:0;">
         ${chain.map((p, i) => {
           const done    = p.level < curLvl;
