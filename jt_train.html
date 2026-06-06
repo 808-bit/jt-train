@@ -2241,7 +2241,7 @@ function renderPatternChart(chain, allSets) {
   });
 
   const hasAnyData = Object.values(grid).some(row => row.some(v => v > 0));
-  if (!hasAnyData) return `<div style="font-family:var(--font);font-size:9px;color:var(--text3);padding:4px 0 12px;">No data yet — start logging sets</div>`;
+  if (!hasAnyData) return `<div style="font-family:var(--font);font-size:10px;color:var(--text2);padding:4px 0 12px;">No sets logged yet</div>`;
 
   const maxCount = Math.max(...Object.values(grid).flat(), 1);
   const cellW = 100 / 12;
@@ -2348,15 +2348,15 @@ async function loadTreeTab() {
             <!-- Card -->
             <div onclick="switchProgTab('exercise');selectExercise('${p.exercise_id}')"
               style="flex:1;background:${bg};border:1px solid ${border};border-radius:8px;padding:10px 12px;margin:3px 0;cursor:pointer;">
-              <div style="display:flex;align-items:center;justify-content:space-between;">
-                <div style="display:flex;align-items:center;gap:6px;">
-                  ${badge ? `<span style="font-family:var(--font-ui);font-size:10px;color:${badgeCol};font-weight:700;">${badge}</span>` : ''}
-                  <span style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:${nameCol};">${p.exercise_name}</span>
-                  ${typeIcon[p.type] ? `<span style="font-size:10px;color:${typeColors[p.type]};opacity:0.7;">${typeIcon[p.type]}</span>` : ''}
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">
+                  ${badge ? `<span style="font-family:var(--font-ui);font-size:10px;color:${badgeCol};font-weight:700;flex-shrink:0;">${badge}</span>` : ''}
+                  <span style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:${nameCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.exercise_name}</span>
+                  ${p.rep_target||p.duration_target ? `<span style="font-family:var(--font);font-size:10px;color:${done?'rgba(34,197,94,0.5)':current?'var(--text2)':'var(--text3)'};flex-shrink:0;">${p.rep_target||p.duration_target}</span>` : ''}
+                  ${typeIcon[p.type] ? `<span style="font-size:10px;color:${typeColors[p.type]};opacity:0.7;flex-shrink:0;">${typeIcon[p.type]}</span>` : ''}
                 </div>
-                <span style="font-family:var(--font);font-size:9px;color:var(--text3);">${p.rep_target||p.duration_target||''}</span>
               </div>
-              ${p.notes && current ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:4px;font-style:italic;">${p.notes}</div>` : ''}
+              ${p.notes && current ? `<div style="font-family:var(--font);font-size:10px;color:var(--text);margin-top:4px;font-style:italic;opacity:0.8;">${p.notes}</div>` : ''}
               ${p.equipment ? `<div style="font-family:var(--font-ui);font-size:8px;color:var(--text2);margin-top:3px;letter-spacing:0.1em;">${p.equipment.replace(/_/g,' ').toUpperCase()}</div>` : ''}
             </div>
           </div>`;
