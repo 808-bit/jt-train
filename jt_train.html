@@ -4,11 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="JT.TRAIN">
 <meta name="theme-color" content="#0a0a0a">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
 <title>JT.TRAIN</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2176,7 +2178,19 @@ async function loadExerciseProgress(exerciseId) {
   const sessionVols  = sessionDates.map(d => bySession[d]);
   const maxVol = Math.max(...sessionVols, 1);
 
-  const rule = rules[0];
+  // Pre-compute session history grouped by date
+  const bySessMap = {};
+  recentSets.forEach(s => { if (!bySessMap[s.date]) bySessMap[s.date] = []; bySessMap[s.date].push(s); });
+  const sessionHistoryHTML = Object.entries(bySessMap).slice(0,6).map(([date, sess]) =>
+    `<div style="margin-bottom:10px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.1em;margin-bottom:5px;">${date}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${sess.map(s => `<div style="background:var(--bg3);border-radius:6px;padding:5px 9px;">
+          <span style="font-family:var(--font-display);font-size:16px;color:var(--text);">${s.reps}</span>
+          <span style="font-family:var(--font);font-size:9px;color:var(--text3);">r${!isBW&&s.weight_kg?' @'+s.weight_kg+'kg':''} · ${s.rir!=null?s.rir+'RES':'—'}</span>
+        </div>`).join('')}
+      </div>
+    </div>`).join('');
   const bBeg = benchmarks.find(b => b.level === 'beginner');
   const bInt = benchmarks.find(b => b.level === 'intermediate');
   const bAdv = benchmarks.find(b => b.level === 'advanced');
@@ -2257,20 +2271,7 @@ async function loadExerciseProgress(exerciseId) {
     // Recent sets grouped by session
     `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
       <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">SESSION HISTORY</div>
-      ${(() => {
-        const bySess = {};
-        recentSets.forEach(s => { if (!bySess[s.date]) bySess[s.date] = []; bySess[s.date].push(s); });
-        return Object.entries(bySess).slice(0,6).map(([date, sess]) => `
-          <div style="margin-bottom:10px;">
-            <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.1em;margin-bottom:5px;">${date}</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              ${sess.map(s => `<div style="background:var(--bg3);border-radius:6px;padding:5px 9px;">
-                <span style="font-family:var(--font-display);font-size:16px;color:var(--text);">${s.reps}</span>
-                <span style="font-family:var(--font);font-size:9px;color:var(--text3);">r${!isBW&&s.weight_kg?' @'+s.weight_kg+'kg':''} · ${s.rir!=null?s.rir+'RES':'—'}</span>
-              </div>`).join('')}
-            </div>
-          </div>`).join('');
-      })()}
+      ${sessionHistoryHTML}
     </div>`;
 }
 
