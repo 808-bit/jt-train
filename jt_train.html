@@ -634,6 +634,7 @@
     <div class="prog-tabs">
       <button class="prog-tab" id="ptab-exercise" onclick="switchProgTab('exercise')">EXERCISE</button>
       <button class="prog-tab active" id="ptab-overview" onclick="switchProgTab('overview')">OVERVIEW</button>
+      <button class="prog-tab" id="ptab-tree" onclick="switchProgTab('tree')">TREE</button>
     </div>
 
     <!-- EXERCISE TAB -->
@@ -667,6 +668,13 @@
     <div id="prog-overview-tab">
       <div id="prog-overview-content">
         <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- TREE TAB -->
+    <div id="prog-tree-tab" style="display:none;">
+      <div id="prog-tree-content">
+        <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading progression tree...</div>
       </div>
     </div>
   </div>
@@ -1971,12 +1979,164 @@ function selectExercise(id) {
 function switchProgTab(tab) {
   document.getElementById('prog-exercise-tab').style.display = tab === 'exercise' ? '' : 'none';
   document.getElementById('prog-overview-tab').style.display  = tab === 'overview'  ? '' : 'none';
+  document.getElementById('prog-tree-tab').style.display      = tab === 'tree'      ? '' : 'none';
   document.querySelectorAll('.prog-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('ptab-' + tab).classList.add('active');
   if (tab === 'overview') loadOverview();
+  if (tab === 'tree') loadTreeTab();
 }
 
-async function loadExerciseProgress(exerciseId) {
+// ── Chart helpers ─────────────────────────────────────────────────────────────
+function linearRegression(pts) {
+  const n = pts.length;
+  if (n < 2) return { slope: 0, intercept: pts[0]?.y || 0 };
+  const mx = pts.reduce((s,p) => s+p.x, 0) / n;
+  const my = pts.reduce((s,p) => s+p.y, 0) / n;
+  const num = pts.reduce((s,p) => s+(p.x-mx)*(p.y-my), 0);
+  const den = pts.reduce((s,p) => s+(p.x-mx)*(p.x-mx), 0);
+  const slope = den ? num/den : 0;
+  return { slope, intercept: my - slope * mx };
+}
+
+function dayNum(dateStr) {
+  return Math.floor(new Date(dateStr).getTime() / 86400000);
+}
+
+function renderStrengthChart(sets, benchmarks, isBW) {
+  // Best value per session date
+  const byDate = {};
+  sets.forEach(s => {
+    const val = parseFloat(s.estimated_1rm) || parseFloat(s.weight_kg) || (isBW ? parseInt(s.reps) : 0);
+    if (val > 0 && (!byDate[s.date] || val > byDate[s.date])) byDate[s.date] = val;
+  });
+  const pts = Object.entries(byDate).filter(([,v])=>v>0).sort(([a],[b])=>a.localeCompare(b))
+    .map(([date, val]) => ({ date, val, x: dayNum(date) }));
+  if (pts.length < 2) return `<div style="font-family:var(--font);font-size:10px;color:var(--text3);text-align:center;padding:20px 0;">Not enough data for chart yet</div>`;
+
+  const reg = linearRegression(pts.map(p => ({ x: p.x, y: p.val })));
+  const W = 320, H = 150, PL = 42, PR = 32, PT = 14, PB = 24;
+  const cW = W - PL - PR, cH = H - PT - PB;
+  const futureX = pts[pts.length-1].x + 42;
+  const futureY = reg.slope * futureX + reg.intercept;
+  const allY = [...pts.map(p=>p.val), futureY];
+  const benchY = benchmarks.filter(b=>b.metric_value>0).map(b=>parseFloat(b.metric_value));
+  const minY = Math.max(0, Math.min(...allY, ...benchY) * 0.9);
+  const maxY = Math.max(...allY, ...benchY) * 1.05;
+  const minX = pts[0].x; const maxX = futureX;
+  const sx = d => PL + (d-minX)/(maxX-minX)*cW;
+  const sy = v => PT + cH - (v-minY)/(maxY-minY)*cH;
+
+  const linePath = pts.map((p,i)=>`${i?'L':'M'}${sx(p.x).toFixed(1)},${sy(p.val).toFixed(1)}`).join('');
+  const last = pts[pts.length-1];
+  const predPath = `M${sx(last.x).toFixed(1)},${sy(last.val).toFixed(1)} L${sx(futureX).toFixed(1)},${sy(Math.max(futureY,minY)).toFixed(1)}`;
+
+  // Predict when hitting next benchmark
+  const bInt = benchmarks.find(b=>b.level==='intermediate');
+  const bAdv = benchmarks.find(b=>b.level==='advanced');
+  let prediction = '';
+  if (reg.slope > 0 && bInt?.metric_value && last.val < bInt.metric_value) {
+    const daysToInt = (bInt.metric_value - reg.intercept) / reg.slope - last.x;
+    if (daysToInt > 0 && daysToInt < 365) prediction = `Intermediate benchmark in ~${Math.round(daysToInt)} days at current rate`;
+  } else if (reg.slope > 0 && bAdv?.metric_value && last.val < bAdv.metric_value) {
+    const daysToAdv = (bAdv.metric_value - reg.intercept) / reg.slope - last.x;
+    if (daysToAdv > 0 && daysToAdv < 365) prediction = `Advanced benchmark in ~${Math.round(daysToAdv)} days at current rate`;
+  }
+
+  const trendDir = reg.slope > 0.05 ? '↑' : reg.slope < -0.05 ? '↓' : '→';
+  const trendCol = reg.slope > 0.05 ? 'var(--green)' : reg.slope < -0.05 ? 'var(--amber)' : 'var(--text3)';
+  const trendLabel = reg.slope > 0.05 ? `+${(reg.slope*7).toFixed(1)} /week` : reg.slope < -0.05 ? `${(reg.slope*7).toFixed(1)} /week` : 'flat';
+
+  return `
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;">${isBW?'REP TREND':'STRENGTH CURVE'}</div>
+      <div style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:${trendCol};">${trendDir} ${trendLabel}</div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;overflow:visible;">
+      ${[0,0.33,0.66,1].map(t=>{
+        const v = minY+(maxY-minY)*t; const y = sy(v);
+        return `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W-PR}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+                <text x="${PL-4}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="8" fill="rgba(255,255,255,0.25)" font-family="DM Mono,monospace">${Math.round(v)}</text>`;
+      }).join('')}
+      ${bInt?.metric_value?`<line x1="${PL}" y1="${sy(bInt.metric_value).toFixed(1)}" x2="${W-PR}" y2="${sy(bInt.metric_value).toFixed(1)}" stroke="rgba(245,158,11,0.5)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="${(W-PR+3)}" y="${(sy(bInt.metric_value)+4).toFixed(1)}" font-size="8" fill="rgba(245,158,11,0.7)" font-family="DM Mono,monospace">INT</text>`:''}
+      ${bAdv?.metric_value?`<line x1="${PL}" y1="${sy(bAdv.metric_value).toFixed(1)}" x2="${W-PR}" y2="${sy(bAdv.metric_value).toFixed(1)}" stroke="rgba(34,197,94,0.4)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="${(W-PR+3)}" y="${(sy(bAdv.metric_value)+4).toFixed(1)}" font-size="8" fill="rgba(34,197,94,0.6)" font-family="DM Mono,monospace">ADV</text>`:''}
+      <path d="${predPath}" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+      <path d="${linePath}" stroke="var(--green)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+      ${pts.map(p=>`<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.val).toFixed(1)}" r="3" fill="var(--green)"/>`).join('')}
+      <circle cx="${sx(last.x).toFixed(1)}" cy="${sy(last.val).toFixed(1)}" r="5" fill="var(--green)" stroke="var(--bg)" stroke-width="2"/>
+      <text x="${sx(pts[0].x).toFixed(1)}" y="${H}" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.25)" font-family="DM Mono,monospace">${pts[0].date.slice(5)}</text>
+      <text x="${sx(last.x).toFixed(1)}" y="${H}" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.4)" font-family="DM Mono,monospace">${last.date.slice(5)}</text>
+    </svg>
+    ${prediction?`<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:6px;font-style:italic;">${prediction}</div>`:''}
+  </div>`;
+}
+
+// ── Progression Tree Tab ───────────────────────────────────────────────────────
+async function loadTreeTab() {
+  const content = document.getElementById('prog-tree-content');
+  const [progRes, allSetsRes] = await Promise.all([
+    api('getProgressionTree'),
+    api('getAllProgressionData', { limit: 2000 })
+  ]);
+  const rules    = progRes.data    || [];
+  const allSets  = allSetsRes.data || [];
+
+  if (!rules.length) { content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">No progression data yet</div>'; return; }
+
+  // Build chains
+  const ruleMap = {};
+  rules.forEach(r => ruleMap[r.exercise_id] = r);
+  const hasParent = new Set(rules.map(r => r.next_exercise_id).filter(Boolean));
+  const roots = rules.filter(r => !hasParent.has(r.exercise_id));
+
+  function buildChain(id, visited = new Set()) {
+    if (visited.has(id) || !ruleMap[id]) return [id];
+    visited.add(id);
+    const r = ruleMap[id];
+    return r.next_exercise_id ? [id, ...buildChain(r.next_exercise_id, visited)] : [id];
+  }
+
+  const chains = roots.map(r => buildChain(r.exercise_id));
+  const doneById = {};
+  const lastSeen = {};
+  allSets.forEach(s => { if (!lastSeen[s.exercise_id] || s.date > lastSeen[s.exercise_id]) lastSeen[s.exercise_id] = s.date; });
+
+  // Group by modality
+  const byModality = {};
+  chains.forEach(chain => {
+    const r = ruleMap[chain[0]];
+    const mod = r?.modality || 'other';
+    if (!byModality[mod]) byModality[mod] = [];
+    byModality[mod].push(chain);
+  });
+
+  const modLabels = { pull:'PULL', push:'PUSH', hinge:'HINGE', squat:'SQUAT', core:'CORE', carry:'CARRY', other:'OTHER' };
+
+  content.innerHTML = Object.entries(byModality).map(([mod, chains]) => `
+    <div style="margin-bottom:20px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">${modLabels[mod]||mod.toUpperCase()}</div>
+      ${chains.map(chain => `
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:10px;overflow-x:auto;padding-bottom:4px;">
+          ${chain.map((id, i) => {
+            const ex = exercises.find(e => e.id === id) || { display_name: id.replace(/_/g,' ') };
+            const rule = ruleMap[id];
+            const done = lastSeen[id] && rule?.next_exercise_id && progRuleIds.has(rule.next_exercise_id);
+            const active = !!lastSeen[id];
+            const future = !lastSeen[id];
+            const bg = done ? 'rgba(34,197,94,0.08)' : active ? 'var(--bg2)' : 'var(--bg)';
+            const border = done ? 'rgba(34,197,94,0.3)' : active ? 'var(--green)' : 'var(--border)';
+            const textCol = done ? 'var(--text3)' : active ? 'var(--text)' : 'var(--text3)';
+            const icon = done ? '✓ ' : active ? '● ' : '';
+            return `<div onclick="switchProgTab('exercise');selectExercise('${id}')" style="flex-shrink:0;background:${bg};border:1px solid ${border};border-radius:8px;padding:8px 12px;cursor:pointer;min-width:100px;max-width:140px;">
+              <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:${textCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${icon}${ex.display_name}</div>
+              ${rule ? `<div style="font-family:var(--font);font-size:8px;color:var(--text3);margin-top:3px;">${rule.rep_target}</div>` : ''}
+            </div>${i < chain.length-1 ? '<div style="color:var(--text3);font-size:12px;flex-shrink:0;">→</div>' : ''}`;
+          }).join('')}
+        </div>`).join('')}
+    </div>`).join('');
+}
   if (!exerciseId) exerciseId = selectedExId;
   const content = document.getElementById('prog-ex-content');
   if (!exerciseId) { content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Select an exercise above</div>'; return; }
@@ -2038,7 +2198,7 @@ async function loadExerciseProgress(exerciseId) {
       </div>
     </div>` +
 
-    // PB highlight card
+    // PB card
     (pbSet ? `<div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
       <div>
         <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;margin-bottom:4px;">🏆 PERSONAL BEST</div>
@@ -2050,6 +2210,9 @@ async function loadExerciseProgress(exerciseId) {
         <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:2px;">${pbSet.reps} reps${pbSet.weight_kg > 0 ? ' @ '+pbSet.weight_kg+'kg' : ''}</div>
       </div>
     </div>` : '') +
+
+    // Strength curve chart
+    renderStrengthChart(sets, benchmarks, isBW) +
 
     // Tier card
     (rule ? `<div style="background:var(--bg2);border:1px solid var(--border);border-left:2px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
@@ -2089,18 +2252,23 @@ async function loadExerciseProgress(exerciseId) {
       </div>
     </div>` : '') +
 
-    // Recent sets
+    // Recent sets grouped by session
     `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
-      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">RECENT SETS</div>
-      <div style="display:grid;grid-template-columns:60px 1fr 1fr 52px;gap:4px;padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:4px;">
-        ${['DATE','REPS',isBW?'':'WEIGHT','RESERVE'].map(h=>`<div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.12em;">${h}</div>`).join('')}
-      </div>
-      ${recentSets.map(s=>`<div style="display:grid;grid-template-columns:60px 1fr 1fr 52px;gap:4px;padding:6px 0;border-bottom:1px solid var(--border);">
-        <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${s.date?s.date.slice(5):''}</div>
-        <div style="font-family:var(--font);font-size:10px;color:var(--text);">${s.reps}</div>
-        <div style="font-family:var(--font);font-size:10px;color:var(--text);">${!isBW&&s.weight_kg?s.weight_kg+'kg':'—'}</div>
-        <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${s.rir!=null?s.rir:'—'}</div>
-      </div>`).join('')}
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">SESSION HISTORY</div>
+      ${(() => {
+        const bySess = {};
+        recentSets.forEach(s => { if (!bySess[s.date]) bySess[s.date] = []; bySess[s.date].push(s); });
+        return Object.entries(bySess).slice(0,6).map(([date, sess]) => `
+          <div style="margin-bottom:10px;">
+            <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.1em;margin-bottom:5px;">${date}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${sess.map(s => `<div style="background:var(--bg3);border-radius:6px;padding:5px 9px;">
+                <span style="font-family:var(--font-display);font-size:16px;color:var(--text);">${s.reps}</span>
+                <span style="font-family:var(--font);font-size:9px;color:var(--text3);">r${!isBW&&s.weight_kg?' @'+s.weight_kg+'kg':''} · ${s.rir!=null?s.rir+'RES':'—'}</span>
+              </div>`).join('')}
+            </div>
+          </div>`).join('');
+      })()}
     </div>`;
 }
 
