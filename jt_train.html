@@ -1306,8 +1306,8 @@ Consider:
 - Injury constraints
 - Location equipment
 
-Return ONLY valid JSON, no markdown:
-{"session_type":"Full Body A","reason":"One plain-English sentence explaining why."}`;
+Return ONLY valid JSON, no markdown. Reason must be 1-2 sentences max, plain English:
+{"session_type":"Full Body A","reason":"One or two plain-English sentences max explaining why."}`;
 
     const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], HAIKU);
     const jsonStart = raw.indexOf('{');
