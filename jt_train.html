@@ -441,7 +441,7 @@
           <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;">COACH</div>
           <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:9px;color:var(--text3);background:none;border:none;cursor:pointer;letter-spacing:0.06em;padding:0;">↺ Refresh</button>
         </div>
-        <div id="rec-loading" style="font-family:var(--font);font-size:11px;color:var(--text3);">Analysing your training...</div>
+        <div id="rec-loading" style="font-family:var(--font);font-size:11px;color:var(--text2);">Analysing your training...</div>
         <div id="rec-content" style="display:none;">
           <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px;"></div>
           <div id="rec-brief" style="font-family:var(--font);font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;"></div>
@@ -534,13 +534,13 @@
         <select class="sl-ex-select" id="sl-ex-select" onchange="onExSelect()"></select>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="sl-counter" id="sl-counter">Set 1</span>
-          <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;">Skip →</button>
+          <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;">Skip →</button>
         </div>
       </div>
       <!-- Progress + volume bar -->
       <div style="margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
-          <span id="progress-label" style="font-family:var(--font);font-size:10px;color:var(--text3);letter-spacing:0.06em;">0 sets</span>
+          <span id="progress-label" style="font-family:var(--font);font-size:10px;color:var(--text2);letter-spacing:0.06em;">0 sets</span>
           <span id="volume-label" style="font-family:var(--font-display);font-size:16px;color:var(--text2);letter-spacing:0.04em;">0 kg</span>
         </div>
         <div style="height:2px;background:var(--bg3);border-radius:2px;overflow:hidden;">
@@ -574,7 +574,7 @@
           </div>
         </div>
       </div>
-      <div id="sl-total" style="text-align:center;font-size:11px;color:var(--text3);margin-bottom:8px;display:none;"></div>
+      <div id="sl-total" style="text-align:center;font-size:11px;color:var(--text2);margin-bottom:8px;display:none;"></div>
       <div class="timer-bar" id="timer-bar" style="border:none;padding:6px 0 10px;background:none;justify-content:center;gap:16px;">
         <div class="timer-block">
           <span class="timer-lbl">SESSION</span>
@@ -685,21 +685,21 @@
       <div id="ex-picker-grid" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
       <!-- Exercise content -->
       <div id="prog-ex-content">
-        <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:24px 0;">Select an exercise above</div>
+        <div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:24px 0;">Select an exercise above</div>
       </div>
     </div>
 
     <!-- OVERVIEW TAB -->
     <div id="prog-overview-tab">
       <div id="prog-overview-content">
-        <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading...</div>
+        <div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Loading...</div>
       </div>
     </div>
 
     <!-- TREE TAB -->
     <div id="prog-tree-tab" style="display:none;">
       <div id="prog-tree-content">
-        <div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading progression tree...</div>
+        <div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Loading progression tree...</div>
       </div>
     </div>
 
@@ -949,7 +949,7 @@ function renderEquipConfig(l) {
       <label class="tog"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleEquip('${l}','${key}',this.checked)"><span class="tog-slider"></span></label>
     </div>`;
   let html = '<div class="eq-section-lbl">KETTLEBELLS</div>';
-  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Tap to toggle available weights</div>';
+  html += '<div style="font-size:11px;color:var(--text2);margin-bottom:6px">Tap to toggle available weights</div>';
   html += '<div class="kb-grid">';
   ALL_KB.forEach(w => {
     const on = (cfg.kb_weights || []).includes(w);
@@ -1201,7 +1201,7 @@ function renderInjuryList() {
   list.innerHTML = injuries.map((inj,i) =>
     `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
       <span style="font-size:12px;color:var(--text)">${inj.body_part}</span>
-      <button onclick="resolveInjury(${inj.id})" style="font-family:var(--font);font-size:10px;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:4px;padding:2px 8px;cursor:pointer;">Resolve</button>
+      <button onclick="resolveInjury(${inj.id})" style="font-family:var(--font);font-size:10px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:2px 8px;cursor:pointer;">Resolve</button>
     </div>`
   ).join('');
 }
@@ -1527,12 +1527,12 @@ async function startSession() {
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:2px solid rgba(34,197,94,0.25);border-radius:8px;padding:10px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
           <span style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${i+1}. ${e.display_name}</span>
-          <span style="font-family:var(--font);font-size:10px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:4px;border:1px solid var(--border);">${e.sets}×${e.reps}</span>
+          <span style="font-family:var(--font);font-size:10px;color:var(--text2);background:var(--bg3);padding:2px 8px;border-radius:4px;border:1px solid var(--border);">${e.sets}×${e.reps}</span>
         </div>
         <div style="font-family:var(--font);font-size:11px;color:var(--text2);letter-spacing:0.04em;margin-bottom:${e.notes ? '5px' : '0'};">${e.weight} &nbsp;·&nbsp; ${e.reps} reps &nbsp;·&nbsp; ${e.rir} left</div>
         ${e.notes ? `<div style="font-family:var(--font);font-size:11px;color:var(--text2);font-style:italic;line-height:1.6;margin-top:4px;">${e.notes}</div>` : ''}
       </div>`).join('')}
-    <div style="font-family:var(--font);font-size:11px;color:var(--text3);padding:4px 2px;">Start with ${plan[0]?.display_name}. Log each set as you go.</div>`;
+    <div style="font-family:var(--font);font-size:11px;color:var(--text2);padding:4px 2px;">Start with ${plan[0]?.display_name}. Log each set as you go.</div>`;
   chat.appendChild(planWrap);
   chat.scrollTop = 0;
   setTimeout(() => { chat.scrollTop = 0; }, 50);
@@ -2153,7 +2153,7 @@ function renderStrengthChart(sets, benchmarks, isBW) {
   });
   const pts = Object.entries(byDate).filter(([,v])=>v>0).sort(([a],[b])=>a.localeCompare(b))
     .map(([date, val]) => ({ date, val, x: dayNum(date) }));
-  if (pts.length < 2) return `<div style="font-family:var(--font);font-size:10px;color:var(--text3);text-align:center;padding:20px 0;">Not enough data for chart yet</div>`;
+  if (pts.length < 2) return `<div style="font-family:var(--font);font-size:10px;color:var(--text2);text-align:center;padding:20px 0;">Not enough data for chart yet</div>`;
 
   const reg = linearRegression(pts.map(p => ({ x: p.x, y: p.val })));
   const W = 320, H = 150, PL = 42, PR = 32, PT = 14, PB = 24;
@@ -2301,7 +2301,7 @@ async function loadTreeTab() {
   });
 
   if (!patterns.length) {
-    content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">No patterns yet</div>';
+    content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">No patterns yet</div>';
     return;
   }
 
@@ -2377,7 +2377,7 @@ async function loadTreeTab() {
 async function generateCoachReview() {
   const content = document.getElementById('prog-review-content');
   content.innerHTML = `<div style="text-align:center;padding:48px 0;">
-    <div style="font-family:var(--font);font-size:12px;color:var(--text3);margin-bottom:8px;">Analysing 6 weeks of training data...</div>
+    <div style="font-family:var(--font);font-size:12px;color:var(--text2);margin-bottom:8px;">Analysing 6 weeks of training data...</div>
     <div class="typing" style="justify-content:center;"><span></span><span></span><span></span></div>
   </div>`;
 
@@ -2469,18 +2469,18 @@ Return ONLY valid JSON, no markdown:
         ${review.risk_flags.map(f=>`<div style="font-family:var(--font);font-size:11px;color:var(--text2);margin-bottom:4px;">· ${f}</div>`).join('')}
       </div>` : '') +
 
-      `<button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:6px;padding:8px 16px;cursor:pointer;width:100%;letter-spacing:0.06em;">↺ Regenerate</button>`;
+      `<button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:6px;padding:8px 16px;cursor:pointer;width:100%;letter-spacing:0.06em;">↺ Regenerate</button>`;
 
   } catch(e) {
-    content.innerHTML = `<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Review failed — ${e.message}<br><br><button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;color:var(--green);background:none;border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:6px 14px;cursor:pointer;">Retry</button></div>`;
+    content.innerHTML = `<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Review failed — ${e.message}<br><br><button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;color:var(--green);background:none;border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:6px 14px;cursor:pointer;">Retry</button></div>`;
   }
 }
 
 async function loadExerciseProgress(exerciseId) {
   if (!exerciseId) exerciseId = selectedExId;
   const content = document.getElementById('prog-ex-content');
-  if (!exerciseId) { content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Select an exercise above</div>'; return; }
-  content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">Loading...</div>';
+  if (!exerciseId) { content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Select an exercise above</div>'; return; }
+  content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Loading...</div>';
 
   const [histRes, progRes, benchRes] = await Promise.all([
     api('getProgressionData', { exercise_id: exerciseId, limit: 60 }),
@@ -2556,10 +2556,10 @@ async function loadExerciseProgress(exerciseId) {
       <div>
         <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;margin-bottom:4px;">🏆 PERSONAL BEST</div>
         <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1;">${isBW ? bestReps + ' reps' : bestWeight + 'kg'}</div>
-        ${!isBW && bestE1rm > 0 ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:2px;">e1RM ${bestE1rm.toFixed(1)}kg</div>` : ''}
+        ${!isBW && bestE1rm > 0 ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:2px;">e1RM ${bestE1rm.toFixed(1)}kg</div>` : ''}
       </div>
       <div style="text-align:right;">
-        <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${pbSet.date?.slice(5) || ''}</div>
+        <div style="font-family:var(--font);font-size:10px;color:var(--text2);">${pbSet.date?.slice(5) || ''}</div>
         <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:2px;">${pbSet.reps} reps${pbSet.weight_kg > 0 ? ' @ '+pbSet.weight_kg+'kg' : ''}</div>
       </div>
     </div>` : '') +
@@ -2574,8 +2574,8 @@ async function loadExerciseProgress(exerciseId) {
         <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.1em;">LEVEL ${ex.matrix_level||'?'}</div>
       </div>
       <div style="font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;">Hit ${rule.rep_target} @ ${rule.rir_target} left · ${rule.sessions_to_confirm} sessions</div>
-      <div style="font-family:var(--font);font-size:11px;color:var(--text2);margin-bottom:${levers.length?'8px':'0'};">${rule.next_exercise_id ? '→ ' + rule.next_exercise_id.replace(/_/g,' ') + (rule.next_requires?' <span style="color:var(--text3);">(needs '+rule.next_requires+')</span>':'') : '→ Peak tier for this pattern'}</div>
-      ${levers.length ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);">Levers: ${levers.slice(0,3).join(' · ')}</div>` : ''}
+      <div style="font-family:var(--font);font-size:11px;color:var(--text2);margin-bottom:${levers.length?'8px':'0'};">${rule.next_exercise_id ? '→ ' + rule.next_exercise_id.replace(/_/g,' ') + (rule.next_requires?' <span style="color:var(--text2);">(needs '+rule.next_requires+')</span>':'') : '→ Peak tier for this pattern'}</div>
+      ${levers.length ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);">Levers: ${levers.slice(0,3).join(' · ')}</div>` : ''}
     </div>` : '') +
 
     // Benchmark
@@ -2744,7 +2744,7 @@ async function loadOverview() {
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${tier==='building'?'0':'5px'};">
             <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
             <div style="display:flex;align-items:center;gap:8px;">
-              <div style="font-family:var(--font);font-size:10px;color:var(--text3);">${p.sessionsHit}/${p.needed}</div>
+              <div style="font-family:var(--font);font-size:10px;color:var(--text2);">${p.sessionsHit}/${p.needed}</div>
               ${p.eta && tier !== 'accomplished' ? `<div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);background:var(--bg3);padding:2px 6px;border-radius:4px;">${p.eta}</div>` : ''}
               ${tier === 'accomplished' ? `<button id="apply-prog-${p.id}" onclick="event.stopPropagation();applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?p.next.replace(/_/g,' '):''}')"
                 style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${alreadyQueued?'var(--text3)':'var(--green)'};background:none;border:1px solid ${alreadyQueued?'var(--border2)':'rgba(34,197,94,0.4)'};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;">
@@ -2753,7 +2753,7 @@ async function loadOverview() {
             </div>
           </div>
           ${tier !== 'building' ? `<div style="height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-bottom:4px;"><div style="height:100%;background:${c.barColour};width:${Math.min(100,p.pct)}%;border-radius:2px;box-shadow:0 0 4px ${c.borderColour};"></div></div>` : ''}
-          ${tier === 'accomplished' && p.next ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);">→ ${p.next.replace(/_/g,' ')}${p.nextReq?' (needs '+p.nextReq+')':''}</div>` : ''}
+          ${tier === 'accomplished' && p.next ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);">→ ${p.next.replace(/_/g,' ')}${p.nextReq?' (needs '+p.nextReq+')':''}</div>` : ''}
           ${tier === 'thisClose' ? `<div style="font-family:var(--font);font-size:10px;color:var(--amber);">One more session at target → advance</div>` : ''}
         </div>`;
       }).join('')}
@@ -2772,9 +2772,9 @@ async function loadOverview() {
         <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">PBs THIS MONTH</div>
         ${pbs.length
           ? `<div style="font-family:var(--font-display);font-size:36px;color:var(--green);line-height:1;">${pbs.length}</div>
-             <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;line-height:1.6;">${pbs.join('<br>')}</div>`
+             <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:4px;line-height:1.6;">${pbs.join('<br>')}</div>`
           : `<div style="font-family:var(--font-display);font-size:36px;color:var(--text3);line-height:1;">0</div>
-             <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">none yet this month</div>`}
+             <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:4px;">none yet this month</div>`}
       </div>
     </div>` +
 
@@ -2803,7 +2803,7 @@ async function loadOverview() {
         return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
           <div style="font-family:var(--font-ui);font-size:9px;font-weight:600;color:var(--text2);width:60px;flex-shrink:0;text-transform:uppercase;">${p}</div>
           <div style="flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;"><div style="height:100%;background:var(--text3);width:${pct}%;border-radius:2px;"></div></div>
-          <div style="font-family:var(--font);font-size:10px;color:var(--text3);width:28px;text-align:right;">${pct}%</div>
+          <div style="font-family:var(--font);font-size:10px;color:var(--text2);width:28px;text-align:right;">${pct}%</div>
         </div>`;
       }).join('')}
     </div>` +
@@ -2817,7 +2817,7 @@ async function loadOverview() {
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
           <div>
             <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${d.session_type}</div>
-            <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:2px;">${d.date} · ${d.total_sets} sets · ${d.total_volume_kg}kg</div>
+            <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:2px;">${d.date} · ${d.total_sets} sets · ${d.total_volume_kg}kg</div>
           </div>
           <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:${col};letter-spacing:0.1em;padding:3px 8px;border:1px solid ${col};border-radius:4px;opacity:0.8;">${oc.toUpperCase()}</div>
         </div>`;
