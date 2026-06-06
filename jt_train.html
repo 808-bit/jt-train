@@ -2078,66 +2078,85 @@ function renderStrengthChart(sets, benchmarks, isBW) {
 // ── Progression Tree Tab ───────────────────────────────────────────────────────
 async function loadTreeTab() {
   const content = document.getElementById('prog-tree-content');
-  const [progRes, allSetsRes] = await Promise.all([
-    api('getProgressionTree'),
+  const [patternsRes, allSetsRes] = await Promise.all([
+    api('getMovementPatterns'),
     api('getAllProgressionData', { limit: 2000 })
   ]);
-  const rules    = progRes.data    || [];
-  const allSets  = allSetsRes.data || [];
 
-  if (!rules.length) { content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">No progression data yet</div>'; return; }
+  const patterns     = patternsRes.patterns     || [];
+  const progressions = patternsRes.progressions || [];
+  const allSets      = allSetsRes.data          || [];
 
-  // Build chains
-  const ruleMap = {};
-  rules.forEach(r => ruleMap[r.exercise_id] = r);
-  const hasParent = new Set(rules.map(r => r.next_exercise_id).filter(Boolean));
-  const roots = rules.filter(r => !hasParent.has(r.exercise_id));
-
-  function buildChain(id, visited = new Set()) {
-    if (visited.has(id) || !ruleMap[id]) return [id];
-    visited.add(id);
-    const r = ruleMap[id];
-    return r.next_exercise_id ? [id, ...buildChain(r.next_exercise_id, visited)] : [id];
+  if (!patterns.length) {
+    content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">No patterns yet</div>';
+    return;
   }
 
-  const chains = roots.map(r => buildChain(r.exercise_id));
-  const doneById = {};
+  // Last set date per exercise
   const lastSeen = {};
   allSets.forEach(s => { if (!lastSeen[s.exercise_id] || s.date > lastSeen[s.exercise_id]) lastSeen[s.exercise_id] = s.date; });
 
-  // Group by modality
-  const byModality = {};
-  chains.forEach(chain => {
-    const r = ruleMap[chain[0]];
-    const mod = r?.modality || 'other';
-    if (!byModality[mod]) byModality[mod] = [];
-    byModality[mod].push(chain);
+  // Current level per pattern — highest level the user has done
+  const currentLevel = {};
+  progressions.forEach(p => {
+    if (lastSeen[p.exercise_id]) {
+      if (!currentLevel[p.pattern_id] || p.level > currentLevel[p.pattern_id]) {
+        currentLevel[p.pattern_id] = p.level;
+      }
+    }
   });
 
-  const modLabels = { pull:'PULL', push:'PUSH', hinge:'HINGE', squat:'SQUAT', core:'CORE', carry:'CARRY', other:'OTHER' };
+  const typeIcon = { dynamic:'', isometric:'◷', weighted:'⚖' };
+  const typeColors = { dynamic:'var(--text)', isometric:'var(--amber)', weighted:'var(--green)' };
 
-  content.innerHTML = Object.entries(byModality).map(([mod, chains]) => `
-    <div style="margin-bottom:20px;">
-      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">${modLabels[mod]||mod.toUpperCase()}</div>
-      ${chains.map(chain => `
-        <div style="display:flex;align-items:center;gap:4px;margin-bottom:10px;overflow-x:auto;padding-bottom:4px;">
-          ${chain.map((id, i) => {
-            const ex = exercises.find(e => e.id === id) || { display_name: id.replace(/_/g,' ') };
-            const rule = ruleMap[id];
-            const done = lastSeen[id] && rule?.next_exercise_id && progRuleIds.has(rule.next_exercise_id);
-            const active = !!lastSeen[id];
-            const future = !lastSeen[id];
-            const bg = done ? 'rgba(34,197,94,0.08)' : active ? 'var(--bg2)' : 'var(--bg)';
-            const border = done ? 'rgba(34,197,94,0.3)' : active ? 'var(--green)' : 'var(--border)';
-            const textCol = done ? 'var(--text3)' : active ? 'var(--text)' : 'var(--text3)';
-            const icon = done ? '✓ ' : active ? '● ' : '';
-            return `<div onclick="switchProgTab('exercise');selectExercise('${id}')" style="flex-shrink:0;background:${bg};border:1px solid ${border};border-radius:8px;padding:8px 12px;cursor:pointer;min-width:100px;max-width:140px;">
-              <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:${textCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${icon}${ex.display_name}</div>
-              ${rule ? `<div style="font-family:var(--font);font-size:8px;color:var(--text3);margin-top:3px;">${rule.rep_target}</div>` : ''}
-            </div>${i < chain.length-1 ? '<div style="color:var(--text3);font-size:12px;flex-shrink:0;">→</div>' : ''}`;
-          }).join('')}
-        </div>`).join('')}
-    </div>`).join('');
+  content.innerHTML = patterns.map(pat => {
+    const chain = progressions.filter(p => p.pattern_id === pat.id).sort((a,b) => a.level - b.level);
+    const curLvl = currentLevel[pat.id] || 0;
+
+    return `
+    <div style="margin-bottom:24px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">${pat.name.toUpperCase()}</div>
+      <div style="display:flex;flex-direction:column;gap:0;">
+        ${chain.map((p, i) => {
+          const done    = p.level < curLvl;
+          const current = p.level === curLvl;
+          const next    = p.level === curLvl + 1;
+          const future  = p.level > curLvl + 1;
+
+          const bg      = done ? 'rgba(34,197,94,0.06)' : current ? 'var(--bg2)' : 'var(--bg)';
+          const border  = done ? 'rgba(34,197,94,0.25)' : current ? 'var(--green)' : 'var(--border)';
+          const nameCol = done ? 'var(--text3)' : current ? 'var(--text)' : next ? 'var(--text2)' : 'var(--text3)';
+          const badge   = done ? '✓' : current ? '●' : '';
+          const badgeCol = done ? 'var(--green)' : 'var(--green)';
+          const opacity = future ? '0.45' : '1';
+
+          return `
+          <div style="display:flex;align-items:stretch;opacity:${opacity};">
+            <!-- Level line -->
+            <div style="display:flex;flex-direction:column;align-items:center;width:24px;flex-shrink:0;margin-right:10px;">
+              <div style="width:2px;flex:1;background:${i===0?'transparent':'var(--border)'};"></div>
+              <div style="width:8px;height:8px;border-radius:50%;background:${done||current?'var(--green)':'var(--border)'};flex-shrink:0;"></div>
+              <div style="width:2px;flex:1;background:${i===chain.length-1?'transparent':'var(--border)'};"></div>
+            </div>
+            <!-- Card -->
+            <div onclick="switchProgTab('exercise');selectExercise('${p.exercise_id}')"
+              style="flex:1;background:${bg};border:1px solid ${border};border-radius:8px;padding:10px 12px;margin:3px 0;cursor:pointer;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  ${badge ? `<span style="font-family:var(--font-ui);font-size:10px;color:${badgeCol};font-weight:700;">${badge}</span>` : ''}
+                  <span style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:${nameCol};">${p.exercise_name}</span>
+                  ${typeIcon[p.type] ? `<span style="font-size:10px;color:${typeColors[p.type]};opacity:0.7;">${typeIcon[p.type]}</span>` : ''}
+                </div>
+                <span style="font-family:var(--font);font-size:9px;color:var(--text3);">${p.rep_target||p.duration_target||''}</span>
+              </div>
+              ${p.notes && current ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;font-style:italic;">${p.notes}</div>` : ''}
+              ${p.equipment ? `<div style="font-family:var(--font-ui);font-size:8px;color:var(--text3);margin-top:3px;letter-spacing:0.1em;">${p.equipment.replace(/_/g,' ').toUpperCase()}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 async function loadExerciseProgress(exerciseId) {

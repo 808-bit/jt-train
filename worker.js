@@ -164,6 +164,16 @@ async function handleGet(request, env) {
   }
 
 
+  if (action === 'getMovementPatterns') {
+    const { results: patterns } = await env.DB.prepare(
+      'SELECT * FROM movement_patterns ORDER BY display_order'
+    ).all();
+    const { results: progressions } = await env.DB.prepare(
+      'SELECT * FROM pattern_progressions ORDER BY pattern_id, level'
+    ).all();
+    return json({ patterns, progressions });
+  }
+
   if (action === 'getProgressionTree') {
     const exerciseId = searchParams.get('exercise_id');
     if (exerciseId) {
