@@ -52,13 +52,6 @@ async function handleGet(request, env) {
     return json({ data });
   }
 
-  if (action === 'getMovementPatterns') {
-    const { results } = await env.DB.prepare(
-      'SELECT mp.*, COUNT(e.id) as exercise_count FROM movement_patterns mp LEFT JOIN exercises e ON e.movement_pattern_id = mp.id GROUP BY mp.id ORDER BY mp.display_order'
-    ).all();
-    return json({ data: results });
-  }
-
   if (action === 'getActiveInjuries') {
     const { results } = await env.DB.prepare(
       'SELECT * FROM injuries WHERE active = 1 ORDER BY date_start DESC'
