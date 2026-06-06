@@ -2456,6 +2456,7 @@ async function loadExerciseProgress(exerciseId) {
   const bBeg = benchmarks.find(b => b.level === 'beginner');
   const bInt = benchmarks.find(b => b.level === 'intermediate');
   const bAdv = benchmarks.find(b => b.level === 'advanced');
+  const rule = rules[0] || null;
 
   const levers = rule ? (() => { try { return JSON.parse(rule.intensity_levers||'[]'); } catch { return []; } })() : [];
 
