@@ -445,7 +445,7 @@
         <div id="rec-content" style="display:none;">
           <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px;"></div>
           <div id="rec-brief" style="font-family:var(--font);font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;"></div>
-          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text3);font-style:italic;"></div>
+          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text2);font-style:italic;"></div>
         </div>
       </div>
 
@@ -2204,7 +2204,7 @@ function renderStrengthChart(sets, benchmarks, isBW) {
       <text x="${sx(pts[0].x).toFixed(1)}" y="${H}" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.25)" font-family="DM Mono,monospace">${pts[0].date.slice(5)}</text>
       <text x="${sx(last.x).toFixed(1)}" y="${H}" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.4)" font-family="DM Mono,monospace">${last.date.slice(5)}</text>
     </svg>
-    ${prediction?`<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:6px;font-style:italic;">${prediction}</div>`:''}
+    ${prediction?`<div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:6px;font-style:italic;">${prediction}</div>`:''}
   </div>`;
 }
 
@@ -2356,8 +2356,8 @@ async function loadTreeTab() {
                 </div>
                 <span style="font-family:var(--font);font-size:9px;color:var(--text3);">${p.rep_target||p.duration_target||''}</span>
               </div>
-              ${p.notes && current ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;font-style:italic;">${p.notes}</div>` : ''}
-              ${p.equipment ? `<div style="font-family:var(--font-ui);font-size:8px;color:var(--text3);margin-top:3px;letter-spacing:0.1em;">${p.equipment.replace(/_/g,' ').toUpperCase()}</div>` : ''}
+              ${p.notes && current ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:4px;font-style:italic;">${p.notes}</div>` : ''}
+              ${p.equipment ? `<div style="font-family:var(--font-ui);font-size:8px;color:var(--text2);margin-top:3px;letter-spacing:0.1em;">${p.equipment.replace(/_/g,' ').toUpperCase()}</div>` : ''}
             </div>
           </div>`;
         }).join('')}
