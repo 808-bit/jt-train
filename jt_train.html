@@ -399,6 +399,20 @@
   </div>
   <div class="idle-body">
     <div class="idle-inner">
+      <!-- Auto recommendation -->
+      <div id="rec-card" style="display:none;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;">COACH RECOMMENDS</div>
+          <button onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:9px;color:var(--text3);background:none;border:none;cursor:pointer;letter-spacing:0.06em;">↺ Refresh</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div id="rec-type" style="font-family:var(--font-ui);font-size:18px;font-weight:700;color:var(--text);"></div>
+            <div id="rec-reason" style="font-family:var(--font);font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5;max-width:240px;"></div>
+          </div>
+          <button onclick="acceptRecommendation()" style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--bg);background:var(--green);border:none;border-radius:6px;padding:8px 14px;cursor:pointer;letter-spacing:0.06em;flex-shrink:0;margin-left:12px;">Accept →</button>
+        </div>
+      </div>
       <div class="section">
         <div class="lbl">SESSION TYPE</div>
         <div class="pills" id="session-pills">
@@ -792,11 +806,15 @@ function selS(el, v) {
   document.querySelectorAll('#session-pills .pill').forEach(p => p.classList.remove('active'));
   el.classList.add('active');
   loadHistory();
+  if (recommendedType && v !== recommendedType) {
+    document.getElementById('rec-card').style.display = 'none';
+  }
 }
 function selL(el, v) {
   loc = v;
   document.querySelectorAll('#loc-pills .pill').forEach(p => p.classList.remove('active'));
   el.classList.add('active');
+  autoRecommend();
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────
@@ -1222,6 +1240,7 @@ async function init() {
     document.getElementById('gen-btn').disabled = false;
 
     await loadHistory();
+    autoRecommend();
   } catch (e) {
     document.getElementById("badge").textContent = "offline";
     const errDetail = e?.message || String(e);
@@ -1239,7 +1258,84 @@ async function loadHistory() {
   }
 }
 
-// ── SSO Context Builder ───────────────────────────────────────────────────────
+// ── Auto session recommendation ───────────────────────────────────────────────
+let recommendedType = null;
+
+async function autoRecommend() {
+  const card = document.getElementById('rec-card');
+  const recType = document.getElementById('rec-type');
+  const recReason = document.getElementById('rec-reason');
+  recType.textContent = '...';
+  recReason.textContent = 'Analysing your training...';
+  card.style.display = 'block';
+
+  try {
+    const [sessRes, debriefRes] = await Promise.all([
+      api('getSessions', { limit: 5 }),
+      api('getRecentDebriefs', { limit: 3 })
+    ]);
+    const recentSessions = sessRes.sessions || [];
+    const debriefs       = debriefRes.data   || [];
+
+    const sessionSummary = recentSessions.map(s =>
+      `${s.date}: ${s.session_type} @ ${s.location}`
+    ).join('\n') || 'No recent sessions';
+
+    const debriefSummary = debriefs.map(d =>
+      `${d.date} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
+    ).join('\n') || 'No debrief data';
+
+    const system = `You are a strength and conditioning coach. Recommend the next training session for James.
+
+RECENT SESSIONS:
+${sessionSummary}
+
+RECENT DEBRIEFS:
+${debriefSummary}
+
+TODAY'S READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
+LOCATION: ${loc}
+ACTIVE INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
+
+Available session types: Full Body A, Full Body B, Upper Body, Lower Body, Rings Only, KB Only
+
+Consider:
+- Which muscle groups need recovery based on recent sessions
+- Readiness signals — low sleep/energy means lower volume
+- Progression — what patterns haven't been hit recently
+- Injury constraints
+- Location equipment
+
+Return ONLY valid JSON, no markdown:
+{"session_type":"Full Body A","reason":"One plain-English sentence explaining why."}`;
+
+    const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], HAIKU);
+    const jsonStart = raw.indexOf('{');
+    const jsonEnd   = raw.lastIndexOf('}');
+    const rec = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+
+    recommendedType = rec.session_type;
+    recType.textContent   = rec.session_type;
+    recReason.textContent = rec.reason;
+    autoSelectPill(rec.session_type);
+  } catch(e) {
+    card.style.display = 'none';
+    console.log('Recommendation failed:', e);
+  }
+}
+
+function autoSelectPill(type) {
+  document.querySelectorAll('#session-pills .pill').forEach(p => {
+    p.classList.remove('active');
+    if (p.textContent.trim() === type) p.classList.add('active');
+  });
+  sType = type;
+}
+
+function acceptRecommendation() {
+  autoSelectPill(recommendedType);
+  document.getElementById('rec-card').style.display = 'none';
+}
 async function fetchSSOContext(limit, sessionTypeFilter) {
   try {
     const params = { limit: limit || 3 };
