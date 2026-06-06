@@ -2087,6 +2087,10 @@ async function loadTreeTab() {
   const progressions = patternsRes.progressions || [];
   const allSets      = allSetsRes.data          || [];
 
+  // Only show patterns that have progressions seeded
+  const patternIdsWithData = new Set(progressions.map(p => p.pattern_id));
+  const activePatterns = patterns.filter(p => patternIdsWithData.has(p.id));
+
   if (!patterns.length) {
     content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);text-align:center;padding:32px 0;">No patterns yet</div>';
     return;
@@ -2109,7 +2113,7 @@ async function loadTreeTab() {
   const typeIcon = { dynamic:'', isometric:'◷', weighted:'⚖' };
   const typeColors = { dynamic:'var(--text)', isometric:'var(--amber)', weighted:'var(--green)' };
 
-  content.innerHTML = patterns.map(pat => {
+  content.innerHTML = activePatterns.map(pat => {
     const chain = progressions.filter(p => p.pattern_id === pat.id).sort((a,b) => a.level - b.level);
     const curLvl = currentLevel[pat.id] || 0;
 
