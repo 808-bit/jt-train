@@ -871,7 +871,7 @@ function stopAllTimers() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function isTrue(v) { return v === true || v === 'TRUE' || v === 'true'; }
+function isTrue(v) { return v === true || v === 1 || v === '1' || v === 'TRUE' || v === 'true'; }
 function goScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   document.getElementById(id).classList.add('on');
@@ -1550,7 +1550,10 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     const allowedIds = new Set(filterExercises(exercises, loc, sType).map(e => e.exercise_id));
+    console.log('[plan] allowedIds:', [...allowedIds]);
+    console.log('[plan] AI returned:', (parsed.exercises || []).map(e => e.exercise_id));
     parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
+    console.log('[plan] after filter:', parsed.exercises.map(e => e.exercise_id));
     plan = parsed.exercises;
     // Only clear progressions whose 'from' exercise was replaced in this plan
     const planIds = new Set(plan.map(e => e.exercise_id));
