@@ -943,7 +943,7 @@ const HAIKU  = 'claude-haiku-4-5-20251001';
 let equipmentConfig = {};
 const ALL_KB = [8,12,16,20,24,28,32,36,40,44,48];
 const DEFAULT_CONFIG = {
-  Home:   { rings:true,  pull_up_bar:true,  parallettes_high:true,  parallettes_low:true,  bands:true,  kb_weights:[16,20,24,32], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
+  Home:   { rings:true,  pull_up_bar:true,  parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[16,20,24,32], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
   Travel: { rings:false, pull_up_bar:false, parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[],               kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
   Gym:    { rings:false, pull_up_bar:true,  parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[8,12,16,20,24,28,32,36,40,44,48], kb_pairs:true, barbell:true, dumbbells:true, cable_machine:true }
 };
@@ -1540,7 +1540,7 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the provided list.`;
+Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_ids from the "Available exercises" list above — never invent or use an exercise_id not in that list.`;
 
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
@@ -1549,7 +1549,9 @@ Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the p
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
-    plan = parsed.exercises || [];
+    const allowedIds = new Set(filterExercises(exercises, loc, sType).map(e => e.exercise_id));
+    parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
+    plan = parsed.exercises;
     // Only clear progressions whose 'from' exercise was replaced in this plan
     const planIds = new Set(plan.map(e => e.exercise_id));
     pendingProgressions = pendingProgressions.filter(p => planIds.has(p.to) ? false : true);
