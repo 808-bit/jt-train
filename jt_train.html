@@ -18,6 +18,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   :root {
+    /* ── Theme A: Warm Black (default) ───────────────────────────────────── */
     --bg: #080808; --bg2: #0f0f0f; --bg3: #161616;
     --text: #ede8df; --text2: #7a7570; --text3: #383430;
     --border: #1e1c1a; --border2: #252220;
@@ -34,6 +35,15 @@
     --mono:var(--font); --warn:var(--amber); --danger:var(--red); --accent:var(--green);
     --r-full:50px; --r-lg:var(--radius);
   }
+  /* ── Theme B: Performance Blue ───────────────────────────────────────────── */
+  [data-theme="b"] {
+    --bg: #070a0e; --bg2: #0d1117; --bg3: #141c26;
+    --text: #e8edf5; --text2: #5d7494; --text3: #2a3a50;
+    --border: #182030; --border2: #1e2d42;
+    --green: #00cfa8; --amber: #f0a500; --red: #f04f58;
+    --green-dim: rgba(0,207,168,0.12);
+  }
+
   body {
     background: var(--bg);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='1' height='1' fill='rgba(255,255,255,0.015)'/%3E%3C/svg%3E");
@@ -426,6 +436,7 @@
       <span class="badge" id="badge">connecting...</span>
     </div>
     <div style="display:flex;gap:8px;">
+      <button class="btn-sm" id="theme-toggle" onclick="toggleTheme()" style="font-size:9px;letter-spacing:0.18em;min-width:44px;">A</button>
       <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
       <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
       <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc)">⚙</button>
@@ -863,6 +874,20 @@ function goScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   document.getElementById(id).classList.add('on');
 }
+
+function toggleTheme() {
+  const isB = document.documentElement.dataset.theme === 'b';
+  document.documentElement.dataset.theme = isB ? '' : 'b';
+  localStorage.setItem('jt-theme', isB ? 'a' : 'b');
+  document.getElementById('theme-toggle').textContent = isB ? 'A' : 'B';
+}
+(function() {
+  if (localStorage.getItem('jt-theme') === 'b') {
+    document.documentElement.dataset.theme = 'b';
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = 'B';
+  }
+})();
 
 function showToast(msg, type, duration) {
   const t = document.createElement('div');
