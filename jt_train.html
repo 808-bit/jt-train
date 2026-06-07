@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="b">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
@@ -437,7 +437,7 @@
       <span class="badge" id="badge">connecting...</span>
     </div>
     <div style="display:flex;gap:8px;">
-      <button class="btn-sm" id="theme-toggle" onclick="toggleTheme()" style="font-size:9px;letter-spacing:0.18em;min-width:44px;">A</button>
+      <button class="btn-sm" id="theme-toggle" onclick="toggleTheme()" style="font-size:9px;letter-spacing:0.18em;min-width:44px;">B</button>
       <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
       <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
       <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc)">⚙</button>
@@ -883,10 +883,11 @@ function toggleTheme() {
   document.getElementById('theme-toggle').textContent = isB ? 'A' : 'B';
 }
 (function() {
-  if (localStorage.getItem('jt-theme') === 'b') {
-    document.documentElement.dataset.theme = 'b';
+  const stored = localStorage.getItem('jt-theme');
+  if (stored === 'a') {
+    document.documentElement.dataset.theme = '';
     const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = 'B';
+    if (btn) btn.textContent = 'A';
   }
 })();
 
