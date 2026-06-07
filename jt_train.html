@@ -495,9 +495,9 @@
         </div>
         <div id="rec-content" style="display:none;">
           <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px;"></div>
-          <div id="rec-brief" style="font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:10px;"></div>
+          <div id="rec-brief" style="font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--text2);line-height:1.5;margin-bottom:10px;"></div>
           <div id="rec-cues" style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px;"></div>
-          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text3);"></div>
+          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text3);font-style:italic;border-top:1px solid var(--border2);padding-top:8px;margin-top:2px;"></div>
         </div>
       </div>
 
@@ -1399,10 +1399,10 @@ Think about:
 Return ONLY valid JSON, no markdown:
 {
   "session_type": "Full Body A",
-  "headline": "Max 8 words. The session in a phrase.",
-  "brief": "1 sentence. Overall session intent — movement patterns and focus.",
-  "cues": ["Specific execution cue 1", "Specific execution cue 2", "Specific execution cue 3"],
-  "reason": "1 sentence. Why this, why now, based on the data."
+  "headline": "Max 6 words. The session in a phrase.",
+  "brief": "Max 12 words. Overall session intent — movement patterns and focus.",
+  "cues": ["Max 8 words cue 1", "Max 8 words cue 2"],
+  "reason": "Max 10 words. Why this, why now."
 }`;
 
     const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], HAIKU);
