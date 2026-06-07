@@ -494,9 +494,10 @@
           <div class="skel" style="height:10px;width:60%;"></div>
         </div>
         <div id="rec-content" style="display:none;">
-          <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px;"></div>
-          <div id="rec-brief" style="font-family:var(--font);font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;"></div>
-          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text2);font-style:italic;"></div>
+          <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px;"></div>
+          <div id="rec-brief" style="font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:10px;"></div>
+          <div id="rec-cues" style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px;"></div>
+          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text3);"></div>
         </div>
       </div>
 
@@ -1399,7 +1400,8 @@ Return ONLY valid JSON, no markdown:
 {
   "session_type": "Full Body A",
   "headline": "Max 8 words. The session in a phrase.",
-  "brief": "2-3 sentences. Specific coaching prescription — which movement patterns, why, what to focus on. Name specific exercise types not just categories.",
+  "brief": "1 sentence. Overall session intent — movement patterns and focus.",
+  "cues": ["Specific execution cue 1", "Specific execution cue 2", "Specific execution cue 3"],
   "reason": "1 sentence. Why this, why now, based on the data."
 }`;
 
@@ -1414,9 +1416,13 @@ Return ONLY valid JSON, no markdown:
 
     document.getElementById('rec-loading').style.display = 'none';
     document.getElementById('rec-content').style.display = 'block';
-    document.getElementById('rec-type').textContent   = rec.headline || rec.session_type;
-    document.getElementById('rec-brief').textContent  = rec.brief;
-    document.getElementById('rec-reason').textContent = rec.reason;
+    document.getElementById('rec-type').textContent  = rec.headline || rec.session_type;
+    document.getElementById('rec-brief').textContent = rec.brief;
+    const cuesEl = document.getElementById('rec-cues');
+    cuesEl.innerHTML = (rec.cues || []).map(c =>
+      `<div style="display:flex;gap:8px;align-items:flex-start;font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.4;"><span style="color:var(--green);flex-shrink:0;">→</span><span>${c}</span></div>`
+    ).join('');
+    document.getElementById('rec-reason').textContent = rec.reason ? '─  ' + rec.reason : '';
 
     // Auto-select the matching pill
     document.querySelectorAll('#session-pills .pill').forEach(p => {
