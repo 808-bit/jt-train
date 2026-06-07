@@ -177,6 +177,7 @@
     background: var(--text); color: var(--bg); border: none;
     border-radius: 10px; padding: 10px 18px; font-size: 16px;
     cursor: pointer; transition: opacity 0.15s;
+    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
   }
   .send-btn:disabled { opacity: 0.25; }
   .quick-btns { display: flex; gap: 7px; flex-wrap: wrap; }
@@ -572,7 +573,7 @@
         <select class="sl-ex-select" id="sl-ex-select" onchange="onExSelect()"></select>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="sl-counter" id="sl-counter">Set 1</span>
-          <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;">Skip →</button>
+          <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;min-height:44px;min-width:44px;">Skip →</button>
         </div>
       </div>
       <!-- Progress + volume bar -->
