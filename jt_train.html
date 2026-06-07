@@ -1480,7 +1480,7 @@ async function generatePlan() {
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterExercises(exercises, loc, sType)
-    .map(e => e.exercise_id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
+    .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
     .join('\n');
   const histStr = history.sets && history.sets.length
     ? 'Last ' + history.sessions.length + ' sessions:\n' +
@@ -1549,7 +1549,7 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
-    const allowedIds = new Set(filterExercises(exercises, loc, sType).map(e => e.exercise_id));
+    const allowedIds = new Set(filterExercises(exercises, loc, sType).map(e => e.id));
     console.log('[plan] allowedIds:', [...allowedIds]);
     console.log('[plan] AI returned:', (parsed.exercises || []).map(e => e.exercise_id));
     parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
@@ -2001,7 +2001,7 @@ async function sendReviewMsg() {
   reviewTyping = true;
   addReviewMsg('you', msg);
   const availableExList = filterExercises(exercises, loc, sType)
-    .map(e => e.exercise_id + ' (' + e.display_name + ', ' + e.category + ', ' + e.equipment + ')')
+    .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', ' + e.equipment + ')')
     .join(', ');
   const chat = document.getElementById('review-chat');
   const typingDiv = document.createElement('div');
