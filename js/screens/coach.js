@@ -41,6 +41,7 @@ async function loadIdleHistory() {
 
 let recommendedType = null;
 let coachBrief = null;
+let cachedDebriefs = null;
 
 async function autoRecommend() {
   document.getElementById('rec-loading').style.display = 'block';
@@ -49,10 +50,11 @@ async function autoRecommend() {
   try {
     const [sessRes, debriefRes] = await Promise.all([
       api('getSessions', { limit: 10 }),
-      api('getRecentDebriefs', { limit: 6 })
+      api('getRecentDebriefs', { limit: 20 })
     ]);
     const recentSessions = sessRes.sessions || [];
     const debriefs       = debriefRes.data   || [];
+    cachedDebriefs = debriefs;
 
     const sessionSummary = recentSessions.map(s =>
       `${s.date}: ${s.session_type} @ ${s.location}`
@@ -67,7 +69,7 @@ async function autoRecommend() {
 RECENT SESSIONS (last 10):
 ${sessionSummary}
 
-RECENT DEBRIEFS (last 6):
+RECENT DEBRIEFS (last 20):
 ${debriefSummary}
 
 READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
@@ -158,6 +160,16 @@ function toggleOverride() {
 
 function acceptRecommendation() {
   document.getElementById('rec-card').style.display = 'none';
+}
+
+function formatSSOContext(debriefs, sTypeFilter, limit) {
+  let filtered = sTypeFilter ? debriefs.filter(d => d.session_type === sTypeFilter) : debriefs;
+  if (limit) filtered = filtered.slice(0, limit);
+  if (!filtered.length) return 'No previous debrief data available.';
+  return filtered.map(d => {
+    const flagged = (() => { try { return JSON.parse(d.exercises_flagged || '[]'); } catch { return []; } })();
+    return `[${d.date} ${d.session_type}] Signal: ${d.performance_signal} | Volume: ${d.total_volume_kg}kg / ${d.total_sets} sets${d.shoulder_flag ? ' | ⚠ Shoulder flagged' : ''}${flagged.length ? ' | Flagged: ' + flagged.join(', ') : ''} | Rec: ${d.recommendation}`;
+  }).join('\n');
 }
 
 async function fetchSSOContext(limit, sessionTypeFilter) {
@@ -315,8 +327,11 @@ async function generatePlan() {
   }
 
   document.getElementById('gen-status').textContent = 'Reading your history...';
+  const ssoPromise = cachedDebriefs !== null
+    ? Promise.resolve(formatSSOContext(cachedDebriefs, sType, 6))
+    : fetchSSOContext(6, sType);
   const [ssoContext, progRes, histRes, mpRes] = await Promise.all([
-    fetchSSOContext(6, sType),
+    ssoPromise,
     api('getProgressionTree'),
     api('getSessionHistory', { limit: 15 }),
     api('getMovementPatterns'),
