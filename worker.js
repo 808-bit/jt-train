@@ -71,7 +71,7 @@ async function handleGet(request, env) {
       SELECT st.*, e.display_name FROM sets st
       JOIN exercises e ON st.exercise_id = e.id
       WHERE st.session_id IN (${ids})
-      ORDER BY st.session_id, st.exercise_id, st.set_num
+      ORDER BY st.session_id, st.id
     `).all();
     return json({ sessions: sessions.results, sets: sets.results });
   }
