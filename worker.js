@@ -62,14 +62,15 @@ async function handleGet(request, env) {
   if (action === 'getSessionHistory') {
     const sessionType = searchParams.get('session_type') || '';
     const limit = parseInt(searchParams.get('limit') || '3');
-    const sessions = await env.DB.prepare(`
-      SELECT * FROM sessions WHERE session_type = ? ORDER BY date DESC LIMIT ?
-    `).bind(sessionType, limit).all();
+    const sessions = sessionType
+      ? await env.DB.prepare(`SELECT * FROM sessions WHERE session_type = ? ORDER BY date DESC LIMIT ?`).bind(sessionType, limit).all()
+      : await env.DB.prepare(`SELECT * FROM sessions ORDER BY date DESC LIMIT ?`).bind(limit).all();
     if (!sessions.results.length) return json({ sessions: [], sets: [] });
     const ids = sessions.results.map(s => `'${s.id}'`).join(',');
     const sets = await env.DB.prepare(`
-      SELECT st.*, e.display_name FROM sets st
+      SELECT st.*, e.display_name, s.session_type FROM sets st
       JOIN exercises e ON st.exercise_id = e.id
+      JOIN sessions s ON st.session_id = s.id
       WHERE st.session_id IN (${ids})
       ORDER BY st.session_id, st.id
     `).all();
