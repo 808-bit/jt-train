@@ -2091,22 +2091,27 @@ function selectRPE(n) {
 
 async function savePostSession() {
   const notes = document.getElementById('post-notes')?.value.trim() || '';
-  await apiPost({
-    action: 'appendSession',
-    data: {
-      session_id: sessionId,
-      date: new Date().toLocaleDateString("en-CA"),
-      week_type: 'training',
-      phase: 'Lean Bulk Q2 2026',
-      session_type: sType,
-      location: loc,
-      rpe_session: selectedRPE || '',
-      notes: notes,
-      ai_plan_used: true,
-    }
-  });
-  addMsg('coach', 'Session saved. RPE ' + (selectedRPE || '—') + (notes ? ' · ' + notes : '') + '\n\nRest up. See you next session.');
-  stopAllTimers();
+  try {
+    await apiPost({
+      action: 'appendSession',
+      data: {
+        session_id: sessionId,
+        date: new Date().toLocaleDateString("en-CA"),
+        week_type: 'training',
+        phase: 'Lean Bulk Q2 2026',
+        session_type: sType,
+        location: loc,
+        rpe_session: selectedRPE || '',
+        notes: notes,
+        ai_plan_used: true,
+      }
+    });
+    stopAllTimers();
+    loggedSets = []; sessionId = ''; selectedRPE = null;
+    goScreen('s-idle');
+  } catch(e) {
+    showToast('Save failed — ' + e.message, 'error');
+  }
 }
 
 function discardSession() {
