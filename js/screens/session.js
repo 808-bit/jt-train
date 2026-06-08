@@ -30,6 +30,10 @@ async function startSession() {
       pre_energy: preEnergy,
       pre_soreness: preSoreness,
     }
+  }).then(r => {
+    if (!r.ok) showToast('Session not saved — check connection', 'error');
+  }).catch(e => {
+    showToast('Session not saved — ' + e.message, 'error');
   });
 
   const planWrap = document.createElement('div');
