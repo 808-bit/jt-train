@@ -74,6 +74,10 @@ function goScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   document.getElementById(id).classList.add('on');
   if (id === 's-active' && sessionId) requestWakeLock();
+  if (id === 's-idle') {
+    const p = document.getElementById('override-panel');
+    if (p) p.style.display = 'none';
+  }
 }
 
 function toggleTheme() {
