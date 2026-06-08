@@ -185,14 +185,30 @@ function endSession() {
   document.getElementById('end-modal').style.display='flex';
 }
 
-function closeEndModal() { document.getElementById('end-modal').style.display='none'; }
+function closeEndModal() {
+  document.getElementById('end-modal').style.display='none';
+  _resetDiscardBtn();
+}
 
-async function savePartialSession() {
-  closeEndModal(); stopAllTimers(); goScreen('s-idle');
-  document.getElementById('status').textContent='Session saved ✓';
+let _discardPending = false;
+let _discardTimer = null;
+
+function _resetDiscardBtn() {
+  _discardPending = false;
+  clearTimeout(_discardTimer);
+  const btn = document.getElementById('discard-btn');
+  if (btn) { btn.textContent = 'Discard — delete all data'; btn.style.opacity = '1'; }
 }
 
 async function discardAndDelete() {
+  if (!_discardPending) {
+    _discardPending = true;
+    const btn = document.getElementById('discard-btn');
+    if (btn) { btn.textContent = 'Tap again to confirm delete'; btn.style.opacity = '0.7'; }
+    _discardTimer = setTimeout(_resetDiscardBtn, 3000);
+    return;
+  }
+  _resetDiscardBtn();
   closeEndModal();
   if (sessionId) await apiPost({ action:'deleteSession', session_id:sessionId });
   loggedSets=[]; sessionId=''; stopAllTimers(); goScreen('s-idle');

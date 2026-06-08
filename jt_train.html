@@ -786,9 +786,8 @@
     <div class="modal-title">End session?</div>
     <div class="modal-sub">You still have sets remaining. What would you like to do?</div>
     <div class="modal-stats" id="modal-stats"></div>
-    <button class="modal-btn modal-btn-save" style="background:var(--green);color:#000;border-color:var(--green)" onclick="closeEndModal();quickMsg('done')">Done — debrief →</button>
-    <button class="modal-btn modal-btn-save" onclick="savePartialSession()">Save partial session →</button>
-    <button class="modal-btn modal-btn-discard" onclick="discardAndDelete()">Discard — delete all data</button>
+    <button class="modal-btn modal-btn-save" style="background:var(--green);color:#000;border-color:var(--green)" onclick="closeEndModal();quickMsg('done')">Finish &amp; debrief →</button>
+    <button class="modal-btn modal-btn-discard" id="discard-btn" onclick="discardAndDelete()">Discard — delete all data</button>
     <button class="modal-btn modal-btn-cancel" onclick="closeEndModal()">Keep going</button>
   </div>
 </div>
