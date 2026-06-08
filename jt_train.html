@@ -1249,12 +1249,12 @@ async function logSet() {
   if (logger) { logger.classList.add('set-flash'); setTimeout(() => logger.classList.remove('set-flash'), 600); }
   // Auto-toggle side for unilateral exercises
   if (slSide) { slSide = slSide === 'L' ? 'R' : 'L'; renderFieldsUI(); }
-  const sideLabel = setData.notes && setData.notes.includes('side') ? ` (${setData.notes.split(' ')[0]})` : '';
-  const msg = `${ex.display_name} — Set ${setNum}${sideLabel}: ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`;
-  addMsg('you', msg);
-  // For unilateral, plannedSets means rounds (L+R pairs) — each round = 2 logs
   const plannedSets = ex.sets||4;
   const targetLogs = isUnilateral ? plannedSets * 2 : plannedSets;
+  const msg = isUnilateral
+    ? `${ex.display_name} — Round ${Math.ceil(setNum/2)} of ${plannedSets} (${justLoggedSide}): ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`
+    : `${ex.display_name} — Set ${setNum}: ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`;
+  addMsg('you', msg);
   if (setNum >= targetLogs) {
     if (slExIdx < plan.length-1) { slExIdx++; renderSetLogger(); await getCoachReply(msg+'\n\nAll sets done. Moving to next exercise.'); }
     else { updateSetCounter(); await getCoachReply(msg+'\n\nAll sets complete.'); }
