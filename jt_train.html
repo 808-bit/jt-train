@@ -454,41 +454,6 @@
   <div class="idle-body">
     <div class="idle-inner">
 
-      <!-- Location + signals row (compact) -->
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-        <div class="pills" id="loc-pills" style="flex-shrink:0;">
-          <button class="pill active" onclick="selL(this,'Home')">Home</button>
-          <button class="pill" onclick="selL(this,'Travel')">Travel</button>
-          <button class="pill" onclick="selL(this,'Gym')">Gym</button>
-        </div>
-        <div style="display:flex;gap:6px;margin-left:auto;flex-shrink:0;">
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;min-width:52px;">
-            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">SLEEP</div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
-              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('sleep',-1)">−</button>
-              <span id="sig-sleep" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
-              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('sleep',1)">+</button>
-            </div>
-          </div>
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;min-width:52px;">
-            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">ENERGY</div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
-              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('energy',-1)">−</button>
-              <span id="sig-energy" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
-              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('energy',1)">+</button>
-            </div>
-          </div>
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;min-width:52px;">
-            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">SORE</div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
-              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('soreness',-1)">−</button>
-              <span id="sig-soreness" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
-              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('soreness',1)">+</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Coach recommendation — hero card -->
       <div id="rec-card" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;min-height:120px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -518,7 +483,43 @@
 
       <!-- Override session type (hidden by default) -->
       <div id="override-panel" style="display:none;margin-bottom:14px;">
-        <div class="lbl" style="margin-bottom:8px;">SESSION TYPE OVERRIDE</div>
+        <!-- Location -->
+        <div class="lbl" style="margin-bottom:8px;">LOCATION</div>
+        <div class="pills" id="loc-pills" style="margin-bottom:14px;">
+          <button class="pill active" onclick="selL(this,'Home')">Home</button>
+          <button class="pill" onclick="selL(this,'Travel')">Travel</button>
+          <button class="pill" onclick="selL(this,'Gym')">Gym</button>
+        </div>
+        <!-- Signals -->
+        <div class="lbl" style="margin-bottom:8px;">READINESS</div>
+        <div style="display:flex;gap:6px;margin-bottom:14px;">
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;flex:1;">
+            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">SLEEP</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('sleep',-1)">−</button>
+              <span id="sig-sleep" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('sleep',1)">+</button>
+            </div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;flex:1;">
+            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">ENERGY</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('energy',-1)">−</button>
+              <span id="sig-energy" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('energy',1)">+</button>
+            </div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;text-align:center;flex:1;">
+            <div style="font-family:var(--font-ui);font-size:7px;font-weight:700;color:var(--text3);letter-spacing:0.14em;">SORE</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:2px;">
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('soreness',-1)">−</button>
+              <span id="sig-soreness" style="font-family:var(--font-display);font-size:22px;color:var(--text);line-height:1;">3</span>
+              <button class="sl-btn" style="width:20px;height:20px;font-size:12px;" onclick="adjustSignal('soreness',1)">+</button>
+            </div>
+          </div>
+        </div>
+        <!-- Session type -->
+        <div class="lbl" style="margin-bottom:8px;">SESSION TYPE</div>
         <div class="pills" id="session-pills" style="margin-bottom:10px;">
           <button class="pill" onclick="selS(this,'Full Body A')">Full Body A</button>
           <button class="pill" onclick="selS(this,'Full Body B')">Full Body B</button>
