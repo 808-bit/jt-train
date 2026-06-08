@@ -179,12 +179,150 @@ async function fetchSSOContext(limit, sessionTypeFilter) {
   } catch(e) { return 'SSO context unavailable.'; }
 }
 
+async function generateCoachesWorkout() {
+  const preNotes = document.getElementById('pre-notes').value.trim();
+  document.getElementById('gen-status').textContent = 'Analysing your training data...';
+
+  const [histRes, ssoContext, progRes, mpRes] = await Promise.all([
+    api('getSessionHistory', { limit: 20 }),
+    fetchSSOContext(10, null),
+    api('getProgressionTree'),
+    api('getMovementPatterns'),
+  ]);
+
+  const progRules = progRes.data || [];
+  const progContext = progRules.length
+    ? progRules.map(p => {
+        const levers = (() => { try { return JSON.parse(p.intensity_levers || '[]'); } catch { return []; } })();
+        return `${p.display_name}: target ${p.rep_target} @ RIR ${p.rir_target} for ${p.sessions_to_confirm} sessions → next: ${p.next_exercise_id || 'peak'}${p.next_requires ? ' (needs ' + p.next_requires + ')' : ''}. Levers: ${levers.slice(0, 2).join(', ')}`;
+      }).join('\n')
+    : 'No progression data.';
+
+  const patterns = mpRes.patterns || [];
+  const patternProgs = mpRes.progressions || [];
+  const patternsStr = patterns.length
+    ? patterns.map(p => {
+        const chain = patternProgs
+          .filter(pp => pp.pattern_id === p.id)
+          .sort((a, b) => a.level - b.level)
+          .map(pp => `  L${pp.level}: ${pp.exercise_name}${pp.rep_target ? ' (' + pp.rep_target + ' reps @ RIR' + pp.rir_target + ')' : ''}`)
+          .join('\n');
+        return `${p.name}${p.description ? ' — ' + p.description : ''}\n${chain || '  (no chain)'}`;
+      }).join('\n\n')
+    : 'No pattern data.';
+
+  const sets = histRes.sets || [];
+  const sessions = histRes.sessions || [];
+  const histStr = sets.length
+    ? 'Last ' + sessions.length + ' sessions (all types):\n' +
+      sets.map(s =>
+        s.session_id.slice(0, 10) + ' | ' + (s.session_type || '') + ' | ' + s.exercise_id +
+        ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
+        (s.rir != null ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
+      ).join('\n')
+    : 'No history yet.';
+
+  const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
+  const kitStr = buildKitString(loc);
+  const availEx = filterExercises(exercises, loc, 'Coaches Workout')
+    .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.movement_pattern ? ', ' + e.movement_pattern : '') + (e.notes ? ', note: ' + e.notes : '') + ')')
+    .join('\n');
+
+  const readinessStr = (preSleep <= 2 || preEnergy <= 2)
+    ? '⚠ LOW — reduce to 3-4 exercises, RIR 2-3, quality over output.'
+    : (preSleep >= 4 && preEnergy >= 4)
+    ? '✓ HIGH — 5-7 exercises, RIR 0-1, push loads.'
+    : 'MODERATE — 4-5 exercises, RIR 1-2, standard dose.';
+
+  const system = `You are The Tactical Partner — a precision strength coach with full autonomy to design today's hypertrophy session for James Thornton.
+Operating principle: maintain the machine, respect the load, optimise for life. No fluff. Data drives decisions.
+
+ATHLETE PROFILE:
+Goal: Lean bulk / hypertrophy — Q2 2026.
+Equipment: ${kitStr}
+Active injuries: ${injStr}
+Location: ${loc}
+
+READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
+${readinessStr}
+
+HYPERTROPHY PRINCIPLES (non-negotiable):
+- Primary driver: mechanical tension. Work sets in 6-12 rep range.
+- RIR 0-2 on work sets. First set conservative, final set close to failure.
+- 3-5 hard sets per movement pattern trained.
+- Compounds anchor the session. Isolation only where it fills a genuine gap.
+- Base all loads on the most recent sets logged for each exercise — progressive overload.
+- Tempo: note a 2-3s eccentric where it matters for tension.
+
+MOVEMENT PATTERN ARCHITECTURE (scan this to identify what's overdue):
+${patternsStr}
+
+PROGRESSION TREE (use to determine if an exercise should advance to next tier):
+${progContext}
+
+${pendingProgressions.length ? `CONFIRMED PROGRESSIONS (athlete approved — use new exercise, not old):\n${pendingProgressions.map(p => `- SWAP ${p.fromName} → ${p.toName || 'peak tier'}`).join('\n')}\n\n` : ''}DEBRIEF INTELLIGENCE (last 10 sessions):
+${ssoContext}
+
+RAW SET HISTORY (last 20 sessions — use to assess per-pattern frequency, loads, and fatigue):
+${histStr}
+
+AVAILABLE EXERCISES (ONLY use these exercise_ids — never invent one):
+${availEx}
+
+DESIGN PROCESS:
+1. Scan history. Which movement patterns were trained most/least recently?
+2. Prioritise patterns 5+ days undertrained or absent from recent sessions.
+3. Apply readiness signal to set exercise count and intensity ceiling.
+4. Apply any confirmed progressions.
+5. Set loads from the most recent logged sets — push if readiness allows.
+6. session_notes: one sharp sentence on what you're targeting and why.
+
+Return ONLY valid JSON, no markdown:
+{
+  "session_notes": "tactical rationale",
+  "exercises": [
+    { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
+  ]
+}`;
+
+  document.getElementById('gen-status').textContent = 'Building your plan...';
+  const userMsg = 'Design the optimal hypertrophy session for today. Location: ' + loc +
+    (preNotes ? '\n\nPre-session notes: ' + preNotes : '');
+  const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
+  const clean = raw.replace(/```json|```/g, '').trim();
+  const parsed = JSON.parse(clean);
+  const allowedIds = new Set(filterExercises(exercises, loc, 'Coaches Workout').map(e => e.id));
+  parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
+  plan = parsed.exercises;
+  const planIds = new Set(plan.map(e => e.exercise_id));
+  pendingProgressions.forEach(p => { if (planIds.has(p.to)) appliedProgressions.add(p.from); });
+  pendingProgressions = pendingProgressions.filter(p => !planIds.has(p.to));
+  localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
+  localStorage.setItem('appliedProgressions', JSON.stringify([...appliedProgressions]));
+  document.getElementById('review-title').textContent = 'Coaches Workout';
+  document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
+  document.getElementById('review-chat').innerHTML = '';
+  renderPlanCards(parsed);
+  goScreen('s-review');
+}
+
 async function generatePlan() {
   goScreen('s-generating');
+  if (sType === 'Coaches Workout') {
+    try {
+      await generateCoachesWorkout();
+    } catch (e) {
+      goScreen('s-idle');
+      document.getElementById('status').textContent = 'Error: ' + e.message;
+      showToast('Plan failed — ' + e.message, 'error');
+    }
+    return;
+  }
+
   document.getElementById('gen-status').textContent = 'Reading your history...';
   await loadIdleHistory();
   const [ssoContext, progRes] = await Promise.all([
-    fetchSSOContext(sType === 'Coaches Workout' ? 6 : 3, sType === 'Coaches Workout' ? null : sType),
+    fetchSSOContext(3, sType),
     api('getProgressionTree')
   ]);
   const progRules = progRes.data || [];
@@ -202,11 +340,11 @@ async function generatePlan() {
   const histStr = history.sets && history.sets.length
     ? 'Last ' + history.sessions.length + ' sessions:\n' +
       history.sets.map(s =>
-        s.session_id.slice(0, 10) + ' | ' + (s.session_type || '') + ' | ' + s.exercise_id +
+        s.session_id.slice(0, 10) + ' | ' + s.exercise_id +
         ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
         (s.rir ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
       ).join('\n')
-    : 'No recent history' + (sType !== 'Coaches Workout' ? ' for ' + sType : '');
+    : 'No recent history for ' + sType;
   const sessionFocus = {
     'Full Body A': 'Compound lower body + push + pull. Squat or hinge pattern, horizontal push, vertical or horizontal pull.',
     'Full Body B': 'Compound lower body + push + pull. Different pattern to Full Body A — hinge or lunge, different push/pull combo.',
@@ -215,9 +353,6 @@ async function generatePlan() {
     'Rings Only': 'All exercises on gymnastics rings. Push, pull, core — rings only. No KB.',
     'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
   };
-  const sessionFocusStr = sType === 'Coaches Workout'
-    ? 'COACHES WORKOUT — analyse the raw set history and recent debriefs to identify which movement patterns (push, pull, hinge, squat, carry, core) are undertrained or overdue. Select 4-6 exercises purely to fill those gaps. Ignore predefined push/pull/legs structure — let the data drive selection.'
-    : (sessionFocus[sType] || '');
   const system = `You are The Tactical Partner — an intelligent, analytical training operator for James Thornton.
 Your operating principle: maintain the machine, respect the load, optimise for life.
 You are not a motivator. You are a precision instrument. No fluff, no toxic positivity, no filler.
@@ -226,11 +361,11 @@ ${coachBrief ? `COACH PRESCRIPTION (follow this closely — it overrides generic
 ${coachBrief}
 
 ` : ''}Phase: Lean bulk Q2 2026. Hypertrophy focus.
-Session type: ${sType} — ${sessionFocusStr}
+Session type: ${sType} — ${sessionFocus[sType] || ''}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
 
-RECENT DEBRIEF INTELLIGENCE (last ${sType === 'Coaches Workout' ? '6 sessions (all types)' : '3 ' + sType + ' sessions'} — use this to drive load, volume, and exercise selection):
+RECENT DEBRIEF INTELLIGENCE (last 3 ${sType} sessions — use this to drive load, volume, and exercise selection):
 ${ssoContext}
 
 PROGRESSION TREE (rep targets and next tiers — use to determine if an exercise should advance):
@@ -265,10 +400,8 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
     const preNotes = document.getElementById('pre-notes').value.trim();
-    const userMsg = (sType === 'Coaches Workout'
-      ? 'Generate a coaches workout based purely on movement pattern gaps from recent history. Location: ' + loc
-      : 'Generate my ' + sType + ' workout. Location: ' + loc
-    ) + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
+    const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc +
+      (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
