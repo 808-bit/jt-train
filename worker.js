@@ -120,9 +120,10 @@ async function handleGet(request, env) {
     const sessionType = searchParams.get('session_type') || '';
     const limit  = parseInt(searchParams.get('limit')  || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
+    // Exclude historical CSV imports (-H suffix) from the history view
     const sessQuery = sessionType
-      ? 'SELECT * FROM sessions WHERE session_type = ? ORDER BY date DESC LIMIT ? OFFSET ?'
-      : 'SELECT * FROM sessions ORDER BY date DESC LIMIT ? OFFSET ?';
+      ? "SELECT * FROM sessions WHERE session_type = ? AND id NOT LIKE '%-H' ORDER BY date DESC LIMIT ? OFFSET ?"
+      : "SELECT * FROM sessions WHERE id NOT LIKE '%-H' ORDER BY date DESC LIMIT ? OFFSET ?";
     const sessResult = sessionType
       ? await env.DB.prepare(sessQuery).bind(sessionType, limit, offset).all()
       : await env.DB.prepare(sessQuery).bind(limit, offset).all();
@@ -130,8 +131,8 @@ async function handleGet(request, env) {
     if (!sessions.length) return json({ sessions: [], sets: [] });
     const ids = sessions.map(s => "'" + s.id + "'").join(',');
     const setsResult = await env.DB.prepare(
-      'SELECT st.*, e.display_name, ROUND(st.weight_kg * (1 + st.reps / 30.0), 2) AS estimated_1rm ' +
-      'FROM sets st JOIN exercises e ON st.exercise_id = e.id ' +
+      'SELECT st.*, COALESCE(e.display_name, st.exercise_id) AS display_name, ROUND(st.weight_kg * (1 + st.reps / 30.0), 2) AS estimated_1rm ' +
+      'FROM sets st LEFT JOIN exercises e ON st.exercise_id = e.id ' +
       'WHERE st.session_id IN (' + ids + ') ORDER BY st.session_id, st.exercise_id, st.set_num'
     ).all();
     const pbResult = await env.DB.prepare(
