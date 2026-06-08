@@ -18,8 +18,6 @@ async function init() {
     document.getElementById('dot').classList.add('live');
     document.getElementById('badge').textContent = '● LIVE';
     document.getElementById('status').textContent = exercises.length + ' exercises loaded';
-    document.getElementById('gen-btn').disabled = false;
-
     await loadIdleHistory();
     autoRecommend();
   } catch (e) {
