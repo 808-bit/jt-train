@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="b">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
@@ -18,7 +18,6 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   :root {
-    /* ── Theme A: Warm Black (default) ───────────────────────────────────── */
     --bg: #080808; --bg2: #0f0f0f; --bg3: #161616;
     --text: #ede8df; --text2: #7a7570; --text3: #383430;
     --border: #1e1c1a; --border2: #252220;
@@ -29,22 +28,7 @@
     --font-ui: 'Syne', sans-serif;
     --radius: 10px;
     --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3);
-    /* alias map for JS-rendered history components */
-    --s1:var(--bg2); --b1:var(--border); --b2:var(--border2); --b3:var(--bg3);
-    --t1:var(--text); --t2:var(--text2); --t3:var(--text3); --t4:var(--text3);
-    --mono:var(--font); --warn:var(--amber); --danger:var(--red); --accent:var(--green);
-    --r-full:50px; --r-lg:var(--radius);
   }
-  /* ── Theme B: Performance Blue ───────────────────────────────────────────── */
-  [data-theme="b"] {
-    /* surfaces lifted to #121212-#1E1E1E range per Material Design / verified research */
-    --bg: #10141a; --bg2: #161d28; --bg3: #1c2535;
-    --text: #e8edf5; --text2: #5d7494; --text3: #2a3a50;
-    --border: #1e2d42; --border2: #253650;
-    --green: #00cfa8; --amber: #f0a500; --red: #f04f58;
-    --green-dim: rgba(0,207,168,0.12);
-  }
-
   body {
     background: var(--bg);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='1' height='1' fill='rgba(255,255,255,0.015)'/%3E%3C/svg%3E");
@@ -70,7 +54,6 @@
     color: var(--text2); background: none;
     border: 1px solid var(--border2); padding: 5px 14px; border-radius: 6px;
     cursor: pointer; letter-spacing: 0.06em; transition: all 0.15s;
-    min-height: 44px; display: inline-flex; align-items: center;
   }
   .btn-sm:hover { color: var(--text); border-color: var(--border2); }
 
@@ -90,7 +73,6 @@
     border: 1px solid var(--border2); color: var(--text2);
     cursor: pointer; background: var(--bg2);
     transition: all 0.15s; letter-spacing: 0.03em;
-    min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
   }
   .pill:hover { border-color: var(--text3); color: var(--text); }
   .pill.active {
@@ -188,7 +170,6 @@
     background: var(--text); color: var(--bg); border: none;
     border-radius: 10px; padding: 10px 18px; font-size: 16px;
     cursor: pointer; transition: opacity 0.15s;
-    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
   }
   .send-btn:disabled { opacity: 0.25; }
   .quick-btns { display: flex; gap: 7px; flex-wrap: wrap; }
@@ -197,7 +178,7 @@
     padding: 5px 12px; border-radius: 14px;
     border: 1px solid var(--border2); color: var(--text2);
     background: var(--bg2); cursor: pointer; letter-spacing: 0.04em;
-    transition: all 0.12s; min-height: 44px; display: inline-flex; align-items: center;
+    transition: all 0.12s;
   }
   .quick-btn:hover { color: var(--text); border-color: var(--text3); }
   .quick-btn.debrief { border-color: rgba(34,197,94,0.35); color: var(--green); background: var(--green-dim); }
@@ -267,7 +248,7 @@
   }
   .sl-stepper { display: flex; align-items: center; justify-content: center; gap: 4px; }
   .sl-btn {
-    font-family: var(--font); width: 44px; height: 44px;
+    font-family: var(--font); width: 30px; height: 30px;
     border-radius: 8px; border: 1px solid var(--border);
     background: var(--bg2); color: var(--text2);
     font-size: 18px; cursor: pointer;
@@ -384,7 +365,7 @@
   @media (max-width: 480px) {
     .sl-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .sl-val { font-size: 52px; }
-    .sl-btn { font-size: 20px; }
+    .sl-btn { width: 36px; height: 36px; font-size: 20px; }
     .sl-field { padding: 12px 4px 10px; }
     .sl-log-btn { padding: 16px; font-size: 14px; }
     .timer-val { font-size: 30px; }
@@ -398,32 +379,6 @@
   .hist-card { border-bottom: 1px solid var(--border); padding: 14px 0; cursor: pointer; }
   .hist-session-title { font-family: var(--font-ui); font-size: 14px; font-weight: 600; color: var(--text); }
   .hist-session-meta { font-family: var(--font); font-size: 11px; color: var(--text3); margin-top: 3px; letter-spacing: 0.04em; }
-
-  /* ── Screen transitions ──────────────────────────────────────────────────── */
-  @keyframes screenIn { from { opacity: 0; } to { opacity: 1; } }
-  .screen.on { animation: screenIn 150ms ease; }
-
-  /* ── Toast notifications ─────────────────────────────────────────────────── */
-  .toast {
-    position: fixed; bottom: 96px; left: 50%; transform: translateX(-50%) translateY(6px);
-    background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px;
-    padding: 10px 18px; font-family: var(--font-ui); font-size: 11px; font-weight: 600;
-    color: var(--text2); z-index: 500; opacity: 0; transition: opacity 0.2s, transform 0.2s;
-    white-space: nowrap; pointer-events: none; letter-spacing: 0.04em;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  }
-  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
-  .toast-error { border-color: rgba(239,68,68,0.35); color: var(--red); }
-  .toast-success { border-color: rgba(34,197,94,0.35); color: var(--green); }
-  .toast-warn { border-color: rgba(245,158,11,0.35); color: var(--amber); }
-
-  /* ── Overscroll containment ──────────────────────────────────────────────── */
-  .chat-area, .review-body, .prog-body, .eq-body { overscroll-behavior: contain; }
-
-  /* ── Loading skeleton ────────────────────────────────────────────────────── */
-  @keyframes skelPulse { 0%,100%{opacity:0.4} 50%{opacity:0.9} }
-  .skel { background: var(--bg3); border-radius: 4px; animation: skelPulse 1.4s ease infinite; }
-  .skel-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -437,7 +392,6 @@
       <span class="badge" id="badge">connecting...</span>
     </div>
     <div style="display:flex;gap:8px;">
-      <button class="btn-sm" id="theme-toggle" onclick="toggleTheme()" style="font-size:9px;letter-spacing:0.18em;min-width:44px;">B</button>
       <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
       <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
       <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc)">⚙</button>
@@ -487,17 +441,11 @@
           <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.18em;">COACH</div>
           <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:9px;color:var(--text3);background:none;border:none;cursor:pointer;letter-spacing:0.06em;padding:0;">↺ Refresh</button>
         </div>
-        <div id="rec-loading">
-          <div class="skel" style="height:13px;width:45%;margin-bottom:10px;"></div>
-          <div class="skel" style="height:10px;width:92%;margin-bottom:6px;"></div>
-          <div class="skel" style="height:10px;width:78%;margin-bottom:6px;"></div>
-          <div class="skel" style="height:10px;width:60%;"></div>
-        </div>
+        <div id="rec-loading" style="font-family:var(--font);font-size:11px;color:var(--text2);">Analysing your training...</div>
         <div id="rec-content" style="display:none;">
-          <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px;"></div>
-          <div id="rec-brief" style="font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--text2);line-height:1.5;margin-bottom:10px;"></div>
-          <div id="rec-cues" style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px;"></div>
-          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text3);font-style:italic;border-top:1px solid var(--border2);padding-top:8px;margin-top:2px;"></div>
+          <div id="rec-type" style="font-family:var(--font-ui);font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px;"></div>
+          <div id="rec-brief" style="font-family:var(--font);font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;"></div>
+          <div id="rec-reason" style="font-family:var(--font);font-size:10px;color:var(--text2);font-style:italic;"></div>
         </div>
       </div>
 
@@ -586,7 +534,7 @@
         <select class="sl-ex-select" id="sl-ex-select" onchange="onExSelect()"></select>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="sl-counter" id="sl-counter">Set 1</span>
-          <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;min-height:44px;min-width:44px;">Skip →</button>
+          <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;">Skip →</button>
         </div>
       </div>
       <!-- Progress + volume bar -->
@@ -681,7 +629,7 @@
     <div class="logo"><div class="dot live"></div><span>HISTORY</span></div>
     <button class="btn-sm" onclick="goScreen('s-idle')">← Back</button>
   </div>
-  <div style="flex:1;overflow-y:auto;padding:16px 20px 40px;overscroll-behavior:contain;">
+  <div style="flex:1;overflow-y:auto;padding:16px 20px 40px;">
     <!-- Filter pills -->
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;" id="hist-filters">
       <button class="pill active" onclick="setHistFilter(this,'')">All</button>
@@ -744,7 +692,7 @@
     <!-- OVERVIEW TAB -->
     <div id="prog-overview-tab">
       <div id="prog-overview-content">
-        <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div class="skel" style="height:80px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div><div class="skel" style="height:120px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div>
+        <div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Loading...</div>
       </div>
     </div>
 
@@ -871,43 +819,16 @@ function stopAllTimers() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function isTrue(v) { return v === true || v === 1 || v === '1' || v === 'TRUE' || v === 'true'; }
+function isTrue(v) { return v === true || v === 'TRUE' || v === 'true'; }
 function goScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   document.getElementById(id).classList.add('on');
-}
-
-function toggleTheme() {
-  const isB = document.documentElement.dataset.theme === 'b';
-  document.documentElement.dataset.theme = isB ? '' : 'b';
-  localStorage.setItem('jt-theme', isB ? 'a' : 'b');
-  document.getElementById('theme-toggle').textContent = isB ? 'A' : 'B';
-}
-(function() {
-  const stored = localStorage.getItem('jt-theme');
-  if (stored === 'a') {
-    document.documentElement.dataset.theme = '';
-    const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = 'A';
-  }
-})();
-
-function showToast(msg, type, duration) {
-  const t = document.createElement('div');
-  t.className = 'toast' + (type ? ' toast-' + type : '');
-  t.textContent = msg;
-  document.body.appendChild(t);
-  requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add('on')));
-  setTimeout(() => {
-    t.classList.remove('on');
-    setTimeout(() => t.remove(), 250);
-  }, duration || 3500);
 }
 function selS(el, v) {
   sType = v;
   document.querySelectorAll('#session-pills .pill').forEach(p => p.classList.remove('active'));
   el.classList.add('active');
-  loadIdleHistory();
+  loadHistory();
   if (recommendedType && v !== recommendedType) {
     document.getElementById('rec-card').style.display = 'none';
   }
@@ -943,7 +864,7 @@ const HAIKU  = 'claude-haiku-4-5-20251001';
 let equipmentConfig = {};
 const ALL_KB = [8,12,16,20,24,28,32,36,40,44,48];
 const DEFAULT_CONFIG = {
-  Home:   { rings:true,  pull_up_bar:true,  parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[16,20,24,32], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
+  Home:   { rings:true,  pull_up_bar:true,  parallettes_high:true,  parallettes_low:true,  bands:true,  kb_weights:[16,20,24,32], kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
   Travel: { rings:false, pull_up_bar:false, parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[],               kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
   Gym:    { rings:false, pull_up_bar:true,  parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[8,12,16,20,24,28,32,36,40,44,48], kb_pairs:true, barbell:true, dumbbells:true, cable_machine:true }
 };
@@ -1222,12 +1143,21 @@ async function logSet() {
     .then(r => {
       if (!r.ok) {
         console.error('appendSet failed:', r, setData);
-        showToast('Set not saved — check connection', 'error');
+        // Show visible warning
+        const warn = document.createElement('div');
+        warn.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#ef4444;color:#fff;font-family:var(--font-ui);font-size:11px;font-weight:700;padding:8px 16px;border-radius:8px;z-index:200;letter-spacing:0.06em;';
+        warn.textContent = '⚠ Set not saved — check connection';
+        document.body.appendChild(warn);
+        setTimeout(() => warn.remove(), 4000);
       }
     })
     .catch(e => {
       console.error('appendSet error:', e, setData);
-      showToast('Set not saved — ' + e.message, 'error');
+      const warn = document.createElement('div');
+      warn.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#ef4444;color:#fff;font-family:var(--font-ui);font-size:11px;font-weight:700;padding:8px 16px;border-radius:8px;z-index:200;letter-spacing:0.06em;';
+      warn.textContent = '⚠ Set not saved — ' + e.message;
+      document.body.appendChild(warn);
+      setTimeout(() => warn.remove(), 4000);
     });
   startRestTimer();
   updateProgress();
@@ -1332,7 +1262,7 @@ async function init() {
     document.getElementById('status').textContent = exercises.length + ' exercises loaded';
     document.getElementById('gen-btn').disabled = false;
 
-    await loadIdleHistory();
+    await loadHistory();
     autoRecommend();
   } catch (e) {
     document.getElementById("badge").textContent = "offline";
@@ -1340,11 +1270,10 @@ async function init() {
     document.getElementById("status").innerHTML =
       `fetch failed: ${errDetail} &nbsp;<button class="btn-sm" onclick="init()" style="margin-left:6px">Retry</button>`;
     console.error("init() failed:", e);
-    showToast('Connection failed — check network', 'error');
   }
 }
 
-async function loadIdleHistory() {
+async function loadHistory() {
   try {
     history = await api('getSessionHistory', { session_type: sType, limit: 3 });
   } catch (e) {
@@ -1399,10 +1328,9 @@ Think about:
 Return ONLY valid JSON, no markdown:
 {
   "session_type": "Full Body A",
-  "headline": "Max 6 words. The session in a phrase.",
-  "brief": "Max 12 words. Overall session intent — movement patterns and focus.",
-  "cues": ["Max 8 words cue 1", "Max 8 words cue 2"],
-  "reason": "Max 10 words. Why this, why now."
+  "headline": "Max 8 words. The session in a phrase.",
+  "brief": "2-3 sentences. Specific coaching prescription — which movement patterns, why, what to focus on. Name specific exercise types not just categories.",
+  "reason": "1 sentence. Why this, why now, based on the data."
 }`;
 
     const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], HAIKU);
@@ -1416,13 +1344,9 @@ Return ONLY valid JSON, no markdown:
 
     document.getElementById('rec-loading').style.display = 'none';
     document.getElementById('rec-content').style.display = 'block';
-    document.getElementById('rec-type').textContent  = rec.headline || rec.session_type;
-    document.getElementById('rec-brief').textContent = rec.brief;
-    const cuesEl = document.getElementById('rec-cues');
-    cuesEl.innerHTML = (rec.cues || []).map(c =>
-      `<div style="display:flex;gap:8px;align-items:flex-start;font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.4;"><span style="color:var(--green);flex-shrink:0;">→</span><span>${c}</span></div>`
-    ).join('');
-    document.getElementById('rec-reason').textContent = rec.reason ? '─  ' + rec.reason : '';
+    document.getElementById('rec-type').textContent   = rec.headline || rec.session_type;
+    document.getElementById('rec-brief').textContent  = rec.brief;
+    document.getElementById('rec-reason').textContent = rec.reason;
 
     // Auto-select the matching pill
     document.querySelectorAll('#session-pills .pill').forEach(p => {
@@ -1431,7 +1355,7 @@ Return ONLY valid JSON, no markdown:
     });
 
   } catch(e) {
-    document.getElementById('rec-loading').innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);">Could not load — <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:10px;color:var(--text2);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">retry</button></div>';
+    document.getElementById('rec-loading').textContent = 'Could not load recommendation. Try refreshing.';
     console.log('Recommendation failed:', e);
   }
 }
@@ -1464,7 +1388,7 @@ async function fetchSSOContext(limit, sessionTypeFilter) {
 async function generatePlan() {
   goScreen('s-generating');
   document.getElementById('gen-status').textContent = 'Reading your history...';
-  await loadIdleHistory();
+  await loadHistory();
   const [ssoContext, progRes] = await Promise.all([
     fetchSSOContext(3, sType),
     api('getProgressionTree')
@@ -1480,7 +1404,7 @@ async function generatePlan() {
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterExercises(exercises, loc, sType)
-    .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
+    .map(e => e.exercise_id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
     .join('\n');
   const histStr = history.sets && history.sets.length
     ? 'Last ' + history.sessions.length + ' sessions:\n' +
@@ -1540,7 +1464,7 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_ids from the "Available exercises" list above — never invent or use an exercise_id not in that list.`;
+Rules: 4-6 exercises. Base load/volume on history. Only use exercises from the provided list.`;
 
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
@@ -1549,12 +1473,7 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
-    const allowedIds = new Set(filterExercises(exercises, loc, sType).map(e => e.id));
-    console.log('[plan] allowedIds:', [...allowedIds]);
-    console.log('[plan] AI returned:', (parsed.exercises || []).map(e => e.exercise_id));
-    parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
-    console.log('[plan] after filter:', parsed.exercises.map(e => e.exercise_id));
-    plan = parsed.exercises;
+    plan = parsed.exercises || [];
     // Only clear progressions whose 'from' exercise was replaced in this plan
     const planIds = new Set(plan.map(e => e.exercise_id));
     pendingProgressions = pendingProgressions.filter(p => planIds.has(p.to) ? false : true);
@@ -1567,7 +1486,6 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
   } catch (e) {
     goScreen('s-idle');
     document.getElementById('status').textContent = 'Error: ' + e.message;
-    showToast('Plan failed — ' + e.message, 'error');
   }
 }
 
@@ -2001,7 +1919,7 @@ async function sendReviewMsg() {
   reviewTyping = true;
   addReviewMsg('you', msg);
   const availableExList = filterExercises(exercises, loc, sType)
-    .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', ' + e.equipment + ')')
+    .map(e => e.exercise_id + ' (' + e.display_name + ', ' + e.category + ', ' + e.equipment + ')')
     .join(', ');
   const chat = document.getElementById('review-chat');
   const typingDiv = document.createElement('div');
@@ -2558,14 +2476,63 @@ Return ONLY valid JSON, no markdown:
   }
 }
 
+async function deleteSet(setId, exerciseId) {
+  if (!confirm('Delete this set? This cannot be undone.')) return;
+  try {
+    await apiPost({ action: 'deleteSet', set_id: setId });
+    loadExerciseProgress(exerciseId);
+  } catch(e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+function showEditSet(setId, reps, weight, rir, exerciseId) {
+  const row = document.getElementById('set-row-' + setId);
+  if (!row) return;
+  row.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:4px;">
+        <label style="font-family:var(--font-ui);font-size:8px;color:var(--text3);">REPS</label>
+        <input id="edit-reps-${setId}" type="number" value="${reps}" min="1" max="100"
+          style="width:52px;background:var(--bg2);border:1px solid var(--green);border-radius:4px;padding:4px 6px;color:var(--text);font-family:var(--font-display);font-size:16px;text-align:center;outline:none;">
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <label style="font-family:var(--font-ui);font-size:8px;color:var(--text3);">KG</label>
+        <input id="edit-kg-${setId}" type="number" value="${weight}" min="0" max="200"
+          style="width:56px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;padding:4px 6px;color:var(--text);font-family:var(--font-display);font-size:16px;text-align:center;outline:none;">
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <label style="font-family:var(--font-ui);font-size:8px;color:var(--text3);">RES</label>
+        <input id="edit-rir-${setId}" type="number" value="${rir!=null?rir:''}" min="0" max="5"
+          style="width:44px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;padding:4px 6px;color:var(--text);font-family:var(--font-display);font-size:16px;text-align:center;outline:none;">
+      </div>
+    </div>
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+      <button type="button" onclick="saveEditSet(${setId},'${exerciseId}')"
+        style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--bg);background:var(--green);border:none;border-radius:4px;padding:4px 10px;cursor:pointer;">Save</button>
+      <button type="button" onclick="loadExerciseProgress('${exerciseId}')"
+        style="font-family:var(--font-ui);font-size:9px;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:4px;padding:4px 8px;cursor:pointer;">Cancel</button>
+    </div>`;
+}
+
+async function saveEditSet(setId, exerciseId) {
+  const reps   = parseInt(document.getElementById('edit-reps-' + setId)?.value) || 0;
+  const weight = parseFloat(document.getElementById('edit-kg-' + setId)?.value) || 0;
+  const rir    = document.getElementById('edit-rir-' + setId)?.value;
+  if (!reps) { alert('Reps required'); return; }
+  try {
+    await apiPost({ action: 'updateSet', set_id: setId, reps, weight_kg: weight, rir: rir !== '' ? parseInt(rir) : null, notes: '(edited)' });
+    loadExerciseProgress(exerciseId);
+  } catch(e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
 async function loadExerciseProgress(exerciseId) {
   if (!exerciseId) exerciseId = selectedExId;
   const content = document.getElementById('prog-ex-content');
-  if (!exerciseId) {
-    content.innerHTML = '<div style="text-align:center;padding:48px 20px;"><div style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">SELECT AN EXERCISE</div><div style="font-family:var(--font);font-size:11px;color:var(--text3);">Tap any exercise in the grid above</div></div>';
-    return;
-  }
-  content.innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">' + Array(3).fill('<div class="skel" style="height:72px;border-radius:10px;"></div>').join('') + '</div>' + Array(3).fill('<div class="skel" style="height:44px;border-radius:10px;"></div>').join('') + '</div>';
+  if (!exerciseId) { content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Select an exercise above</div>'; return; }
+  content.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Loading...</div>';
 
   const [histRes, progRes, benchRes] = await Promise.all([
     api('getProgressionData', { exercise_id: exerciseId, limit: 60 }),
@@ -2605,10 +2572,17 @@ async function loadExerciseProgress(exerciseId) {
   const sessionHistoryHTML = Object.entries(bySessMap).slice(0,6).map(([date, sess]) =>
     `<div style="margin-bottom:10px;">
       <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.1em;margin-bottom:5px;">${date}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${sess.map(s => `<div style="background:var(--bg3);border-radius:6px;padding:5px 9px;">
-          <span style="font-family:var(--font-display);font-size:16px;color:var(--text);">${s.reps}</span>
-          <span style="font-family:var(--font);font-size:9px;color:var(--text3);">r${!isBW&&s.weight_kg?' @'+s.weight_kg+'kg':''} · ${s.rir!=null?s.rir+'RES':'—'}</span>
+      <div style="display:flex;flex-direction:column;gap:4px;" id="sess-${date.replace(/-/g,'')}">
+        ${sess.map(s => `<div id="set-row-${s.id}" style="background:var(--bg3);border-radius:6px;padding:6px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div style="flex:1;">
+            <span style="font-family:var(--font-display);font-size:18px;color:var(--text);">${s.reps}</span>
+            <span style="font-family:var(--font);font-size:10px;color:var(--text2);">r${!isBW&&s.weight_kg?' @'+s.weight_kg+'kg':''} · ${s.rir!=null?s.rir+' RES':'—'}</span>
+            ${s.notes&&s.notes.includes('(edited)')?'<span style="font-family:var(--font-ui);font-size:8px;color:var(--amber);margin-left:4px;">edited</span>':''}
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            ${s.id ? `<button type="button" onclick="showEditSet(${s.id},${s.reps},${s.weight_kg||0},${s.rir!=null?s.rir:'null'},'${exerciseId}')" style="font-family:var(--font-ui);font-size:9px;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:4px;padding:2px 7px;cursor:pointer;">Edit</button>` : ''}
+            ${s.id ? `<button type="button" onclick="deleteSet(${s.id},'${exerciseId}')" style="font-family:var(--font-ui);font-size:9px;color:#ef4444;background:none;border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:2px 7px;cursor:pointer;">✕</button>` : ''}
+          </div>
         </div>`).join('')}
       </div>
     </div>`).join('');
@@ -2943,7 +2917,11 @@ function applyProgression(fromId, toId, fromName, toName) {
   localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
   const btn = document.getElementById('apply-prog-' + fromId);
   if (btn) { btn.textContent = '✓ Queued'; btn.style.color = 'var(--text3)'; btn.style.borderColor = 'var(--border2)'; }
-  showToast(toName ? `${toName} queued for next session` : `${fromName} — peak tier noted`, 'success');
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--green);border-radius:8px;padding:8px 16px;font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--green);letter-spacing:0.06em;z-index:200;white-space:nowrap;';
+  toast.textContent = toName ? `${toName} queued for next session` : `${fromName} — peak tier noted`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2500);
 }
 // ── Session history ───────────────────────────────────────────────────────────
 let histFilter = '', histOffset = 0, histLoading = false;
@@ -2969,7 +2947,7 @@ async function loadHistory(reset) {
   if (histLoading) return;
   histLoading = true;
   const list = document.getElementById('hist-list');
-  if (reset) list.innerHTML = '<div style="display:flex;flex-direction:column;gap:10px;">' + Array(4).fill('<div class="skel" style="height:64px;border-radius:10px;"></div>').join('') + '</div>';
+  if (reset) list.innerHTML = '<div style="font-size:12px;color:var(--t3);padding:20px 0;text-align:center">Loading...</div>';
   try {
     const params = { limit: 20, offset: histOffset };
     if (histFilter) params.session_type = histFilter;
@@ -2978,7 +2956,7 @@ async function loadHistory(reset) {
     const sessions = result.sessions || [];
     const sets = result.sets || [];
     if (!sessions.length && reset) {
-      list.innerHTML = '<div style="text-align:center;padding:48px 20px;"><div style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">NO SESSIONS YET</div><div style="font-family:var(--font);font-size:11px;color:var(--text3);">Complete a session to see it here</div></div>';
+      list.innerHTML = '<div style="font-size:12px;color:var(--t3);padding:20px 0;text-align:center">No sessions found.</div>';
       document.getElementById('hist-load-more').style.display = 'none';
       histLoading = false; return;
     }
@@ -2992,7 +2970,7 @@ async function loadHistory(reset) {
     histOffset += sessions.length;
     document.getElementById('hist-load-more').style.display = sessions.length === 20 ? 'block' : 'none';
   } catch(e) {
-    list.innerHTML = '<div style="text-align:center;padding:40px 20px;"><div style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--red);letter-spacing:0.14em;margin-bottom:6px;">LOAD FAILED</div><div style="font-family:var(--font);font-size:11px;color:var(--text3);margin-bottom:14px;">' + e.message + '</div><button class="btn-sm" onclick="loadHistory(true)">Retry</button></div>';
+    list.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:20px 0;">Error: ' + e.message + '</div>';
   }
   histLoading = false;
 }
