@@ -1,5 +1,18 @@
+async function pickSessionId() {
+  const date = new Date().toLocaleDateString('en-CA');
+  try {
+    const res = await api('getSessions', { limit: 10 });
+    const todayIds = new Set((res.sessions || []).filter(s => s.date === date).map(s => s.id));
+    for (const letter of 'ABCDEFGHIJ') {
+      const candidate = date + '-' + letter;
+      if (!todayIds.has(candidate)) return candidate;
+    }
+  } catch(e) { /* fall through */ }
+  return date + '-A';
+}
+
 async function startSession() {
-  sessionId = new Date().toLocaleDateString('en-CA') + '-A';
+  sessionId = await pickSessionId();
   loggedSets = [];
   chatLog = [];
   isDebriefMode = false;
