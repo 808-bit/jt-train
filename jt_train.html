@@ -1591,6 +1591,10 @@ async function startSession() {
   sessionId = new Date().toLocaleDateString('en-CA') + '-A';
   loggedSets = [];
   chatLog = [];
+  isDebriefMode = false;
+  lastSSO = null;
+  const logger = document.getElementById('set-logger');
+  if (logger) logger.style.display = '';
   document.getElementById('active-title').textContent = sType.toUpperCase();
   const chat = document.getElementById('chat');
   chat.innerHTML = '';
@@ -1650,17 +1654,34 @@ async function getCoachReply(userMsg) {
   isTyping = true;
   showTyping();
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
-  const cfg = (equipmentConfig[loc] || DEFAULT_CONFIG[loc] || {});
-  const availKB = cfg.kb_weights || [16,20,24,32,44];
-  const hasPairs = cfg.kb_pairs || false;
-  const kbStr = hasPairs
-    ? `Matching pairs available: ${availKB.map(w=>w+'kg').join(', ')}`
-    : `Single bells only (no pairs): ${availKB.map(w=>w+'kg').join(', ')} — double KB load = two different bells combined`;
   const activeShoulderInjury = injuries.some(i => i.active && /shoulder/i.test(i.body_part));
-  const shoulderRule = activeShoulderInjury
-    ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. On every push/press movement, cue the corkscrew technique and flag if any overhead loading occurs. Never suggest overhead movements.`
-    : `SHOULDER NOTE: No active shoulder injury. Standard movement cues apply. No overhead restrictions.`;
-  const system = `You are The Tactical Partner — a precision training operator, mid-session.
+  let system;
+  if (isDebriefMode && lastSSO) {
+    system = `You are a post-session coach reviewing this session with James. Direct, insightful, no filler.
+
+Session: ${sType}
+Signal: ${lastSSO.performance_signal} | Outcome: ${lastSSO.outcome}
+Summary: ${lastSSO.headline}
+Next session rec: ${lastSSO.recommendation}
+Volume: ${lastSSO.total_sets} sets, ${Math.round(lastSSO.total_volume_kg)}kg
+${lastSSO.exercises_flagged?.length ? 'Flagged: ' + lastSSO.exercises_flagged.join(', ') : ''}
+${lastSSO.shoulder_flag ? '⚠ Shoulder flagged this session.' : ''}
+${activeShoulderInjury ? 'Active shoulder injury — no overhead, apply corkscrew cue on pushes.' : ''}
+Injuries: ${injStr}
+Full set log: ${JSON.stringify(loggedSets)}
+
+2-3 sentences max. Conversational but precise. No motivation speak.`;
+  } else {
+    const cfg = (equipmentConfig[loc] || DEFAULT_CONFIG[loc] || {});
+    const availKB = cfg.kb_weights || [16,20,24,32,44];
+    const hasPairs = cfg.kb_pairs || false;
+    const kbStr = hasPairs
+      ? `Matching pairs available: ${availKB.map(w=>w+'kg').join(', ')}`
+      : `Single bells only (no pairs): ${availKB.map(w=>w+'kg').join(', ')} — double KB load = two different bells combined`;
+    const shoulderRule = activeShoulderInjury
+      ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. On every push/press movement, cue the corkscrew technique and flag if any overhead loading occurs. Never suggest overhead movements.`
+      : `SHOULDER NOTE: No active shoulder injury. Standard movement cues apply. No overhead restrictions.`;
+    system = `You are The Tactical Partner — a precision training operator, mid-session.
 Operating principle: maintain the machine, respect the load, optimise for life.
 No filler. No motivation speak. Analytical, brief, direct — like a high-end consultant who also trains.
 
@@ -1681,6 +1702,7 @@ RESPONSE RULES:
 - If pain or injury reported: swap immediately, state the replacement.
 - Use James's name only for a decisive correction — not every message.
 - When all sets done: one line telling him to hit Done — debrief.`;
+  }
   const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
   messages.push({ role: 'user', content: userMsg });
   try {
@@ -1778,10 +1800,11 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
           </div>
         </div>
         <!-- Headline -->
-        <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-family:var(--font);font-size:12px;color:var(--text);line-height:1.6;">${sso.headline}</div>
+        <div style="padding:14px;border-bottom:1px solid var(--border);font-family:var(--font);font-size:14px;color:var(--text);line-height:1.55;">${sso.headline}</div>
         <!-- Recommendation -->
-        <div style="padding:10px 14px;font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.6;">
-          <span style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.16em;">NEXT SESSION → </span>${sso.recommendation}
+        <div style="padding:12px 14px;background:var(--bg3);">
+          <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-bottom:5px;">NEXT SESSION</div>
+          <div style="font-family:var(--font);font-size:13px;color:var(--text2);line-height:1.5;">${sso.recommendation}</div>
         </div>
       </div>`;
     document.getElementById('chat').appendChild(debriefEl);
@@ -1844,6 +1867,7 @@ function updateProgress() {
 }
 
 let lastSSO = null;
+let isDebriefMode = false;
 
 async function analyseExerciseTrends(flaggedIds) {
   isTyping = true;
@@ -2069,7 +2093,22 @@ Use James's name only if delivering a decisive recalibration. No motivation spea
 }
 
 // ── Post session capture ──────────────────────────────────────────────────────
+function showDebriefMode() {
+  isDebriefMode = true;
+  const logger = document.getElementById('set-logger');
+  if (logger) logger.style.display = 'none';
+  const input = document.getElementById('msg-input');
+  if (input) input.placeholder = 'Ask the coach about this session...';
+  const container = document.getElementById('quick-btns-container');
+  if (container) container.innerHTML = [
+    ['What to focus on next?',    'What should I focus on next session?'],
+    ['Anything to watch out for?','Anything to watch out for going forward?'],
+    ['How did this compare?',     'How does this compare to my recent sessions?'],
+  ].map(([lbl, msg]) => `<button class="quick-btn" onclick="quickMsg(${JSON.stringify(msg)})">${lbl}</button>`).join('');
+}
+
 function showPostSession() {
+  showDebriefMode();
   const chat = document.getElementById('chat');
   const div = document.createElement('div');
   div.style.cssText = 'margin-top:16px;padding:14px 16px;background:#111;border:1px solid #222;border-radius:10px;';
