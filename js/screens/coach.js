@@ -80,7 +80,7 @@ KIT: ${buildKitString(loc)}
 Write a session card. Fields:
 - headline: 4-6 words. The session in a punchy phrase. Not a list of exercises.
 - brief: 1-2 sentences. What patterns need work and why, based on the debrief data. Reference specifics — e.g. "Ring rows hit progression threshold last session" or "Hinge has been absent three sessions running."
-- cues: 3-4 specific coaching points. Draw from debrief recommendations and readiness. Each cue is one focused instruction — technique, sequencing, load, rest. 10-15 words each.
+- cues: 3-4 specific coaching points. Draw from debrief recommendations and readiness. Each cue is one focused instruction — technique, sequencing, load, rest. 10-15 words each. CRITICAL: any KB weights or double KB combinations mentioned must come exactly from the KIT list above — never invent a bell size.
 - reason: 1 sentence. Why today's dose matches today's readiness.
 
 Return ONLY valid JSON, no markdown:
