@@ -13,6 +13,7 @@
 <link rel="icon" href="icon-192.png">
 <title>JT.TRAIN</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" defer></script>
+<script src="js/api.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Syne:wght@400;600;700&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -795,8 +796,6 @@
 </div>
 
 <script>
-const W = 'https://jt-workout-worke.james-thornton88.workers.dev';
-
 let sType = 'Full Body A', loc = 'Home';
 let preSleep = 3, preEnergy = 3, preSoreness = 3;
 let pendingProgressions = JSON.parse(localStorage.getItem('pendingProgressions') || '[]');
@@ -921,25 +920,6 @@ function selL(el, v) {
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────
-async function api(action, params = {}) {
-  const url = new URL(W);
-  url.searchParams.set('action', action);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const r = await fetch(url.toString());
-  return r.json();
-}
-async function apiPost(body) {
-  const r = await fetch(W, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  return r.json();
-}
-async function claude(system, messages, model) {
-  model = model || 'claude-haiku-4-5-20251001';
-  const r = await apiPost({ action: 'claude', system, messages, model });
-  return r.text || '';
-}
-const SONNET = 'claude-sonnet-4-6';
-const HAIKU  = 'claude-haiku-4-5-20251001';
-
 // ── Globals ───────────────────────────────────────────────────────────────────
 let equipmentConfig = {};
 const ALL_KB = [8,12,16,20,24,28,32,36,40,44,48];
