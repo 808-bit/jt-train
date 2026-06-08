@@ -1,4 +1,4 @@
-let sType = 'Coaches Workout', loc = 'Home';
+let sType = "Coach's Workout", loc = 'Home';
 let preSleep = 3, preEnergy = 3, preSoreness = 3;
 let pendingProgressions = JSON.parse(localStorage.getItem('pendingProgressions') || '[]');
 let appliedProgressions = new Set(JSON.parse(localStorage.getItem('appliedProgressions') || '[]'));
@@ -111,7 +111,7 @@ function selS(el, v) {
   document.querySelectorAll('#session-pills .pill').forEach(p => p.classList.remove('active'));
   el.classList.add('active');
   loadIdleHistory();
-  if (recommendedType && v !== recommendedType && v !== 'Coaches Workout') {
+  if (recommendedType && v !== recommendedType && v !== "Coach's Workout") {
     document.getElementById('rec-card').style.display = 'none';
   }
 }

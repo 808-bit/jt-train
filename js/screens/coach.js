@@ -32,7 +32,7 @@ async function init() {
 
 async function loadIdleHistory() {
   try {
-    const params = sType === 'Coaches Workout' ? { limit: 6 } : { session_type: sType, limit: 3 };
+    const params = sType === "Coach's Workout" ? { limit: 6 } : { session_type: sType, limit: 3 };
     history = await api('getSessionHistory', params);
   } catch (e) {
     history = { sessions: [], sets: [] };
@@ -213,7 +213,7 @@ async function generateCoachesWorkout() {
 
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
-  const availEx = filterExercises(exercises, loc, 'Coaches Workout')
+  const availEx = filterExercises(exercises, loc, "Coach's Workout")
     .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.movement_pattern ? ', ' + e.movement_pattern : '') + (e.notes ? ', note: ' + e.notes : '') + ')')
     .join('\n');
 
@@ -280,7 +280,7 @@ Return ONLY valid JSON, no markdown:
   const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
   const clean = raw.replace(/```json|```/g, '').trim();
   const parsed = JSON.parse(clean);
-  const allowedIds = new Set(filterExercises(exercises, loc, 'Coaches Workout').map(e => e.id));
+  const allowedIds = new Set(filterExercises(exercises, loc, "Coach's Workout").map(e => e.id));
   parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
   plan = parsed.exercises;
   const planIds = new Set(plan.map(e => e.exercise_id));
@@ -288,7 +288,7 @@ Return ONLY valid JSON, no markdown:
   pendingProgressions = pendingProgressions.filter(p => !planIds.has(p.to));
   localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
   localStorage.setItem('appliedProgressions', JSON.stringify([...appliedProgressions]));
-  document.getElementById('review-title').textContent = 'Coaches Workout';
+  document.getElementById('review-title').textContent = "Coach's Workout";
   document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
   document.getElementById('review-chat').innerHTML = '';
   renderPlanCards(parsed);
@@ -297,7 +297,7 @@ Return ONLY valid JSON, no markdown:
 
 async function generatePlan() {
   goScreen('s-generating');
-  if (sType === 'Coaches Workout') {
+  if (sType === "Coach's Workout") {
     try {
       await generateCoachesWorkout();
     } catch (e) {
