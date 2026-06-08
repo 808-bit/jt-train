@@ -34,7 +34,8 @@ async function init() {
 
 async function loadIdleHistory() {
   try {
-    history = await api('getSessionHistory', { session_type: sType, limit: 3 });
+    const params = sType === 'Custom' ? { limit: 6 } : { session_type: sType, limit: 3 };
+    history = await api('getSessionHistory', params);
   } catch (e) {
     history = { sessions: [], sets: [] };
   }
@@ -116,9 +117,51 @@ Return ONLY valid JSON, no markdown:
       if (p.textContent.trim() === rec.session_type) p.classList.add('active');
     });
 
+    renderCoachChips(rec.session_type);
+
   } catch(e) {
     document.getElementById('rec-loading').innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);">Could not load — <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:10px;color:var(--text2);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">retry</button></div>';
     console.log('Recommendation failed:', e);
+  }
+}
+
+function renderCoachChips(sessionType) {
+  const el = document.getElementById('rec-chips');
+  if (!el) return;
+  const chips = [
+    { label: `${sessionType} — let's go →`, action: 'go', primary: true },
+    { label: 'Push it harder', action: 'push', primary: false },
+    { label: 'Dial it back', action: 'dial', primary: false },
+    { label: 'Mix it up', action: 'custom', primary: false },
+  ];
+  el.innerHTML = '';
+  chips.forEach(chip => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = chip.label;
+    btn.style.cssText = `font-family:var(--font-ui);font-size:10px;font-weight:600;letter-spacing:0.04em;padding:7px 12px;border-radius:20px;cursor:pointer;transition:opacity 0.15s;white-space:nowrap;` +
+      (chip.primary
+        ? `background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);color:var(--green);`
+        : `background:none;border:1px solid var(--border2);color:var(--text2);`);
+    btn.onclick = () => quickCoachAction(chip.action);
+    el.appendChild(btn);
+  });
+}
+
+function quickCoachAction(action) {
+  const notes = document.getElementById('pre-notes');
+  if (action === 'go') {
+    generatePlan();
+  } else if (action === 'push') {
+    if (notes) notes.value = 'High readiness today — push the load.';
+    generatePlan();
+  } else if (action === 'dial') {
+    if (notes) notes.value = 'Feeling it a bit — dial back the volume, keep quality.';
+    generatePlan();
+  } else if (action === 'custom') {
+    const customPill = [...document.querySelectorAll('#session-pills .pill')].find(p => p.textContent.trim() === 'Custom');
+    if (customPill) selS(customPill, 'Custom');
+    generatePlan();
   }
 }
 
@@ -150,7 +193,7 @@ async function generatePlan() {
   document.getElementById('gen-status').textContent = 'Reading your history...';
   await loadIdleHistory();
   const [ssoContext, progRes] = await Promise.all([
-    fetchSSOContext(3, sType),
+    fetchSSOContext(sType === 'Custom' ? 6 : 3, sType === 'Custom' ? null : sType),
     api('getProgressionTree')
   ]);
   const progRules = progRes.data || [];
@@ -168,11 +211,11 @@ async function generatePlan() {
   const histStr = history.sets && history.sets.length
     ? 'Last ' + history.sessions.length + ' sessions:\n' +
       history.sets.map(s =>
-        s.session_id.slice(0, 10) + ' | ' + s.exercise_id +
+        s.session_id.slice(0, 10) + ' | ' + (s.session_type || '') + ' | ' + s.exercise_id +
         ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
         (s.rir ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
       ).join('\n')
-    : 'No recent history for ' + sType;
+    : 'No recent history' + (sType !== 'Custom' ? ' for ' + sType : '');
   const sessionFocus = {
     'Full Body A': 'Compound lower body + push + pull. Squat or hinge pattern, horizontal push, vertical or horizontal pull.',
     'Full Body B': 'Compound lower body + push + pull. Different pattern to Full Body A — hinge or lunge, different push/pull combo.',
@@ -181,6 +224,9 @@ async function generatePlan() {
     'Rings Only': 'All exercises on gymnastics rings. Push, pull, core — rings only. No KB.',
     'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
   };
+  const sessionFocusStr = sType === 'Custom'
+    ? 'CUSTOM — analyse the raw set history and recent debriefs to identify which movement patterns (push, pull, hinge, squat, carry, core) are undertrained or overdue. Select 4-6 exercises purely to fill those gaps. Ignore predefined push/pull/legs structure — let the data drive selection.'
+    : (sessionFocus[sType] || '');
   const system = `You are The Tactical Partner — an intelligent, analytical training operator for James Thornton.
 Your operating principle: maintain the machine, respect the load, optimise for life.
 You are not a motivator. You are a precision instrument. No fluff, no toxic positivity, no filler.
@@ -189,7 +235,7 @@ ${coachBrief ? `COACH PRESCRIPTION (follow this closely — it overrides generic
 ${coachBrief}
 
 ` : ''}Phase: Lean bulk Q2 2026. Hypertrophy focus.
-Session type: ${sType} — ${sessionFocus[sType] || ''}
+Session type: ${sType} — ${sessionFocusStr}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
 
@@ -228,7 +274,10 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
     const preNotes = document.getElementById('pre-notes').value.trim();
-    const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
+    const userMsg = (sType === 'Custom'
+      ? 'Generate a custom workout based purely on movement pattern gaps. Location: ' + loc
+      : 'Generate my ' + sType + ' workout. Location: ' + loc
+    ) + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);

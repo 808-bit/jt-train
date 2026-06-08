@@ -42,7 +42,7 @@ function buildKitString(l) {
 function filterExercises(exList, l, sType) {
   const cfg = equipmentConfig[l] || DEFAULT_CONFIG[l] || {};
   return exList.filter(e => {
-    if (e.session_type) {
+    if (e.session_type && sType !== 'Custom') {
       const tags = e.session_type.split(';').map(t => t.trim());
       if (!tags.includes(sType)) return false;
     }
