@@ -48,8 +48,8 @@ async function autoRecommend() {
 
   try {
     const [sessRes, debriefRes] = await Promise.all([
-      api('getSessions', { limit: 5 }),
-      api('getRecentDebriefs', { limit: 3 })
+      api('getSessions', { limit: 10 }),
+      api('getRecentDebriefs', { limit: 6 })
     ]);
     const recentSessions = sessRes.sessions || [];
     const debriefs       = debriefRes.data   || [];
@@ -62,12 +62,12 @@ async function autoRecommend() {
       `${d.date} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
     ).join('\n') || 'No debrief data';
 
-    const system = `You are a strength coach writing a session card for James. Be direct and specific. No filler.
+    const system = `You are a precision strength coach writing today's session card for James. Be specific, data-driven, direct. No generic filler — every sentence should reference what's actually in the data.
 
-RECENT SESSIONS:
+RECENT SESSIONS (last 10):
 ${sessionSummary}
 
-RECENT DEBRIEFS:
+RECENT DEBRIEFS (last 6):
 ${debriefSummary}
 
 READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
@@ -75,13 +75,19 @@ LOCATION: ${loc}
 INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
 KIT: ${buildKitString(loc)}
 
-Return ONLY valid JSON. Every field has a hard word limit — count the words and stay under:
+Write a session card. Fields:
+- headline: 4-6 words. The session in a punchy phrase. Not a list of exercises.
+- brief: 1-2 sentences. What patterns need work and why, based on the debrief data. Reference specifics — e.g. "Ring rows hit progression threshold last session" or "Hinge has been absent three sessions running."
+- cues: 3-4 specific coaching points. Draw from debrief recommendations and readiness. Each cue is one focused instruction — technique, sequencing, load, rest. 10-15 words each.
+- reason: 1 sentence. Why today's dose matches today's readiness.
+
+Return ONLY valid JSON, no markdown:
 {
   "session_type": "Full Body A",
-  "headline": "HARD LIMIT 5 WORDS. The session vibe, not a list. Example: 'Pull focus, earn it'",
-  "brief": "HARD LIMIT 8 WORDS. ONE reason why these patterns today — no semicolons, no lists. Example: 'Pull patterns overdue, push stayed light'",
-  "cues": ["HARD LIMIT 6 WORDS. One coaching focus, not an exercise prescription", "HARD LIMIT 6 WORDS. Second coaching focus"],
-  "reason": "HARD LIMIT 5 WORDS. Readiness or timing rationale only. Example: 'Fresh legs, moderate energy'"
+  "headline": "...",
+  "brief": "...",
+  "cues": ["...", "...", "...", "..."],
+  "reason": "..."
 }`;
 
     const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], SONNET);
