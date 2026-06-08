@@ -34,7 +34,7 @@ async function init() {
 
 async function loadIdleHistory() {
   try {
-    const params = sType === 'Custom' ? { limit: 6 } : { session_type: sType, limit: 3 };
+    const params = sType === 'Coaches Workout' ? { limit: 6 } : { session_type: sType, limit: 3 };
     history = await api('getSessionHistory', params);
   } catch (e) {
     history = { sessions: [], sets: [] };
@@ -100,7 +100,6 @@ Return ONLY valid JSON, no markdown:
 
     recommendedType = rec.session_type;
     coachBrief = rec.brief;
-    sType = rec.session_type;
 
     document.getElementById('rec-loading').style.display = 'none';
     document.getElementById('rec-content').style.display = 'block';
@@ -112,11 +111,6 @@ Return ONLY valid JSON, no markdown:
     ).join('');
     document.getElementById('rec-reason').textContent = rec.reason ? '─  ' + rec.reason : '';
 
-    document.querySelectorAll('#session-pills .pill').forEach(p => {
-      p.classList.remove('active');
-      if (p.textContent.trim() === rec.session_type) p.classList.add('active');
-    });
-
     renderCoachChips(rec.session_type);
 
   } catch(e) {
@@ -125,14 +119,13 @@ Return ONLY valid JSON, no markdown:
   }
 }
 
-function renderCoachChips(sessionType) {
+function renderCoachChips(recType) {
   const el = document.getElementById('rec-chips');
   if (!el) return;
   const chips = [
-    { label: `${sessionType} — let's go →`, action: 'go', primary: true },
-    { label: 'Push it harder', action: 'push', primary: false },
-    { label: 'Dial it back', action: 'dial', primary: false },
-    { label: 'Mix it up', action: 'custom', primary: false },
+    { label: `${recType} — let's go →`, action: 'go', type: recType, primary: true },
+    { label: 'Push it harder', action: 'push', type: null, primary: false },
+    { label: 'Dial it back', action: 'dial', type: null, primary: false },
   ];
   el.innerHTML = '';
   chips.forEach(chip => {
@@ -143,24 +136,24 @@ function renderCoachChips(sessionType) {
       (chip.primary
         ? `background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);color:var(--green);`
         : `background:none;border:1px solid var(--border2);color:var(--text2);`);
-    btn.onclick = () => quickCoachAction(chip.action);
+    btn.onclick = () => quickCoachAction(chip.action, chip.type);
     el.appendChild(btn);
   });
 }
 
-function quickCoachAction(action) {
+function quickCoachAction(action, sessionType) {
   const notes = document.getElementById('pre-notes');
   if (action === 'go') {
+    if (sessionType) {
+      const pill = [...document.querySelectorAll('#session-pills .pill')].find(p => p.textContent.trim() === sessionType);
+      if (pill) selS(pill, sessionType); else sType = sessionType;
+    }
     generatePlan();
   } else if (action === 'push') {
     if (notes) notes.value = 'High readiness today — push the load.';
     generatePlan();
   } else if (action === 'dial') {
     if (notes) notes.value = 'Feeling it a bit — dial back the volume, keep quality.';
-    generatePlan();
-  } else if (action === 'custom') {
-    const customPill = [...document.querySelectorAll('#session-pills .pill')].find(p => p.textContent.trim() === 'Custom');
-    if (customPill) selS(customPill, 'Custom');
     generatePlan();
   }
 }
@@ -193,7 +186,7 @@ async function generatePlan() {
   document.getElementById('gen-status').textContent = 'Reading your history...';
   await loadIdleHistory();
   const [ssoContext, progRes] = await Promise.all([
-    fetchSSOContext(sType === 'Custom' ? 6 : 3, sType === 'Custom' ? null : sType),
+    fetchSSOContext(sType === 'Coaches Workout' ? 6 : 3, sType === 'Coaches Workout' ? null : sType),
     api('getProgressionTree')
   ]);
   const progRules = progRes.data || [];
@@ -215,7 +208,7 @@ async function generatePlan() {
         ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
         (s.rir ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
       ).join('\n')
-    : 'No recent history' + (sType !== 'Custom' ? ' for ' + sType : '');
+    : 'No recent history' + (sType !== 'Coaches Workout' ? ' for ' + sType : '');
   const sessionFocus = {
     'Full Body A': 'Compound lower body + push + pull. Squat or hinge pattern, horizontal push, vertical or horizontal pull.',
     'Full Body B': 'Compound lower body + push + pull. Different pattern to Full Body A — hinge or lunge, different push/pull combo.',
@@ -224,8 +217,8 @@ async function generatePlan() {
     'Rings Only': 'All exercises on gymnastics rings. Push, pull, core — rings only. No KB.',
     'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
   };
-  const sessionFocusStr = sType === 'Custom'
-    ? 'CUSTOM — analyse the raw set history and recent debriefs to identify which movement patterns (push, pull, hinge, squat, carry, core) are undertrained or overdue. Select 4-6 exercises purely to fill those gaps. Ignore predefined push/pull/legs structure — let the data drive selection.'
+  const sessionFocusStr = sType === 'Coaches Workout'
+    ? 'COACHES WORKOUT — analyse the raw set history and recent debriefs to identify which movement patterns (push, pull, hinge, squat, carry, core) are undertrained or overdue. Select 4-6 exercises purely to fill those gaps. Ignore predefined push/pull/legs structure — let the data drive selection.'
     : (sessionFocus[sType] || '');
   const system = `You are The Tactical Partner — an intelligent, analytical training operator for James Thornton.
 Your operating principle: maintain the machine, respect the load, optimise for life.
@@ -239,7 +232,7 @@ Session type: ${sType} — ${sessionFocusStr}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
 
-RECENT DEBRIEF INTELLIGENCE (last 3 ${sType} sessions — use this to drive load, volume, and exercise selection):
+RECENT DEBRIEF INTELLIGENCE (last ${sType === 'Coaches Workout' ? '6 sessions (all types)' : '3 ' + sType + ' sessions'} — use this to drive load, volume, and exercise selection):
 ${ssoContext}
 
 PROGRESSION TREE (rep targets and next tiers — use to determine if an exercise should advance):
@@ -274,8 +267,8 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
     const preNotes = document.getElementById('pre-notes').value.trim();
-    const userMsg = (sType === 'Custom'
-      ? 'Generate a custom workout based purely on movement pattern gaps. Location: ' + loc
+    const userMsg = (sType === 'Coaches Workout'
+      ? 'Generate a coaches workout based purely on movement pattern gaps from recent history. Location: ' + loc
       : 'Generate my ' + sType + ' workout. Location: ' + loc
     ) + (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);

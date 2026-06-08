@@ -519,15 +519,16 @@
       <!-- Override session type (hidden by default) -->
       <div id="override-panel" style="display:none;margin-bottom:14px;">
         <div class="lbl" style="margin-bottom:8px;">SESSION TYPE OVERRIDE</div>
-        <div class="pills" id="session-pills">
-          <button class="pill active" onclick="selS(this,'Full Body A')">Full Body A</button>
+        <div class="pills" id="session-pills" style="margin-bottom:10px;">
+          <button class="pill" onclick="selS(this,'Full Body A')">Full Body A</button>
           <button class="pill" onclick="selS(this,'Full Body B')">Full Body B</button>
           <button class="pill" onclick="selS(this,'Upper Body')">Upper Body</button>
           <button class="pill" onclick="selS(this,'Lower Body')">Lower Body</button>
           <button class="pill" onclick="selS(this,'Rings Only')">Rings Only</button>
           <button class="pill" onclick="selS(this,'KB Only')">KB Only</button>
-          <button class="pill" onclick="selS(this,'Custom')">Custom</button>
+          <button class="pill active" onclick="selS(this,'Coaches Workout')">Coaches Workout</button>
         </div>
+        <button class="btn-main" onclick="generatePlan()">Generate session →</button>
       </div>
 
       <!-- Notes -->
