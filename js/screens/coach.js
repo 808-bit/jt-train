@@ -102,7 +102,7 @@ Return ONLY valid JSON. Every field has a hard word limit — count the words an
     ).join('');
     document.getElementById('rec-reason').textContent = rec.reason ? '─  ' + rec.reason : '';
 
-    renderCoachChips(rec.session_type);
+    renderCoachChips();
 
   } catch(e) {
     document.getElementById('rec-loading').innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);">Could not load — <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:10px;color:var(--text2);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">retry</button></div>';
@@ -110,13 +110,13 @@ Return ONLY valid JSON. Every field has a hard word limit — count the words an
   }
 }
 
-function renderCoachChips(recType) {
+function renderCoachChips() {
   const el = document.getElementById('rec-chips');
   if (!el) return;
   const chips = [
-    { label: `${recType} — let's go →`, action: 'go', type: recType, primary: true },
-    { label: 'Push it harder', action: 'push', type: null, primary: false },
-    { label: 'Dial it back', action: 'dial', type: null, primary: false },
+    { label: "Sounds good — let's go →", action: 'go', primary: true },
+    { label: 'Push it harder', action: 'push', primary: false },
+    { label: 'Dial it back', action: 'dial', primary: false },
   ];
   el.innerHTML = '';
   chips.forEach(chip => {
@@ -127,18 +127,14 @@ function renderCoachChips(recType) {
       (chip.primary
         ? `background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);color:var(--green);`
         : `background:none;border:1px solid var(--border2);color:var(--text2);`);
-    btn.onclick = () => quickCoachAction(chip.action, chip.type);
+    btn.onclick = () => quickCoachAction(chip.action);
     el.appendChild(btn);
   });
 }
 
-function quickCoachAction(action, sessionType) {
+function quickCoachAction(action) {
   const notes = document.getElementById('pre-notes');
   if (action === 'go') {
-    if (sessionType) {
-      const pill = [...document.querySelectorAll('#session-pills .pill')].find(p => p.textContent.trim() === sessionType);
-      if (pill) selS(pill, sessionType); else sType = sessionType;
-    }
     generatePlan();
   } else if (action === 'push') {
     if (notes) notes.value = 'High readiness today — push the load.';
