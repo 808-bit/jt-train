@@ -1595,6 +1595,8 @@ async function startSession() {
   lastSSO = null;
   const logger = document.getElementById('set-logger');
   if (logger) logger.style.display = '';
+  const msgInput = document.getElementById('msg-input');
+  if (msgInput) msgInput.placeholder = 'Swap? Adjust? Ask anything...';
   document.getElementById('active-title').textContent = sType.toUpperCase();
   const chat = document.getElementById('chat');
   chat.innerHTML = '';
