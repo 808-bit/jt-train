@@ -285,8 +285,7 @@ async function analyseExerciseTrends(flaggedIds) {
     const progData = {};
     flaggedIds.forEach((id, i) => { progData[id] = progResults[i].data || []; });
 
-    const availEx = exercises
-      .filter(e => e.home_available && e.shoulder_safe && e.session_types && e.session_types.includes(sType))
+    const availEx = filterExercises(exercises, loc, sType)
       .map(e => `${e.id}: ${e.display_name} (${e.equipment})`)
       .join('\n');
 

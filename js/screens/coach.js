@@ -315,10 +315,11 @@ async function generatePlan() {
   }
 
   document.getElementById('gen-status').textContent = 'Reading your history...';
-  await loadIdleHistory();
-  const [ssoContext, progRes] = await Promise.all([
-    fetchSSOContext(3, sType),
-    api('getProgressionTree')
+  const [ssoContext, progRes, histRes, mpRes] = await Promise.all([
+    fetchSSOContext(6, sType),
+    api('getProgressionTree'),
+    api('getSessionHistory', { limit: 15 }),
+    api('getMovementPatterns'),
   ]);
   const progRules = progRes.data || [];
   const progContext = progRules.length
@@ -327,19 +328,33 @@ async function generatePlan() {
         return `${p.display_name}: target ${p.rep_target} @ RIR ${p.rir_target} for ${p.sessions_to_confirm} sessions → next: ${p.next_exercise_id || 'peak'}${p.next_requires ? ' (needs '+p.next_requires+')' : ''}. Levers: ${levers.slice(0,2).join(', ')}`;
       }).join('\n')
     : 'No progression data.';
+  const patterns = mpRes.patterns || [];
+  const patternProgs = mpRes.progressions || [];
+  const patternsStr = patterns.length
+    ? patterns.map(p => {
+        const chain = patternProgs
+          .filter(pp => pp.pattern_id === p.id)
+          .sort((a, b) => a.level - b.level)
+          .map(pp => `  L${pp.level}: ${pp.exercise_name}${pp.rep_target ? ' (' + pp.rep_target + ' reps @ RIR' + pp.rir_target + ')' : ''}`)
+          .join('\n');
+        return `${p.name}${p.description ? ' — ' + p.description : ''}\n${chain || '  (no chain)'}`;
+      }).join('\n\n')
+    : 'No pattern data.';
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterExercises(exercises, loc, sType)
     .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
     .join('\n');
-  const histStr = history.sets && history.sets.length
-    ? 'Last ' + history.sessions.length + ' sessions:\n' +
-      history.sets.map(s =>
-        s.session_id.slice(0, 10) + ' | ' + s.exercise_id +
+  const rawSets = histRes.sets || [];
+  const rawSessions = histRes.sessions || [];
+  const histStr = rawSets.length
+    ? 'Last ' + rawSessions.length + ' sessions (all types — use to assess per-pattern frequency and loads):\n' +
+      rawSets.map(s =>
+        s.session_id.slice(0, 10) + ' | ' + (s.session_type || '') + ' | ' + s.exercise_id +
         ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
-        (s.rir ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
+        (s.rir != null ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
       ).join('\n')
-    : 'No recent history for ' + sType;
+    : 'No recent history';
   const sessionFocus = {
     'Full Body A': 'Compound lower body + push + pull. Squat or hinge pattern, horizontal push, vertical or horizontal pull.',
     'Full Body B': 'Compound lower body + push + pull. Different pattern to Full Body A — hinge or lunge, different push/pull combo.',
@@ -360,8 +375,11 @@ Session type: ${sType} — ${sessionFocus[sType] || ''}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
 
-RECENT DEBRIEF INTELLIGENCE (last 3 ${sType} sessions — use this to drive load, volume, and exercise selection):
+RECENT DEBRIEF INTELLIGENCE (last 6 ${sType} sessions — use this to drive load, volume, and exercise selection):
 ${ssoContext}
+
+MOVEMENT PATTERN ARCHITECTURE (scan cross-type history to identify what's overdue within this session's scope):
+${patternsStr}
 
 PROGRESSION TREE (rep targets and next tiers — use to determine if an exercise should advance):
 ${progContext}
