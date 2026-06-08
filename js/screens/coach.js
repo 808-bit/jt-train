@@ -62,7 +62,7 @@ async function autoRecommend() {
       `${d.date} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
     ).join('\n') || 'No debrief data';
 
-    const system = `You are a strength and conditioning coach prescribing today's session for James.
+    const system = `You are a strength coach writing a session card for James. Be direct and specific. No filler.
 
 RECENT SESSIONS:
 ${sessionSummary}
@@ -70,25 +70,18 @@ ${sessionSummary}
 RECENT DEBRIEFS:
 ${debriefSummary}
 
-TODAY'S READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
+READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
 LOCATION: ${loc}
-ACTIVE INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
-AVAILABLE: ${buildKitString(loc)}
+INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
+KIT: ${buildKitString(loc)}
 
-Think about:
-- Which muscle groups need recovery
-- What movement patterns haven't been trained recently
-- Readiness level and what it can support
-- Any injury constraints
-- What exercises are primed for progression
-
-Return ONLY valid JSON, no markdown:
+Return ONLY valid JSON. Every field has a hard word limit — count the words and stay under:
 {
   "session_type": "Full Body A",
-  "headline": "Max 6 words. The session in a phrase.",
-  "brief": "Max 12 words. Overall session intent — movement patterns and focus.",
-  "cues": ["Max 8 words cue 1", "Max 8 words cue 2"],
-  "reason": "Max 10 words. Why this, why now."
+  "headline": "HARD LIMIT 5 WORDS. The session vibe, not a list. Example: 'Pull focus, earn it'",
+  "brief": "HARD LIMIT 8 WORDS. ONE reason why these patterns today — no semicolons, no lists. Example: 'Pull patterns overdue, push stayed light'",
+  "cues": ["HARD LIMIT 6 WORDS. One coaching focus, not an exercise prescription", "HARD LIMIT 6 WORDS. Second coaching focus"],
+  "reason": "HARD LIMIT 5 WORDS. Readiness or timing rationale only. Example: 'Fresh legs, moderate energy'"
 }`;
 
     const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], HAIKU);
