@@ -53,13 +53,13 @@
     --green-dim: rgba(0,207,168,0.12);
   }
 
-  html { background: var(--bg); }
+  html { background: var(--bg); height: 100%; overflow: hidden; }
   body {
     background: var(--bg);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='1' height='1' fill='rgba(255,255,255,0.015)'/%3E%3C/svg%3E");
-    color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2020/svg' width='4' height='4'%3E%3Crect width='1' height='1' fill='rgba(255,255,255,0.015)'/%3E%3C/svg%3E");
+    color: var(--text); font-family: var(--font); height: 100%; display: flex; flex-direction: column; overflow: hidden;
   }
-  .screen { display: none; flex: 1; flex-direction: column; }
+  .screen { display: none; flex: 1; flex-direction: column; min-height: 0; }
   .screen.on { display: flex; }
 
   /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -134,7 +134,7 @@
   .status-line { font-family: var(--font); font-size: 10px; color: var(--text3); text-align: center; margin-top: 12px; min-height: 16px; letter-spacing: 0.08em; }
 
   /* ── Review screen ───────────────────────────────────────────────────────── */
-  .review-body { flex: 1; overflow-y: auto; padding: 20px; }
+  .review-body { flex: 1; overflow-y: auto; padding: 20px; min-height: 0; }
   .review-header { margin-bottom: 20px; }
   .review-title { font-family: var(--font-ui); font-size: 20px; font-weight: 700; letter-spacing: 0.02em; }
   .review-sub { font-family: var(--font); font-size: 11px; color: var(--text2); margin-top: 4px; letter-spacing: 0.06em; }
@@ -158,7 +158,7 @@
   .review-footer { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--bg); }
 
   /* ── Active session chat ─────────────────────────────────────────────────── */
-  .chat-area { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .chat-area { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
   .msg { display: flex; flex-direction: column; }
   .msg.you { align-items: flex-end; }
   .msg.coach { align-items: flex-start; }
@@ -222,7 +222,7 @@
   }
 
   /* ── Equipment config ────────────────────────────────────────────────────── */
-  .eq-body { flex: 1; overflow-y: auto; padding: 0 20px 20px; }
+  .eq-body { flex: 1; overflow-y: auto; padding: 0 20px 20px; min-height: 0; }
   .eq-loc-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
   .eq-loc-tab {
     flex: 1; padding: 12px 0; background: none; border: none;
@@ -333,7 +333,7 @@
   .modal-btn-cancel { background: none; color: var(--text3); border: 1px solid var(--border) !important; margin-bottom: 0; }
 
   /* ── Progress screen ─────────────────────────────────────────────────────── */
-  .prog-body { flex: 1; overflow-y: auto; padding: 16px 20px 40px; }
+  .prog-body { flex: 1; overflow-y: auto; padding: 16px 20px 40px; min-height: 0; }
   .prog-ex-sel { width: 100%; font-family: var(--font-ui); font-size: 12px; font-weight: 500; background: var(--bg2); color: var(--text); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 12px; outline: none; }
   .metric-tabs { display: flex; border: 1px solid var(--border2); border-radius: 8px; overflow: hidden; margin: 14px 0 16px; }
   .metric-tab { flex: 1; background: none; border: none; border-right: 1px solid var(--border2); font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--text3); cursor: pointer; padding: 10px 4px; transition: all 0.15s; }
@@ -693,7 +693,7 @@
     <div class="logo"><div class="dot live"></div><span>HISTORY</span></div>
     <button class="btn-sm" onclick="goScreen('s-idle')">← Back</button>
   </div>
-  <div style="flex:1;overflow-y:auto;padding:16px 20px 40px;overscroll-behavior:contain;">
+  <div style="flex:1;overflow-y:auto;padding:16px 20px 40px;overscroll-behavior:contain;min-height:0;">
     <!-- Filter pills -->
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;" id="hist-filters">
       <button class="pill active" onclick="setHistFilter(this,'')">All</button>
