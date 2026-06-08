@@ -875,6 +875,7 @@ function isTrue(v) { return v === true || v === 1 || v === '1' || v === 'TRUE' |
 function goScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   document.getElementById(id).classList.add('on');
+  if (id === 's-active' && sessionId) requestWakeLock();
 }
 
 function toggleTheme() {
@@ -1152,7 +1153,16 @@ function renderFieldsUI() {
 function updateSetCounter() {
   const ex = plan[slExIdx]; if (!ex) return;
   const el = document.getElementById('sl-counter');
-  if (el) el.textContent = `Set ${(setsPerEx[ex.exercise_id]||0)+1} of ${ex.sets||4}`;
+  if (!el) return;
+  const done = setsPerEx[ex.exercise_id] || 0;
+  const goal = ex.reps ? ` · ${ex.reps} reps @ RIR ${ex.rir ?? 2}` : '';
+  if (slSide !== null) {
+    const round = Math.floor(done / 2) + 1;
+    const sideLabel = slSide === 'L' ? 'LEFT' : 'RIGHT';
+    el.textContent = `Round ${round} of ${ex.sets||4} — ${sideLabel}${goal}`;
+  } else {
+    el.textContent = `Set ${done + 1} of ${ex.sets||4}${goal}`;
+  }
 }
 
 function onExSelect() {
@@ -1200,6 +1210,8 @@ async function logSet() {
   if (!setsPerEx[ex.exercise_id]) setsPerEx[ex.exercise_id]=0;
   setsPerEx[ex.exercise_id]++;
   const setNum = setsPerEx[ex.exercise_id];
+  const isUnilateral = slSide !== null;
+  const justLoggedSide = slSide; // capture before toggle
   let weightKg, weightLabel, setNotes='';
   if (slDualMode) {
     const w=getKBWeights(); const kb1=w[slKB1Idx]??0; const kb2=w[slKB2Idx]??0;
@@ -1229,7 +1241,8 @@ async function logSet() {
       console.error('appendSet error:', e, setData);
       showToast('Set not saved — ' + e.message, 'error');
     });
-  startRestTimer();
+  // For L+R exercises, only start rest after completing the R side (full round done)
+  if (!isUnilateral || justLoggedSide === 'R') startRestTimer();
   updateProgress();
   // Flash the set logger on log
   const logger = document.getElementById('set-logger');
@@ -1239,8 +1252,10 @@ async function logSet() {
   const sideLabel = setData.notes && setData.notes.includes('side') ? ` (${setData.notes.split(' ')[0]})` : '';
   const msg = `${ex.display_name} — Set ${setNum}${sideLabel}: ${slVals.reps} reps @ ${weightLabel} | RIR ${slVals.rir}`;
   addMsg('you', msg);
+  // For unilateral, plannedSets means rounds (L+R pairs) — each round = 2 logs
   const plannedSets = ex.sets||4;
-  if (setNum >= plannedSets) {
+  const targetLogs = isUnilateral ? plannedSets * 2 : plannedSets;
+  if (setNum >= targetLogs) {
     if (slExIdx < plan.length-1) { slExIdx++; renderSetLogger(); await getCoachReply(msg+'\n\nAll sets done. Moving to next exercise.'); }
     else { updateSetCounter(); await getCoachReply(msg+'\n\nAll sets complete.'); }
   } else { updateSetCounter(); await getCoachReply(msg); }
