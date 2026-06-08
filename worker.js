@@ -84,7 +84,7 @@ async function handleGet(request, env) {
       SELECT s.date, s.session_type, st.set_num, st.reps, st.weight_kg, st.rir, st.tempo, st.notes,
              ROUND(st.weight_kg * (1 + st.reps / 30.0), 2) AS estimated_1rm
       FROM sets st JOIN sessions s ON st.session_id = s.id
-      WHERE st.exercise_id = ? ORDER BY s.date DESC, st.set_num ASC LIMIT ?
+      WHERE st.exercise_id = ? AND s.id NOT LIKE '%-H' ORDER BY s.date DESC, st.set_num ASC LIMIT ?
     `).bind(exerciseId, limit).all();
     return json({ data: results });
   }
@@ -110,6 +110,7 @@ async function handleGet(request, env) {
       FROM sets st
       JOIN sessions s ON st.session_id = s.id
       JOIN exercises e ON st.exercise_id = e.id
+      WHERE s.id NOT LIKE '%-H'
       ORDER BY s.date ASC, st.exercise_id, st.set_num
       LIMIT ?
     `).bind(limit).all();
