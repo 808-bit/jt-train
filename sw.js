@@ -1,8 +1,9 @@
-const CACHE = 'jt-train-v2';
+const CACHE = 'jt-train-v3';
 const STATIC = [
   '/jt-train/jt_train.html',
   '/jt-train/manifest.json',
   '/jt-train/js/api.js',
+  '/jt-train/js/screens/history.js',
 ];
 
 self.addEventListener('install', e => {
