@@ -239,8 +239,10 @@ Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_i
     console.log('[plan] after filter:', parsed.exercises.map(e => e.exercise_id));
     plan = parsed.exercises;
     const planIds = new Set(plan.map(e => e.exercise_id));
+    pendingProgressions.forEach(p => { if (planIds.has(p.to)) appliedProgressions.add(p.from); });
     pendingProgressions = pendingProgressions.filter(p => planIds.has(p.to) ? false : true);
     localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
+    localStorage.setItem('appliedProgressions', JSON.stringify([...appliedProgressions]));
     document.getElementById('review-title').textContent = sType;
     document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
     document.getElementById('review-chat').innerHTML = '';

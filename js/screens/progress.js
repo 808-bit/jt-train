@@ -672,6 +672,10 @@ async function loadOverview() {
       <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:${c.colour};letter-spacing:0.18em;margin-bottom:10px;">${c.label}</div>
       ${items.map(p => {
         const alreadyQueued = pendingProgressions.some(q => q.from === p.id);
+        const alreadyApplied = appliedProgressions.has(p.id);
+        const btnLabel = alreadyQueued ? '✓ Queued' : alreadyApplied ? '✓ Applied' : 'Apply →';
+        const btnColor = (alreadyQueued || alreadyApplied) ? 'var(--text3)' : 'var(--green)';
+        const btnBorder = (alreadyQueued || alreadyApplied) ? 'var(--border2)' : 'rgba(34,197,94,0.4)';
         return `<div style="padding:8px 0;border-bottom:1px solid ${c.borderColour};cursor:pointer;" onclick="switchProgTab('exercise');selectExercise('${p.id}')">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${tier==='building'?'0':'5px'};">
             <div style="font-family:var(--font-ui);font-size:12px;font-weight:600;color:var(--text);">${p.name}</div>
@@ -679,8 +683,8 @@ async function loadOverview() {
               <div style="font-family:var(--font);font-size:10px;color:var(--text2);">${p.sessionsHit}/${p.needed}</div>
               ${p.eta && tier !== 'accomplished' ? `<div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);background:var(--bg3);padding:2px 6px;border-radius:4px;">${p.eta}</div>` : ''}
               ${tier === 'accomplished' ? `<button id="apply-prog-${p.id}" onclick="event.stopPropagation();applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?p.next.replace(/_/g,' '):''}')"
-                style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${alreadyQueued?'var(--text3)':'var(--green)'};background:none;border:1px solid ${alreadyQueued?'var(--border2)':'rgba(34,197,94,0.4)'};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;">
-                ${alreadyQueued ? '✓ Queued' : 'Apply →'}
+                style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${btnColor};background:none;border:1px solid ${btnBorder};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;">
+                ${btnLabel}
               </button>` : ''}
             </div>
           </div>
@@ -773,11 +777,16 @@ async function loadOverview() {
 
 function applyProgression(fromId, toId, fromName, toName) {
   const already = pendingProgressions.findIndex(p => p.from === fromId);
-  if (already >= 0) {
-    pendingProgressions.splice(already, 1);
+  const wasApplied = appliedProgressions.has(fromId);
+
+  if (already >= 0 || wasApplied) {
+    // Toggle off — clear both pending and applied
+    if (already >= 0) pendingProgressions.splice(already, 1);
+    appliedProgressions.delete(fromId);
     localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
+    localStorage.setItem('appliedProgressions', JSON.stringify([...appliedProgressions]));
     const btn = document.getElementById('apply-prog-' + fromId);
-    if (btn) { btn.textContent = 'Apply →'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'rgba(34,197,94,0.3)'; }
+    if (btn) { btn.textContent = 'Apply →'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'rgba(34,197,94,0.4)'; }
     return;
   }
   pendingProgressions.push({ from: fromId, to: toId, fromName, toName });

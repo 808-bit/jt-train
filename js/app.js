@@ -1,6 +1,7 @@
 let sType = 'Full Body A', loc = 'Home';
 let preSleep = 3, preEnergy = 3, preSoreness = 3;
 let pendingProgressions = JSON.parse(localStorage.getItem('pendingProgressions') || '[]');
+let appliedProgressions = new Set(JSON.parse(localStorage.getItem('appliedProgressions') || '[]'));
 
 function adjustSignal(key, delta) {
   if (key === 'sleep')    { preSleep    = Math.min(5, Math.max(1, preSleep    + delta)); document.getElementById('sig-sleep').textContent    = preSleep; }
