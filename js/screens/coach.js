@@ -84,7 +84,7 @@ Return ONLY valid JSON. Every field has a hard word limit — count the words an
   "reason": "HARD LIMIT 5 WORDS. Readiness or timing rationale only. Example: 'Fresh legs, moderate energy'"
 }`;
 
-    const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], HAIKU);
+    const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], SONNET);
     const jsonStart = raw.indexOf('{');
     const jsonEnd   = raw.lastIndexOf('}');
     const rec = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
