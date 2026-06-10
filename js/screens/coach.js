@@ -368,7 +368,7 @@ async function generatePlan() {
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterByEquipmentOnly(exercises, loc)
-    .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', L' + (e.matrix_level||'?') + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
+    .map(e => `${e.exercise_id} | ${e.display_name} (${e.category}, L${e.level||'?'}, ${e.equipment}${e.notes ? ', note: ' + e.notes : ''})`)
     .join('\n');
   const rawSets = histRes.sets || [];
   const rawSessions = histRes.sessions || [];
@@ -445,7 +445,7 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercise_ids from the provided list. Select exercises appropriate for ${sType} — the full equipment-compatible library is provided; choose the best fit for the session type, movement balance, and training history. Respect injury restrictions listed above.`;
+Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercise_ids from the provided list. Select exercises appropriate for ${sType} — choose by movement pattern balance, training history, and injury context. Do not rigidly filter by session type tag; use your judgement across the full equipment-matched library.`;
 
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';

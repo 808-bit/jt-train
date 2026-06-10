@@ -78,6 +78,26 @@ async function sendMsg() {
   await getCoachReply(msg);
 }
 
+function buildSessionContext() {
+  return plan.map(ex => {
+    const sets = loggedSets.filter(s => s.exercise_id === ex.exercise_id);
+    const logged = sets.map(s => `S${s.set_num}: ${s.reps}r @ ${s.weight_kg}kg RIR${s.rir}`).join(', ');
+    const lastSet = sets[sets.length - 1];
+    let signal = '';
+    if (lastSet) {
+      const prescReps = parseInt(String(ex.reps).split('-').pop()) || 10;
+      const actualReps = lastSet.reps;
+      const rir = lastSet.rir;
+      if (actualReps >= prescReps && rir >= 2) signal = '→ PROGRESS (beat target with margin)';
+      else if (actualReps >= prescReps && rir <= 1) signal = '→ HOLD (met target, close to failure)';
+      else if (actualReps < prescReps && rir <= 1) signal = '→ REGRESS weight (missed reps, near failure)';
+      else if (actualReps < prescReps * 0.5) signal = '→ SWAP EXERCISE (far below target)';
+      else signal = '→ HOLD';
+    }
+    return `${ex.display_name} | prescribed: ${ex.sets}×${ex.reps} @ ${ex.weight} RIR${ex.rir} | logged: ${logged || 'none yet'} ${signal}`;
+  }).join('\n');
+}
+
 async function getCoachReply(userMsg) {
   isTyping = true;
   showTyping();
@@ -100,11 +120,8 @@ Full set log: ${JSON.stringify(loggedSets)}
 
 2-3 sentences max. Conversational but precise. No motivation speak.`;
   } else {
+    const sessionCtx = buildSessionContext();
     const kitStr = buildKitString(loc);
-    const histStr = buildHistStr();
-    const shoulderRule = activeShoulderInjury
-      ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. Cue corkscrew on every push/press. Never suggest overhead movements.`
-      : `SHOULDER NOTE: No active shoulder injury. Standard cues apply.`;
     const availEx = filterByEquipmentOnly(exercises, loc)
       .map(e => `${e.exercise_id} | ${e.display_name} (${e.category}, L${e.level||'?'}, ${e.equipment})`)
       .join('\n');
@@ -113,44 +130,32 @@ Full set log: ${JSON.stringify(loggedSets)}
 Session: ${sType} | Location: ${loc}
 Kit: ${kitStr}
 Active injuries: ${injStr}
-${shoulderRule}
-${preNotes ? 'Pre-session notes: ' + preNotes : ''}
 
-Previous ${sType} sessions (for live comparison):
-${histStr}
+## Session state (prescribed vs actual with progression signal)
+${sessionCtx}
 
-Today's plan: ${JSON.stringify(plan)}
-Sets logged so far: ${JSON.stringify(loggedSets)}
-Full exercise library (equipment-matched, for substitutions):
+## Full exercise library (equipment-matched, use for substitutions)
 ${availEx}
 
 ## Response rules
-- 1-3 sentences max. Directives only — never echo set data back.
-- When all sets done for current exercise, name the next exercise and its opening prescription.
-- When all exercises complete, tell athlete to type 'done' for debrief.
-- If pain reported: immediately swap using the exercise library above (same pattern, shoulder-safe if injury active).
+- 1-3 sentences. Directives only — never echo set data back.
+- Act on the progression signal above — do not default to prescribed targets when signal says PROGRESS.
+- When exercise complete, name next exercise and opening prescription.
+- When all exercises complete, tell athlete to type 'done'.
+- Pain reported: swap immediately using library above, same movement pattern, shoulder-safe.
 
-## Progression rules (evaluate after EVERY logged set)
-PROGRESS when: actual reps >= prescribed AND RIR >= 2
-→ Increase weight by smallest available increment, or add 1-2 reps. Never suggest returning to prescribed load.
+## Progression
+PROGRESS signal → next set: increase weight (smallest kit increment) or increase reps 1-2 above target.
+HOLD signal → same weight and reps.
+REGRESS weight signal → drop 10-15%, state new target.
+SWAP EXERCISE signal → pick lower level (L) from library, same pattern.
 
-HOLD when: actual reps == prescribed AND RIR 0-1
-→ Confirm. Same weight and reps next set.
+## Band / KB loads
+RIR >= 3 on band/BW → name specific next load from kit string.
+Asymmetric double KB → suggest next combo by total load.
 
-REGRESS — drop weight when: actual reps < prescribed AND RIR <= 1
-→ Drop 10-15%. State new target explicitly.
-
-REGRESS — swap exercise when: actual reps < 50% of prescribed regardless of RIR
-→ Pick lower-level alternative from exercise library (same movement pattern, lower level number).
-
-## Band / KB load rules
-If RIR >= 3 and load is band or bodyweight:
-→ Suggest next band resistance or specific KB from available kit. State it explicitly e.g. "move to 20kg KB" or "double band".
-If asymmetric double KB: suggest next available combo by total load from kit string.
-
-## Exercise tier advancement
-If ALL prescribed sets completed at top of rep range with RIR >= 2:
-→ Flag next-tier exercise from library for next session (same pattern, next level). Do not auto-apply.`;
+## Tier advancement
+All sets at top of rep range, RIR >= 2 → name next-level exercise from library for next session. Don't auto-apply.`;
   }
   const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
   messages.push({ role: 'user', content: userMsg });
