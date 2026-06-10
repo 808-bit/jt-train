@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Patches jt_train.html to add analytics tab. Run from ~/jt-train/"""
+"""Patches jt_train.html to add analytics tab. Run from ~/Projects/jt-train/"""
 import sys, os, re
 
-path = os.path.expanduser('~/jt-train/jt_train.html')
+path = os.path.expanduser('~/Projects/jt-train/jt_train.html')
 with open(path) as f:
     src = f.read()
 

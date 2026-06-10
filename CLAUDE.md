@@ -9,13 +9,13 @@
 | Backend | Cloudflare Worker (`jt-workout-worke.james-thornton88.workers.dev`) |
 | Database | Cloudflare D1 (`jt-train-db`, ID `bc3254ce-c147-4bbd-a452-acecb770e9f0`) |
 | AI | Claude Sonnet for all AI calls (plan gen, debrief, review, recommendation, mid-workout coach) |
-| Local | `/Users/jamesthornton/Desktop/jt-train/` |
+| Local | `/Users/jamesthornton/Projects/jt-train/` |
 
 ## Deploy
 
 ```bash
 # Full deploy (frontend + worker)
-cd ~/Desktop/jt-train && git add . && git commit -m "msg" && git push && wrangler deploy
+cd ~/Projects/jt-train && git add . && git commit -m "msg" && git push && wrangler deploy
 
 # D1 migration
 wrangler d1 execute jt-train-db --file=path/to/migration.sql --remote
@@ -169,10 +169,10 @@ This replaces raw `JSON.stringify(loggedSets)` / `JSON.stringify(plannedVsActual
 Use Python for multiline replacements:
 ```bash
 python3 << 'EOF'
-with open('/Users/jamesthornton/Desktop/jt-train/worker.js', 'r') as f:
+with open('/Users/jamesthornton/Projects/jt-train/worker.js', 'r') as f:
     content = f.read()
 content = content.replace('old string', 'new string')
-with open('/Users/jamesthornton/Desktop/jt-train/worker.js', 'w') as f:
+with open('/Users/jamesthornton/Projects/jt-train/worker.js', 'w') as f:
     f.write(content)
 EOF
 ```
