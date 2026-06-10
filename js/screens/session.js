@@ -174,24 +174,59 @@ async function generateDebrief() {
   console.log('generateDebrief — sessionId:', sessionId, 'sets:', loggedSets.length);
   isTyping = true;
   showTyping();
-  const histStr = buildHistStr();
-  const plannedVsActual = plan.map(ex => {
-    const done = loggedSets.filter(s => s.exercise_id === ex.exercise_id);
-    return { exercise: ex.display_name, id: ex.exercise_id, planned: { sets: ex.sets, reps: ex.reps, weight: ex.weight, rir: ex.rir }, logged: done };
-  });
+
+  // Pre-compute session summary
+  const sessionCtx = buildSessionContext();
+
+  // Total volume
+  const totalVol = loggedSets.reduce((sum, s) => sum + (s.reps * s.weight_kg), 0);
+  const totalSets = loggedSets.length;
+  const exCount = new Set(loggedSets.map(s => s.exercise_id)).size;
+
+  // Compare to history
+  const histStr = history.sets && history.sets.length
+    ? 'Previous ' + sType + ' sessions:\n' +
+      history.sets.map(s =>
+        s.session_id.slice(0,10) + ' | ' + s.exercise_id +
+        ' S' + s.set_num + ': ' + s.reps + 'r @ ' + s.weight_kg + 'kg' +
+        (s.rir != null ? ' RIR' + s.rir : '')
+      ).join('\n')
+    : 'No previous ' + sType + ' history to compare.';
+
+  // Progression signals summary
+  const signals = plan.map(ex => {
+    const sets = loggedSets.filter(s => s.exercise_id === ex.exercise_id);
+    if (!sets.length) return `${ex.display_name}: not attempted`;
+    const prescReps = parseInt(String(ex.reps).split('-').pop()) || 10;
+    const allProgressed = sets.every(s => s.reps >= prescReps && s.rir >= 2);
+    const anyRegressed = sets.some(s => s.reps < prescReps && s.rir <= 1);
+    const exVol = sets.reduce((sum, s) => sum + (s.reps * s.weight_kg), 0);
+    const tag = allProgressed ? '↑ READY TO PROGRESS' : anyRegressed ? '↓ REDUCE LOAD NEXT SESSION' : '= HOLD';
+    return `${ex.display_name}: ${sets.length} sets, vol ${Math.round(exVol)}kg·reps ${tag}`;
+  }).join('\n');
+
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
-  const system = `You are a training coach writing a post-session summary for James.
-Plain language — no jargon, no "RIR", no "tactical". Write like a smart coach texting after a session.
-
-Session: ${sType} | ${new Date().toLocaleDateString('en-AU')}
+  const system = `You are an elite strength coach debriefing James Thornton post-workout.
+Session: ${sType} | Location: ${loc}
+Total: ${totalSets} sets across ${exCount} exercises | Volume: ${Math.round(totalVol)}kg·reps
 Active injuries: ${injStr}
-${preNotes ? 'Pre-session notes: ' + preNotes : ''}
 
-Previous ${sType} sessions (ground truth for progression — compare actual logged numbers against these to determine outcome):
+## Per-exercise breakdown (prescribed vs actual + signal)
+${sessionCtx}
+
+## Progression summary
+${signals}
+
+## Historical comparison
 ${histStr}
 
-What was planned vs what was actually logged this session:
-${JSON.stringify(plannedVsActual)}
+Write a debrief. Cover:
+1. Session volume and intensity verdict (was this a quality stimulus?)
+2. Per-exercise progression calls for next session — be explicit (increase X to Y, swap A for B)
+3. Any injury flags from today's data
+4. One priority focus for next ${sType} session
+
+Max 200 words. Data-driven. High fitness literacy — skip basics. No generic encouragement.
 
 Return ONLY the JSON object. No explanation. No markdown. Just the JSON starting with { and ending with }.
 {
