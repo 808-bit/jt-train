@@ -42,7 +42,7 @@ jt-train/
 └── js/
     ├── api.js           # api(), apiPost(), claude() helpers
     ├── app.js           # Globals, goScreen(), selS(), selL(), init(), timers
-    ├── equipment.js     # filterExercises(), buildKitString(), equipment config UI
+    ├── equipment.js     # filterExercises(), filterByEquipmentOnly(), buildKitString(), equipment config UI
     ├── set_logger.js    # Set logging UI, endSession modal, discardAndDelete()
     └── screens/
         ├── coach.js     # Idle screen: autoRecommend(), generatePlan(), generateCoachesWorkout()
@@ -143,6 +143,27 @@ const ssoPromise = cachedDebriefs !== null
   : fetchSSOContext(6, sType);
 ```
 `formatSSOContext(debriefs, sTypeFilter, limit)` filters + formats client-side — no extra API call on the warm path.
+
+### filterExercises vs filterByEquipmentOnly
+Two distinct filters — use the right one:
+
+- **`filterExercises(exList, loc, sType)`** — canonical session filter: equipment + active injuries (`shoulder_safe`) + session-type tag. Use for validating Claude's output (stripping exercise IDs not in the allowed set).
+- **`filterByEquipmentOnly(exList, loc)`** — kit-only filter: no injury or session-type filtering. Use when building the exercise library handed to Claude for plan gen or substitutions — gives Claude the full equipment-matched menu and lets it select by movement pattern, level, and context.
+
+`analyseExerciseTrends` swap candidates: always use `filterByEquipmentOnly` (field `e.session_types` does not exist).
+
+### buildSessionContext() — pre-computed progression signals
+`session.js` helper. Called before every `getCoachReply` (mid-workout) and `generateDebrief` call. Maps each plan exercise to a readable line with prescribed vs actual and a signal:
+
+```javascript
+// → PROGRESS (beat target with margin)   when reps >= prescribed AND RIR >= 2
+// → HOLD (met target, close to failure)  when reps >= prescribed AND RIR <= 1
+// → REGRESS weight (missed reps)         when reps < prescribed AND RIR <= 1
+// → SWAP EXERCISE (far below target)     when reps < 50% of prescribed
+// → HOLD                                 otherwise
+```
+
+This replaces raw `JSON.stringify(loggedSets)` / `JSON.stringify(plannedVsActual)` blobs. Claude receives pre-evaluated signals and acts on them directly.
 
 ### Worker patching (macOS sed workaround)
 Use Python for multiline replacements:
@@ -255,7 +276,8 @@ Gym:    { rings:false, pull_up_bar:true, parallettes_high:false, parallettes_low
 1. `ssoContext` — from `cachedDebriefs` if warm (client-side `formatSSOContext`), else `fetchSSOContext(6, sType)`
 2. Parallel fetch: `getProgressionTree`, `getSessionHistory` (limit 15, cross-type), `getMovementPatterns`
 3. Injects `coachBrief` from `autoRecommend` into system prompt
-4. Filters available exercises via `filterExercises(exercises, loc, sType)` — never hand-roll this filter
+4. Exercise library for AI uses `filterByEquipmentOnly(exercises, loc)` — equipment-matched only, no session-type tag filtering; Claude selects by movement pattern balance and judgement
+5. Rules line explicitly tells Claude: do not rigidly filter by session type tag, use full equipment-matched library
 
 ## End Session Modal (3 buttons)
 
@@ -317,8 +339,11 @@ History screen uses aliased vars: `--s1=--bg2`, `--b1=--border`, `--b2=--border2
 - `pendingProgressions` + `appliedProgressions` persist to localStorage, cleared selectively after plan gen
 - Historical sets imported Jan-May 2026 from CSV (session IDs end in `-H`) — excluded from history screen via `WHERE id NOT LIKE '%-H'`
 - Worker: duplicate `getMovementPatterns` action was removed — don't re-add
-- `filterExercises(exercises, loc, sType)` is the canonical equipment/injury/session-type filter — use it everywhere, never re-implement inline
-- `analyseExerciseTrends` swap candidates: field `e.session_types` does not exist — always use `filterExercises(exercises, loc, sType)` to get candidates
+- `filterExercises` vs `filterByEquipmentOnly` — see Critical Patterns above. Wrong choice causes either over-filtering (session-type tag blocks valid substitutions) or under-filtering (injury-unsafe exercises reach Claude)
+- `analyseExerciseTrends` swap candidates: field `e.session_types` does not exist — use `filterByEquipmentOnly(exercises, loc)` to get candidates
+- `buildSessionContext()` must be called fresh each time (reads current `plan` + `loggedSets`) — do not cache its output across messages
+- `history` global (`{ sessions: [], sets: [] }`) is populated at init and available in `generateDebrief` — no extra fetch needed for historical comparison
+- Session screen chat input ID is `#msg-input` (not `#chat-input`)
 
 ## User Context
 
