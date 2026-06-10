@@ -81,20 +81,26 @@ async function sendMsg() {
 function buildSessionContext() {
   return plan.map(ex => {
     const sets = loggedSets.filter(s => s.exercise_id === ex.exercise_id);
-    const logged = sets.map(s => `S${s.set_num}: ${s.reps}r @ ${s.weight_kg}kg RIR${s.rir}`).join(', ');
+    const isBW = !sets.length
+      ? (parseFloat(ex.weight) === 0 || String(ex.weight).toUpperCase() === 'BW')
+      : sets.every(s => !s.weight_kg || parseFloat(s.weight_kg) === 0);
+    const logged = sets.map(s => `S${s.set_num}: ${s.reps}r @ ${s.weight_kg > 0 ? s.weight_kg + 'kg' : 'BW'} RIR${s.rir}`).join(', ');
     const lastSet = sets[sets.length - 1];
     let signal = '';
-    if (lastSet) {
+    if (!sets.length) {
+      signal = '→ NOT ATTEMPTED — ask athlete before skipping';
+    } else if (lastSet) {
       const prescReps = parseInt(String(ex.reps).split('-').pop()) || 10;
       const actualReps = lastSet.reps;
       const rir = lastSet.rir;
-      if (actualReps >= prescReps && rir >= 2) signal = '→ PROGRESS (beat target with margin)';
+      if (actualReps >= prescReps && rir >= 2) signal = isBW ? '→ PROGRESS (beat target — add reps or harder variation, no weight to increase)' : '→ PROGRESS (beat target with margin)';
       else if (actualReps >= prescReps && rir <= 1) signal = '→ HOLD (met target, close to failure)';
-      else if (actualReps < prescReps && rir <= 1) signal = '→ REGRESS weight (missed reps, near failure)';
+      else if (actualReps < prescReps && rir <= 1) signal = isBW ? '→ REGRESS (missed reps, near failure — easier variation or reduce range)' : '→ REGRESS weight (missed reps, near failure)';
       else if (actualReps < prescReps * 0.5) signal = '→ SWAP EXERCISE (far below target)';
       else signal = '→ HOLD';
     }
-    return `${ex.display_name} | prescribed: ${ex.sets}×${ex.reps} @ ${ex.weight} RIR${ex.rir} | logged: ${logged || 'none yet'} ${signal}`;
+    const weightLabel = isBW ? 'BW' : ex.weight;
+    return `${ex.display_name}${isBW ? ' [BW]' : ''} | prescribed: ${ex.sets}×${ex.reps} @ ${weightLabel} RIR${ex.rir} | logged: ${logged || 'none yet'} ${signal}`;
   }).join('\n');
 }
 
@@ -178,8 +184,10 @@ async function generateDebrief() {
   // Pre-compute session summary
   const sessionCtx = buildSessionContext();
 
-  // Total volume
-  const totalVol = loggedSets.reduce((sum, s) => sum + (s.reps * s.weight_kg), 0);
+  // Total volume — BW sets (weight_kg = 0) excluded from kg total, counted separately
+  const loadedSets = loggedSets.filter(s => s.weight_kg > 0);
+  const bwSets = loggedSets.filter(s => !s.weight_kg || parseFloat(s.weight_kg) === 0);
+  const totalVol = loadedSets.reduce((sum, s) => sum + (s.reps * s.weight_kg), 0);
   const totalSets = loggedSets.length;
   const exCount = new Set(loggedSets.map(s => s.exercise_id)).size;
 
@@ -208,7 +216,7 @@ async function generateDebrief() {
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
   const system = `You are an elite strength coach debriefing James Thornton post-workout.
 Session: ${sType} | Location: ${loc}
-Total: ${totalSets} sets across ${exCount} exercises | Volume: ${Math.round(totalVol)}kg·reps
+Total: ${totalSets} sets across ${exCount} exercises | Loaded volume: ${Math.round(totalVol)}kg${bwSets.length ? ` + ${bwSets.length} BW sets (volume not in kg)` : ''}
 Active injuries: ${injStr}
 
 ## Per-exercise breakdown (prescribed vs actual + signal)

@@ -352,12 +352,20 @@ async function generateCoachReview() {
     const weeklyVols = {};
     allSets.forEach(s => { const d=new Date(s.date); const mon=new Date(d-((d.getDay()||7)-1)*86400000); const w=mon.toISOString().slice(0,10); weeklyVols[w]=(weeklyVols[w]||0)+(parseInt(s.reps)||0)*(parseFloat(s.weight_kg)||1); });
 
+    const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('; ') : 'None';
+    const kitStr = buildKitString(loc);
+
     const system = `You are a sports scientist reviewing 6 weeks of training data for James. Be direct, specific, evidence-based. No filler. Reference actual numbers.
+
+ATHLETE CONTEXT:
+Location: ${loc}
+Equipment: ${kitStr}
+Active injuries: ${injStr}
 
 TRAINING DATA (last 6 weeks):
 Sessions: ${sessions.length}
 Total sets: ${allSets.length}
-Total volume: ${Math.round(totalVolume)}kg
+Total volume: ${Math.round(totalVolume)}kg (BW sets counted as 1kg for relative comparison)
 Movement pattern breakdown: ${Object.entries(byPattern).map(([p,n])=>`${p}: ${n} sets`).join(', ')}
 Weekly volume trend: ${Object.entries(weeklyVols).sort().map(([w,v])=>`${w.slice(5)}: ${Math.round(v)}kg`).join(', ')}
 
