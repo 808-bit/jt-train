@@ -100,14 +100,14 @@ Full set log: ${JSON.stringify(loggedSets)}
 
 2-3 sentences max. Conversational but precise. No motivation speak.`;
   } else {
-    const availEx = filterExercises(exercises, loc, sType)
-      .map(e => `${e.id} (${e.display_name}, ${e.category}, ${e.equipment}, level ${e.matrix_level||'?'})`)
-      .join('\n');
     const kitStr = buildKitString(loc);
     const histStr = buildHistStr();
     const shoulderRule = activeShoulderInjury
       ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. Cue corkscrew on every push/press. Never suggest overhead movements.`
       : `SHOULDER NOTE: No active shoulder injury. Standard cues apply.`;
+    const availEx = filterByEquipmentOnly(exercises, loc)
+      .map(e => `${e.exercise_id} | ${e.display_name} (${e.category}, L${e.level||'?'}, ${e.equipment})`)
+      .join('\n');
 
     system = `You are an elite strength coach for James Thornton mid-workout.
 Session: ${sType} | Location: ${loc}
@@ -121,39 +121,36 @@ ${histStr}
 
 Today's plan: ${JSON.stringify(plan)}
 Sets logged so far: ${JSON.stringify(loggedSets)}
-Available exercises for substitution:
+Full exercise library (equipment-matched, for substitutions):
 ${availEx}
 
 ## Response rules
 - 1-3 sentences max. Directives only — never echo set data back.
 - When all sets done for current exercise, name the next exercise and its opening prescription.
 - When all exercises complete, tell athlete to type 'done' for debrief.
-- If pain reported: immediately swap the exercise using available exercises list.
+- If pain reported: immediately swap using the exercise library above (same pattern, shoulder-safe if injury active).
 
-## Progression rules (evaluate after EVERY set)
-PROGRESS when: actual reps >= prescribed reps AND RIR >= 2
-→ Next set: increase weight by smallest available increment, or increase reps 1-2 beyond target.
-→ Never suggest returning to prescribed load when athlete beat the target with margin.
+## Progression rules (evaluate after EVERY logged set)
+PROGRESS when: actual reps >= prescribed AND RIR >= 2
+→ Increase weight by smallest available increment, or add 1-2 reps. Never suggest returning to prescribed load.
 
-HOLD when: actual reps == prescribed reps AND RIR 0-1
-→ Confirm the set. Same weight and reps next set.
+HOLD when: actual reps == prescribed AND RIR 0-1
+→ Confirm. Same weight and reps next set.
 
-REGRESS — reduce weight when: actual reps < prescribed reps AND RIR <= 1
-→ Drop weight 10-15%. State the new target explicitly.
+REGRESS — drop weight when: actual reps < prescribed AND RIR <= 1
+→ Drop 10-15%. State new target explicitly.
 
-REGRESS — suggest easier exercise when: actual reps < 50% of prescribed reps regardless of RIR
-→ Pick a lower-level alternative from available exercises list (same movement pattern, lower level).
+REGRESS — swap exercise when: actual reps < 50% of prescribed regardless of RIR
+→ Pick lower-level alternative from exercise library (same movement pattern, lower level number).
 
 ## Band / KB load rules
-If RIR >= 3 and weight is a band or bodyweight:
-→ Suggest next band resistance, or an available KB, or a band+KB combination.
-→ State the specific load e.g. "move to heavy band" or "add 8kg KB".
-If using asymmetric double KB: suggest the next available combo by total load.
+If RIR >= 3 and load is band or bodyweight:
+→ Suggest next band resistance or specific KB from available kit. State it explicitly e.g. "move to 20kg KB" or "double band".
+If asymmetric double KB: suggest next available combo by total load from kit string.
 
-## Exercise progression (tier advancement)
-If athlete completes ALL prescribed sets at top of rep range with RIR >= 2:
-→ Flag that they are ready to progress to the next exercise tier. Name the next-level exercise from available exercises (same pattern, next level).
-→ Do NOT auto-apply — state it as a recommendation for next session.`;
+## Exercise tier advancement
+If ALL prescribed sets completed at top of rep range with RIR >= 2:
+→ Flag next-tier exercise from library for next session (same pattern, next level). Do not auto-apply.`;
   }
   const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
   messages.push({ role: 'user', content: userMsg });
@@ -546,7 +543,7 @@ async function sendReviewMsg() {
   reviewTyping = true;
   addReviewMsg('you', msg);
   const availableExList = filterByEquipmentOnly(exercises, loc)
-    .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', L' + (e.matrix_level||'?') + ', ' + e.equipment + ')')
+    .map(e => e.exercise_id + ' (' + e.display_name + ', ' + e.category + ', L' + (e.level||'?') + ', ' + e.equipment + ')')
     .join(', ');
   const chat = document.getElementById('review-chat');
   const typingDiv = document.createElement('div');
