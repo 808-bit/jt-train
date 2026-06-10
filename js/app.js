@@ -14,8 +14,20 @@ function adjustSignal(key, delta) {
   window._signalTimer = setTimeout(() => autoRecommend(), 800);
 }
 let injuries = [], exercises = [], history = { sessions: [], sets: [] };
-let plan = [], chatLog = [], sessionId = '', loggedSets = [];
+let plan = [], chatLog = [], sessionId = '', loggedSets = [], preNotes = '', coachMemo = '';
 let isTyping = false;
+
+function buildHistStr() {
+  if (!history.sets || !history.sets.length) return 'No recent history for ' + sType + '.';
+  return 'Last ' + (history.sessions?.length || '?') + ' ' + sType + ' sessions:\n' +
+    history.sets.map(s =>
+      s.session_id.slice(0, 10) + ' | ' + s.exercise_id +
+      ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
+      (s.rir !== undefined && s.rir !== null ? ' RIR ' + s.rir : '') +
+      (s.tempo ? ' ' + s.tempo : '') +
+      (s.notes ? ' (' + s.notes + ')' : '')
+    ).join('\n');
+}
 
 let sessionTimerInterval = null, sessionTimerStart = null;
 let restTimerInterval = null, restTimerStart = null;

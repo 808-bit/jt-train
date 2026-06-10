@@ -187,15 +187,17 @@ async function fetchSSOContext(limit, sessionTypeFilter) {
 }
 
 async function generateCoachesWorkout() {
-  const preNotes = document.getElementById('pre-notes').value.trim();
+  preNotes = document.getElementById('pre-notes').value.trim();
   document.getElementById('gen-status').textContent = 'Analysing your training data...';
 
-  const [histRes, ssoContext, progRes, mpRes] = await Promise.all([
+  const [histRes, ssoContext, progRes, mpRes, memoRes] = await Promise.all([
     api('getSessionHistory', { limit: 20 }),
     fetchSSOContext(10, null),
     api('getProgressionTree'),
     api('getMovementPatterns'),
+    apiPost({ action: 'getMemo' }).catch(() => ({ memo: null })),
   ]);
+  coachMemo = memoRes.memo || '';
 
   const progRules = progRes.data || [];
   const progContext = progRules.length
@@ -243,7 +245,7 @@ async function generateCoachesWorkout() {
 
   const system = `You are The Tactical Partner — a precision strength coach with full autonomy to design today's hypertrophy session for James Thornton.
 Operating principle: maintain the machine, respect the load, optimise for life. No fluff. Data drives decisions.
-
+${coachMemo ? `\nCOACH'S RUNNING NOTES (your persistent memory — read this first, it overrides generic defaults):\n${coachMemo}\n` : ''}
 ATHLETE PROFILE:
 Goal: Lean bulk / hypertrophy — Q2 2026.
 Equipment: ${kitStr}
@@ -258,8 +260,14 @@ HYPERTROPHY PRINCIPLES (non-negotiable):
 - RIR 0-2 on work sets. First set conservative, final set close to failure.
 - 3-5 hard sets per movement pattern trained.
 - Compounds anchor the session. Isolation only where it fills a genuine gap.
-- Base all loads on the most recent sets logged for each exercise — progressive overload.
 - Tempo: note a 2-3s eccentric where it matters for tension.
+
+LOAD PRESCRIPTION PROTOCOL — apply to every exercise using the raw history:
+- RIR 0 last session → at limit. Same load, recover before pushing.
+- RIR 1 last session → target zone. +1-2 reps or +weight if at rep range ceiling.
+- RIR 2 last session → room available. Push reps toward top of range or increase load.
+- RIR 3+ last session → undertested. Do NOT anchor to the logged rep count — it is not a ceiling. Prescribe significantly more reps. Estimated capacity = logged reps + RIR; target RIR 1-2 from there.
+- Low reps + high RIR = athlete stopped conservatively, not a limit. Treat it as undertesting and push accordingly.
 
 MOVEMENT PATTERN ARCHITECTURE (scan this to identify what's overdue):
 ${patternsStr}
@@ -330,12 +338,14 @@ async function generatePlan() {
   const ssoPromise = cachedDebriefs !== null
     ? Promise.resolve(formatSSOContext(cachedDebriefs, sType, 6))
     : fetchSSOContext(6, sType);
-  const [ssoContext, progRes, histRes, mpRes] = await Promise.all([
+  const [ssoContext, progRes, histRes, mpRes, memoRes] = await Promise.all([
     ssoPromise,
     api('getProgressionTree'),
     api('getSessionHistory', { limit: 15 }),
     api('getMovementPatterns'),
+    apiPost({ action: 'getMemo' }).catch(() => ({ memo: null })),
   ]);
+  coachMemo = memoRes.memo || '';
   const progRules = progRes.data || [];
   const progContext = progRules.length
     ? progRules.map(p => {
@@ -357,8 +367,8 @@ async function generatePlan() {
     : 'No pattern data.';
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
-  const availEx = filterExercises(exercises, loc, sType)
-    .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
+  const availEx = filterByEquipmentOnly(exercises, loc)
+    .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', L' + (e.matrix_level||'?') + ', ' + e.equipment + (e.notes ? ', note: ' + e.notes : '') + ')')
     .join('\n');
   const rawSets = histRes.sets || [];
   const rawSessions = histRes.sessions || [];
@@ -381,7 +391,7 @@ async function generatePlan() {
   const system = `You are The Tactical Partner — an intelligent, analytical training operator for James Thornton.
 Your operating principle: maintain the machine, respect the load, optimise for life.
 You are not a motivator. You are a precision instrument. No fluff, no toxic positivity, no filler.
-
+${coachMemo ? `\nCOACH'S RUNNING NOTES (your persistent memory — read this first, it supersedes generic defaults):\n${coachMemo}\n` : ''}
 ${coachBrief ? `COACH PRESCRIPTION (follow this closely — it overrides generic session type):
 ${coachBrief}
 
@@ -416,6 +426,18 @@ CONTEXT INTERPRETATION — if pre-session notes or signals indicate low energy, 
 
 If notes indicate readiness or high energy — push accordingly. Match the dose to the state.
 
+LOAD PRESCRIPTION PROTOCOL — follow this strictly when setting reps and weight:
+
+For each exercise, find the last logged sets in the raw history. Then:
+
+1. RIR 0 last session → athlete was at true limit. Hold load, reduce reps slightly or same reps, recover before pushing.
+2. RIR 1 last session → at target intensity. Small progression: +1-2 reps if below rep range ceiling, or +weight if at ceiling.
+3. RIR 2 last session → room to push. Increase reps toward top of range, or if already there, increase load.
+4. RIR 3+ last session → undertested, NOT limited. Do NOT anchor to the logged rep count as a ceiling. Prescribe significantly more reps. Low reps + high RIR means the athlete stopped well short of capacity — push them.
+5. No history → start conservative (RIR 2-3) but do not default to lowest possible reps.
+
+CRITICAL: A low rep count paired with a high RIR means the session was conservative, not that the athlete can't do more. Use estimated capacity = logged reps + RIR as a floor, then prescribe at RIR 1-2.
+
 Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
 {
   "session_notes": "one line tactical intent",
@@ -423,11 +445,11 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Rules: 4-6 exercises. Base load/volume on history. CRITICAL: Only use exercise_ids from the "Available exercises" list above — never invent or use an exercise_id not in that list.`;
+Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercise_ids from the provided list. Select exercises appropriate for ${sType} — the full equipment-compatible library is provided; choose the best fit for the session type, movement balance, and training history. Respect injury restrictions listed above.`;
 
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
-    const preNotes = document.getElementById('pre-notes').value.trim();
+    preNotes = document.getElementById('pre-notes').value.trim();
     const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc +
       (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);

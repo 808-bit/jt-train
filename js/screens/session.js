@@ -100,36 +100,60 @@ Full set log: ${JSON.stringify(loggedSets)}
 
 2-3 sentences max. Conversational but precise. No motivation speak.`;
   } else {
-    const cfg = (equipmentConfig[loc] || DEFAULT_CONFIG[loc] || {});
-    const availKB = cfg.kb_weights || [16,20,24,32,44];
-    const hasPairs = cfg.kb_pairs || false;
-    const kbStr = hasPairs
-      ? `Matching pairs available: ${availKB.map(w=>w+'kg').join(', ')}`
-      : `Single bells only (no pairs): ${availKB.map(w=>w+'kg').join(', ')} — double KB load = two different bells combined`;
+    const availEx = filterExercises(exercises, loc, sType)
+      .map(e => `${e.id} (${e.display_name}, ${e.category}, ${e.equipment}, level ${e.matrix_level||'?'})`)
+      .join('\n');
+    const kitStr = buildKitString(loc);
+    const histStr = buildHistStr();
     const shoulderRule = activeShoulderInjury
-      ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. On every push/press movement, cue the corkscrew technique and flag if any overhead loading occurs. Never suggest overhead movements.`
-      : `SHOULDER NOTE: No active shoulder injury. Standard movement cues apply. No overhead restrictions.`;
-    system = `You are The Tactical Partner — a precision training operator, mid-session.
-Operating principle: maintain the machine, respect the load, optimise for life.
-No filler. No motivation speak. Analytical, brief, direct — like a high-end consultant who also trains.
+      ? `SHOULDER RULE: Right shoulder impingement is ACTIVE. Cue corkscrew on every push/press. Never suggest overhead movements.`
+      : `SHOULDER NOTE: No active shoulder injury. Standard cues apply.`;
 
+    system = `You are an elite strength coach for James Thornton mid-workout.
 Session: ${sType} | Location: ${loc}
+Kit: ${kitStr}
 Active injuries: ${injStr}
 ${shoulderRule}
-Available KB equipment: ${kbStr}
-Today's plan (prescribed): ${JSON.stringify(plan)}
-Sets logged so far (ACTUAL performance — use this for load recommendations, not the plan): ${JSON.stringify(loggedSets)}
+${preNotes ? 'Pre-session notes: ' + preNotes : ''}
 
-RESPONSE RULES:
-- The athlete can already see their set data — DO NOT echo it back. No "Set 2 logged: X reps @ Ykg".
-- Give ONE directive only: what to do next and why. 1-2 sentences max.
-- Plain language. No jargon. Say "2 reps left" not "RIR 2". Say "slow the lowering" not "increase eccentric tempo".
-- Load suggestions MUST use actual logged weights, not prescribed plan weights.
-- For double KB, suggest two specific bells from the available list.
-- If load or rest was wrong: say what to fix, briefly.
-- If pain or injury reported: swap immediately, state the replacement.
-- Use James's name only for a decisive correction — not every message.
-- When all sets done: one line telling him to hit Done — debrief.`;
+Previous ${sType} sessions (for live comparison):
+${histStr}
+
+Today's plan: ${JSON.stringify(plan)}
+Sets logged so far: ${JSON.stringify(loggedSets)}
+Available exercises for substitution:
+${availEx}
+
+## Response rules
+- 1-3 sentences max. Directives only — never echo set data back.
+- When all sets done for current exercise, name the next exercise and its opening prescription.
+- When all exercises complete, tell athlete to type 'done' for debrief.
+- If pain reported: immediately swap the exercise using available exercises list.
+
+## Progression rules (evaluate after EVERY set)
+PROGRESS when: actual reps >= prescribed reps AND RIR >= 2
+→ Next set: increase weight by smallest available increment, or increase reps 1-2 beyond target.
+→ Never suggest returning to prescribed load when athlete beat the target with margin.
+
+HOLD when: actual reps == prescribed reps AND RIR 0-1
+→ Confirm the set. Same weight and reps next set.
+
+REGRESS — reduce weight when: actual reps < prescribed reps AND RIR <= 1
+→ Drop weight 10-15%. State the new target explicitly.
+
+REGRESS — suggest easier exercise when: actual reps < 50% of prescribed reps regardless of RIR
+→ Pick a lower-level alternative from available exercises list (same movement pattern, lower level).
+
+## Band / KB load rules
+If RIR >= 3 and weight is a band or bodyweight:
+→ Suggest next band resistance, or an available KB, or a band+KB combination.
+→ State the specific load e.g. "move to heavy band" or "add 8kg KB".
+If using asymmetric double KB: suggest the next available combo by total load.
+
+## Exercise progression (tier advancement)
+If athlete completes ALL prescribed sets at top of rep range with RIR >= 2:
+→ Flag that they are ready to progress to the next exercise tier. Name the next-level exercise from available exercises (same pattern, next level).
+→ Do NOT auto-apply — state it as a recommendation for next session.`;
   }
   const messages = chatLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
   messages.push({ role: 'user', content: userMsg });
@@ -148,12 +172,26 @@ async function generateDebrief() {
   console.log('generateDebrief — sessionId:', sessionId, 'sets:', loggedSets.length);
   isTyping = true;
   showTyping();
-  const system = `You are a training coach. Generate a post-session summary for James.
-Plain language only — no jargon, no "RIR", no "tactical", no "SSO". Write like a smart coach texting after a session.
+  const histStr = buildHistStr();
+  const plannedVsActual = plan.map(ex => {
+    const done = loggedSets.filter(s => s.exercise_id === ex.exercise_id);
+    return { exercise: ex.display_name, id: ex.exercise_id, planned: { sets: ex.sets, reps: ex.reps, weight: ex.weight, rir: ex.rir }, logged: done };
+  });
+  const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
+  const system = `You are a training coach writing a post-session summary for James.
+Plain language — no jargon, no "RIR", no "tactical". Write like a smart coach texting after a session.
 
-Session: ${sType} | Plan: ${JSON.stringify(plan)} | Logged sets: ${JSON.stringify(loggedSets)}
+Session: ${sType} | ${new Date().toLocaleDateString('en-AU')}
+Active injuries: ${injStr}
+${preNotes ? 'Pre-session notes: ' + preNotes : ''}
 
-Return ONLY the JSON object. No working out. No explanation. No markdown. Just the JSON, starting with { and ending with }.
+Previous ${sType} sessions (ground truth for progression — compare actual logged numbers against these to determine outcome):
+${histStr}
+
+What was planned vs what was actually logged this session:
+${JSON.stringify(plannedVsActual)}
+
+Return ONLY the JSON object. No explanation. No markdown. Just the JSON starting with { and ending with }.
 {
   "total_volume_kg": 320,
   "total_sets": 12,
@@ -161,17 +199,13 @@ Return ONLY the JSON object. No working out. No explanation. No markdown. Just t
   "outcome": "maintained",
   "shoulder_flag": false,
   "exercises_flagged": [],
-  "headline": "One plain-English sentence. The single most important thing about this session. What happened and why it matters.",
-  "recommendation": "One plain-English sentence. What to do differently or focus on next session."
+  "headline": "One plain-English sentence. The single most important thing about this session — reference actual numbers vs last session.",
+  "recommendation": "One plain-English sentence. What to do differently or push next session — specific, not generic."
 }
 
 performance_signal: "improving" | "stable" | "declining"
-outcome: "progressed" | "maintained" | "declined" | "incomplete"
-  - progressed: load or reps increased vs last session
-  - maintained: consistent output, no regression
-  - declined: load or reps dropped, or form broke down
-  - incomplete: significant sets missed or session cut short
-exercises_flagged: exercise_ids where form broke down, sets were missed, or load was wrong
+outcome: "progressed" | "maintained" | "declined" | "incomplete" — determined by comparing logged numbers against previous sessions above
+exercises_flagged: exercise_ids where sets were missed, load dropped vs history, or pain was reported
 shoulder_flag: true only if right shoulder was loaded in a risky way`;
   try {
     const raw = await claude(system, [{ role: 'user', content: 'Summarise my session.' }], SONNET);
@@ -195,6 +229,8 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
       raw_json: clean
     }}).then(r => { if (!r.ok) console.error('saveDebrief failed:', r); })
       .catch(e => console.error('saveDebrief error:', e));
+
+    updateCoachMemo(sso).catch(e => console.error('memo update failed:', e));
 
     const signalColour = { improving: 'var(--green)', stable: 'var(--text2)', declining: 'var(--amber)' }[sso.performance_signal] || 'var(--text2)';
     const signalIcon = { improving: '↑', stable: '→', declining: '↓' }[sso.performance_signal] || '→';
@@ -251,6 +287,59 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
     addMsg('coach', 'Debrief error: ' + e.message);
   }
   isTyping = false;
+}
+
+async function updateCoachMemo(sso) {
+  const [memoRes, histRes, ssoRes] = await Promise.all([
+    apiPost({ action: 'getMemo' }),
+    api('getSessionHistory', { limit: 20 }),
+    api('getDebriefs', { limit: 10 }).catch(() => ({ data: [] })),
+  ]);
+  const prevMemo = memoRes.memo || 'No previous memo — this is the first update.';
+  const recentSets = (histRes.sets || []).map(s =>
+    s.session_id.slice(0, 10) + ' | ' + (s.session_type || '') + ' | ' + s.exercise_id +
+    ' S' + s.set_num + ': ' + s.reps + 'r @ ' + s.weight_kg + 'kg' +
+    (s.rir != null ? ' RIR' + s.rir : '') + (s.notes ? ' (' + s.notes + ')' : '')
+  ).join('\n');
+  const recentDebriefs = (ssoRes.data || []).slice(0, 8).map(d =>
+    d.date + ' ' + d.session_type + ': ' + d.performance_signal + ' / ' + d.outcome +
+    ' — ' + d.headline + ' | Next: ' + d.recommendation
+  ).join('\n');
+  const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
+
+  const system = `You are maintaining a running coach's memo for James Thornton. This memo is your persistent memory — it carries forward what you know about him as an athlete across all sessions. It is read at the start of every plan generation.
+
+Update it now based on the session that just completed. The memo should reflect a coach who has been working with James for months and knows his patterns, tendencies, strengths, and what needs attention.
+
+Write in third-person factual style ("James has...", "Ring pull-ups are..."). No motivational language. No filler. Every sentence should contain a specific, actionable or observable fact.
+
+Cover all of these, updating each with the latest data:
+- PROGRESSION STATUS: per-exercise trends (progressing / stalling / regressing) with specific numbers
+- PATTERNS & TENDENCIES: how James trains, what he skips, energy/readiness trends, consistency
+- INJURY STATUS: current restrictions and how they're affecting programming
+- VOLUME & FATIGUE: set volume per pattern per week, any overreaching signals
+- WHAT TO WATCH: early warning flags, anything that needs monitoring
+- NEXT PRIORITIES: 2-3 specific coaching actions for upcoming sessions
+
+Max 350 words. Be precise. This memo compounds — each update should be more accurate than the last.`;
+
+  const userMsg = `Previous memo:\n${prevMemo}
+
+Session just completed (${new Date().toLocaleDateString('en-AU')}, ${sType}):
+${JSON.stringify(sso)}
+
+Active injuries: ${injStr}
+
+Recent debrief history:\n${recentDebriefs}
+
+Raw set history (last 20 sessions):\n${recentSets}
+
+Update the coach's memo.`;
+
+  const newMemo = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
+  coachMemo = newMemo;
+  await apiPost({ action: 'saveMemo', memo: newMemo });
+  console.log('Coach memo updated.');
 }
 
 function quickMsg(msg) {
@@ -456,8 +545,8 @@ async function sendReviewMsg() {
   input.value = '';
   reviewTyping = true;
   addReviewMsg('you', msg);
-  const availableExList = filterExercises(exercises, loc, sType)
-    .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', ' + e.equipment + ')')
+  const availableExList = filterByEquipmentOnly(exercises, loc)
+    .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', L' + (e.matrix_level||'?') + ', ' + e.equipment + ')')
     .join(', ');
   const chat = document.getElementById('review-chat');
   const typingDiv = document.createElement('div');
@@ -468,15 +557,21 @@ async function sendReviewMsg() {
   chat.scrollTop = chat.scrollHeight;
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr2 = buildKitString(loc);
+  const histStr = buildHistStr();
   const system = `You are The Tactical Partner — adjusting a workout plan pre-session for James Thornton.
 Operating principle: maintain the machine, respect the load, optimise for life.
 Make the requested change surgically. Don't restructure what wasn't asked about.
 
-Current plan: ${JSON.stringify(plan)}
-Available kit: ${kitStr2}
-Available exercises to substitute from (use exercise_id slugs): ${availableExList}
-Active injuries: ${injStr}
 Phase: Lean bulk Q2 2026, hypertrophy.
+Active injuries: ${injStr}
+Available kit: ${kitStr2}
+${preNotes ? 'Pre-session notes from James: ' + preNotes : ''}
+
+Previous ${sType} sessions (use to set weights on any substituted exercises — match to where he actually is, not defaults):
+${histStr}
+
+Current plan: ${JSON.stringify(plan)}
+Available exercises to substitute from (use exercise_id slugs): ${availableExList}
 
 Return ONLY valid JSON — same format, no markdown, no preamble:
 {
@@ -485,7 +580,7 @@ Return ONLY valid JSON — same format, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Keep what works. Only change what was asked. Protect the right shoulder.`;
+Keep what works. Only change what was asked. Weights on any new exercises must come from history, not defaults. Protect the right shoulder.`;
   try {
     const raw = await claude(system, [{ role: 'user', content: msg }], SONNET);
     const clean = raw.replace(/\`\`\`json|\`\`\`/g, '').trim();

@@ -66,6 +66,27 @@ function filterExercises(exList, l, sType) {
   });
 }
 
+function filterByEquipmentOnly(exList, l) {
+  const cfg = equipmentConfig[l] || DEFAULT_CONFIG[l] || {};
+  return exList.filter(e => {
+    const eq = e.equipment || '';
+    if (l === 'Travel') {
+      return (eq === 'BW' || eq === 'Bodyweight')
+        || (eq.includes('Band') && cfg.bands)
+        || (eq.includes('Rings') && cfg.rings)
+        || (eq.includes('KB') && cfg.kb_weights && cfg.kb_weights.length > 0);
+    }
+    if (l === 'Home') {
+      if (!isTrue(e.home_available)) return false;
+      if (eq.includes('Rings') && !cfg.rings) return false;
+      if (eq.includes('Parallettes') && !cfg.parallettes) return false;
+      if (eq.includes('Band') && !cfg.bands) return false;
+    }
+    // Gym: all exercises pass as long as equipment exists (barbell/DB/cable checked implicitly via kit string)
+    return true;
+  });
+}
+
 function selectEquipLoc(l) {
   equipLoc = l;
   document.querySelectorAll('.eq-loc-tab').forEach(t => t.classList.remove('active'));

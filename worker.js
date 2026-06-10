@@ -330,6 +330,19 @@ async function handlePost(request, env) {
     return json({ ok: true });
   }
 
+  if (action === 'getMemo') {
+    const r = await env.DB.prepare('SELECT memo, updated_at FROM coach_memo WHERE id = ?').bind('singleton').first();
+    return json({ memo: r?.memo || null, updated_at: r?.updated_at || null });
+  }
+
+  if (action === 'saveMemo') {
+    const { memo } = body;
+    if (!memo) return json({ error: 'memo required' }, 400);
+    await env.DB.prepare('INSERT OR REPLACE INTO coach_memo (id, memo, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+      .bind('singleton', memo).run();
+    return json({ ok: true });
+  }
+
   return json({ error: 'Unknown action: ' + action }, 400);
 
 }
