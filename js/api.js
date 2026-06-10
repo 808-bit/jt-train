@@ -1,5 +1,5 @@
 const W = 'https://jt-workout-worke.james-thornton88.workers.dev';
-const SONNET = 'claude-sonnet-4-6';
+const SONNET = 'claude-opus-4-8';
 const HAIKU  = 'claude-haiku-4-5-20251001';
 
 async function api(action, params = {}) {
