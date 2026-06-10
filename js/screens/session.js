@@ -330,7 +330,7 @@ async function updateCoachMemo(sso) {
   const [memoRes, histRes, ssoRes] = await Promise.all([
     apiPost({ action: 'getMemo' }),
     api('getSessionHistory', { limit: 20 }),
-    api('getDebriefs', { limit: 10 }).catch(() => ({ data: [] })),
+    api('getRecentDebriefs', { limit: 10 }),
   ]);
   const prevMemo = memoRes.memo || 'No previous memo — this is the first update.';
   const recentSets = (histRes.sets || []).map(s =>
@@ -428,8 +428,8 @@ async function analyseExerciseTrends(flaggedIds) {
     const progData = {};
     flaggedIds.forEach((id, i) => { progData[id] = progResults[i].data || []; });
 
-    const availEx = filterExercises(exercises, loc, sType)
-      .map(e => `${e.id}: ${e.display_name} (${e.equipment})`)
+    const availEx = filterByEquipmentOnly(exercises, loc)
+      .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment})`)
       .join('\n');
 
     const system = `You are The Tactical Partner. Analyse exercise trends and determine if a swap is warranted.

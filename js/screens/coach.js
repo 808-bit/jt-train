@@ -234,6 +234,7 @@ async function generateCoachesWorkout() {
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterByEquipmentOnly(exercises, loc)
+    .filter(e => !injuries.length || isTrue(e.shoulder_safe))
     .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment}${e.notes ? ', note: ' + e.notes : ''})`)
     .join('\n');
 
@@ -368,6 +369,7 @@ async function generatePlan() {
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterByEquipmentOnly(exercises, loc)
+    .filter(e => !injuries.length || isTrue(e.shoulder_safe))
     .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment}${e.notes ? ', note: ' + e.notes : ''})`)
     .join('\n');
   const rawSets = histRes.sets || [];
