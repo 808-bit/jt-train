@@ -123,7 +123,7 @@ Full set log: ${JSON.stringify(loggedSets)}
     const sessionCtx = buildSessionContext();
     const kitStr = buildKitString(loc);
     const availEx = filterByEquipmentOnly(exercises, loc)
-      .map(e => `${e.exercise_id} | ${e.display_name} (${e.category}, L${e.level||'?'}, ${e.equipment})`)
+      .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment})`)
       .join('\n');
 
     system = `You are an elite strength coach for James Thornton mid-workout.
@@ -583,7 +583,7 @@ async function sendReviewMsg() {
   reviewTyping = true;
   addReviewMsg('you', msg);
   const availableExList = filterByEquipmentOnly(exercises, loc)
-    .map(e => e.exercise_id + ' (' + e.display_name + ', ' + e.category + ', L' + (e.level||'?') + ', ' + e.equipment + ')')
+    .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', L' + (e.matrix_level||'?') + ', ' + e.equipment + ')')
     .join(', ');
   const chat = document.getElementById('review-chat');
   const typingDiv = document.createElement('div');

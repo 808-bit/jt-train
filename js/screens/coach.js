@@ -233,8 +233,8 @@ async function generateCoachesWorkout() {
 
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
-  const availEx = filterExercises(exercises, loc, "Coach's Workout")
-    .map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', ' + e.equipment + (e.movement_pattern ? ', ' + e.movement_pattern : '') + (e.notes ? ', note: ' + e.notes : '') + ')')
+  const availEx = filterByEquipmentOnly(exercises, loc)
+    .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment}${e.notes ? ', note: ' + e.notes : ''})`)
     .join('\n');
 
   const readinessStr = (preSleep <= 2 || preEnergy <= 2)
@@ -368,7 +368,7 @@ async function generatePlan() {
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
   const kitStr = buildKitString(loc);
   const availEx = filterByEquipmentOnly(exercises, loc)
-    .map(e => `${e.exercise_id} | ${e.display_name} (${e.category}, L${e.level||'?'}, ${e.equipment}${e.notes ? ', note: ' + e.notes : ''})`)
+    .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment}${e.notes ? ', note: ' + e.notes : ''})`)
     .join('\n');
   const rawSets = histRes.sets || [];
   const rawSessions = histRes.sessions || [];
