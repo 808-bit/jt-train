@@ -79,7 +79,9 @@ function filterByEquipmentOnly(exList, l) {
     if (l === 'Home') {
       if (!isTrue(e.home_available)) return false;
       if (eq.includes('Rings') && !cfg.rings) return false;
-      if (eq.includes('Parallettes') && !cfg.parallettes) return false;
+      if (eq.includes('Parallettes') && !cfg.parallettes_high && !cfg.parallettes_low) return false;
+      if (eq.includes('Parallettes (high)') && !cfg.parallettes_high) return false;
+      if (eq.includes('Parallettes (low)') && !cfg.parallettes_low) return false;
       if (eq.includes('Band') && !cfg.bands) return false;
     }
     // Gym: all exercises pass as long as equipment exists (barbell/DB/cable checked implicitly via kit string)
