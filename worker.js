@@ -391,6 +391,12 @@ const GERALD_TOOLS = [
   }
 ];
 
+// James trains in Australia — date math must use Sydney "today", not UTC,
+// or every morning session before ~10am AEST computes gaps against yesterday.
+function sydneyToday() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+}
+
 function fmtD(dateStr) {
   if (!dateStr) return '';
   const [, m, d] = dateStr.slice(0, 10).split('-').map(Number);
@@ -402,7 +408,8 @@ async function executeTool(toolName, toolInput, context, env) {
 
   if (toolName === 'assess_training_state') {
     const daysBack = toolInput.days_back || 21;
-    const cutoff = new Date(Date.now() - daysBack * 86400000).toISOString().slice(0, 10);
+    const today = sydneyToday();
+    const cutoff = new Date(new Date(today) - daysBack * 86400000).toISOString().slice(0, 10);
     const [setsRes, debriefRes] = await Promise.all([
       env.DB.prepare(`
         SELECT s.date, e.movement_pattern, st.exercise_id, e.display_name
@@ -420,7 +427,6 @@ async function executeTool(toolName, toolInput, context, env) {
       const p = s.movement_pattern || 'unknown';
       if (!patternDates[p] || s.date > patternDates[p]) patternDates[p] = s.date;
     });
-    const today = new Date().toISOString().slice(0, 10);
     const patternGaps = Object.entries(patternDates)
       .map(([pattern, lastDate]) => ({
         pattern,
@@ -597,14 +603,16 @@ HARD CONSTRAINTS:
       // equipment-unsafe ids are already excluded from availableExerciseIds).
       let { cleaned, removed } = codefixPlan(plan, context.availableExerciseIds);
 
-      // If too little survived, make ONE repair call (no tools — the valid
-      // exercise list is already in the conversation from earlier tool calls).
+      // If too little survived, make ONE repair call. The conversation history
+      // contains tool_use/tool_result blocks, so the API requires `tools` to be
+      // defined — tool_choice: none is what forbids further tool calls.
       if (cleaned.length < 3) {
         messages.push({
           role: 'user',
           content: `That plan only kept ${cleaned.length} valid exercise(s). Removed — ${removed.join('; ') || 'none'}. Rebuild it with 4-6 exercises using ONLY the exercise_ids that get_available_exercises returned earlier. Return just the corrected JSON, no commentary.`,
         });
-        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 4000, system, messages });
+        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 4000, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
+        if (!repair.ok) console.error('Gerald repair call failed:', repair.status, JSON.stringify(repair.data));
         if (repair.ok && repair.data.content) {
           const rtext = repair.data.content.map(b => b.text || '').join('');
           try {
