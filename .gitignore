@@ -2,3 +2,7 @@
 .wrangler/
 node_modules/
 .dev.vars
+
+# stray git internals
+FETCH_HEAD
+ORIG_HEAD

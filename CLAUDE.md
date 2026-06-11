@@ -34,7 +34,7 @@ wrangler d1 execute jt-train-db --file=path/to/migration.sql --remote
 wrangler tail jt-workout-worke --format=pretty
 ```
 
-**⚠ When you change any cached JS/HTML, bump the service-worker cache** (`sw.js`: `const CACHE = 'jt-train-vN'` → `vN+1`). The SW cache-firsts the `js/**` files listed in its `STATIC` array, so installed PWAs keep serving the OLD code after a push until the cache version changes. Forgetting this makes a correct push look like it "didn't work." `public/index.html` is a stale legacy bundle — not served; ignore it.
+**⚠ When you change any cached JS/HTML, bump the service-worker cache** (`sw.js`: `const CACHE = 'jt-train-vN'` → `vN+1`). The SW cache-firsts the `js/**` files listed in its `STATIC` array, so installed PWAs keep serving the OLD code after a push until the cache version changes. Forgetting this makes a correct push look like it "didn't work."
 
 ## File Structure
 
@@ -44,10 +44,13 @@ jt-train/
 ├── worker.js            # Cloudflare Worker (API proxy + D1 ops)
 ├── wrangler.toml        # Cloudflare config
 ├── manifest.json        # PWA manifest
-├── sw.js                # Service worker (cache version: jt-train-v6)
+├── sw.js                # Service worker (cache version bumped on every cached-asset change)
 ├── icon-192.png         # PWA icon
 ├── icon-512.png         # PWA icon
-├── migrations/          # SQL migration files
+├── schema.sql           # Canonical D1 schema
+├── schema.md            # Schema reference/notes
+├── migrations/          # SQL migrations + historical import (migration_*.sql, import_historical.sql)
+├── seeds/               # Seed + test-data SQL (*_seed.sql, seed_*.sql, cleanup_*.sql)
 └── js/
     ├── api.js           # api(), apiPost(), claude() helpers
     ├── app.js           # Globals, goScreen(), selS(), selL(), init(), timers
