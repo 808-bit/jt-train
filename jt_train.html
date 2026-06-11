@@ -253,6 +253,10 @@
 
   /* ── Set logger ──────────────────────────────────────────────────────────── */
   .set-logger { background: var(--bg2); border-top: 1px solid var(--border); padding: 12px 14px 14px; }
+  #sl-mini { display: none; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; min-height: 32px; }
+  .set-logger.collapsed { padding: 6px 14px; }
+  .set-logger.collapsed > *:not(#sl-mini) { display: none !important; }
+  .set-logger.collapsed #sl-mini { display: flex; }
   .sl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .sl-ex-select {
     font-family: var(--font-ui); font-size: 12px; font-weight: 600;
@@ -593,11 +597,16 @@
   <div class="chat-area" id="chat"></div>
   <div class="input-area" style="padding:0;">
     <div class="set-logger" id="set-logger">
+      <div id="sl-mini" onclick="setLoggerCollapsed(false)">
+        <span id="sl-mini-label" style="font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Logger</span>
+        <span style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.1em;flex-shrink:0;">▲ LOG SET</span>
+      </div>
       <div class="sl-header">
         <select class="sl-ex-select" id="sl-ex-select" onchange="onExSelect()"></select>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="sl-counter" id="sl-counter">Set 1</span>
           <button onclick="skipExercise()" style="font-family:var(--font);font-size:10px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;letter-spacing:.06em;min-height:44px;min-width:44px;">Skip →</button>
+          <button onclick="setLoggerCollapsed(true)" title="Minimise — see the chat" style="font-family:var(--font);font-size:12px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;min-height:44px;min-width:36px;">▾</button>
         </div>
       </div>
       <!-- Progress + volume bar -->

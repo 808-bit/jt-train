@@ -118,6 +118,27 @@ async function handleGet(request, env) {
     return json({ data: results });
   }
 
+  if (action === 'getPace') {
+    // Minutes-per-set from recent sessions with real timestamps.
+    // Backfilled imports have identical logged_at on every set (0-min span),
+    // so the BETWEEN filter drops them along with abandoned sessions.
+    const { results } = await env.DB.prepare(`
+      SELECT COUNT(*) AS n,
+             (julianday(MAX(logged_at)) - julianday(MIN(logged_at))) * 1440.0 AS mins
+      FROM sets
+      GROUP BY session_id
+      HAVING COUNT(*) >= 5 AND mins BETWEEN 15 AND 150
+      ORDER BY MAX(logged_at) DESC
+      LIMIT 10
+    `).all();
+    const totSets = results.reduce((s, r) => s + r.n, 0);
+    const totMins = results.reduce((s, r) => s + r.mins, 0);
+    return json({
+      minPerSet: totSets ? Math.round((totMins / totSets) * 100) / 100 : null,
+      sessions: results.length,
+    });
+  }
+
   if (action === 'getSessions') {
     const sessionType = searchParams.get('session_type') || '';
     const limit  = parseInt(searchParams.get('limit')  || '20');

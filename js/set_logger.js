@@ -8,7 +8,50 @@ function getKBWeights() {
 
 function initSetLogger() {
   slExIdx = 0; setsPerEx = {};
+  setLoggerCollapsed(false);
+  wireChatCollapse();
   renderSetLogger();
+}
+
+// ── Collapse-on-scroll: scrolling up in the chat shrinks the logger to a
+//    one-line bar so the conversation is readable; returning to the bottom
+//    (or tapping the bar / logging context) restores it. ──────────────────
+let slCollapsed = false, _chatScrollWired = false, _lastChatScroll = 0, _slToggleAt = 0;
+
+function setLoggerCollapsed(c) {
+  slCollapsed = c;
+  _slToggleAt = Date.now();
+  const logger = document.getElementById('set-logger');
+  if (!logger) return;
+  logger.classList.toggle('collapsed', c);
+  if (c) updateMiniBar();
+}
+
+function updateMiniBar() {
+  const el = document.getElementById('sl-mini-label');
+  const ex = plan[slExIdx];
+  if (!el || !ex) return;
+  const done = setsPerEx[ex.exercise_id] || 0;
+  el.textContent = `${ex.display_name} — Set ${done + 1} of ${ex.sets || 4}`;
+}
+
+function wireChatCollapse() {
+  if (_chatScrollWired) return;
+  const chat = document.getElementById('chat');
+  if (!chat) return;
+  _chatScrollWired = true;
+  chat.addEventListener('scroll', () => {
+    const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 48;
+    const goingUp   = chat.scrollTop < _lastChatScroll - 4;
+    const goingDown = chat.scrollTop > _lastChatScroll + 4;
+    _lastChatScroll = chat.scrollTop;
+    if (typeof isDebriefMode !== 'undefined' && isDebriefMode) return;
+    // Toggling resizes the chat and fires clamp/resize scroll events that
+    // would instantly undo the toggle — ignore events right after one.
+    if (Date.now() - _slToggleAt < 300) return;
+    if (slCollapsed && atBottom && goingDown) setLoggerCollapsed(false);
+    else if (!slCollapsed && goingUp) setLoggerCollapsed(true);
+  }, { passive: true });
 }
 
 function renderSetLogger() {
@@ -81,6 +124,7 @@ function updateSetCounter() {
   } else {
     el.textContent = `Set ${done + 1} of ${ex.sets||4}${goal}`;
   }
+  if (slCollapsed) updateMiniBar();
 }
 
 function onExSelect() {

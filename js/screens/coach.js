@@ -25,6 +25,7 @@ async function init() {
     document.getElementById('dot').classList.add('live');
     document.getElementById('badge').textContent = '● LIVE';
     document.getElementById('status').textContent = exercises.length + ' exercises loaded';
+    api('getPace').then(r => { sessionPace = r; }).catch(() => {});
     await loadIdleHistory();
     autoRecommend();
   } catch (e) {
@@ -49,6 +50,7 @@ async function loadIdleHistory() {
 let recommendedType = null;
 let coachBrief = null;
 let cachedDebriefs = null;
+let sessionPace = null;
 
 async function autoRecommend() {
   document.getElementById('rec-loading').style.display = 'block';

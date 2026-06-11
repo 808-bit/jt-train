@@ -56,8 +56,9 @@ async function startSession() {
 
   const planWrap = document.createElement('div');
   planWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%;';
+  const estMins = estimateSessionMins(plan);
   planWrap.innerHTML = `
-    <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.2em;margin-bottom:2px;">${sType.toUpperCase()} — ${new Date().toLocaleDateString('en-AU')} — ${loc.toUpperCase()}</div>
+    <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.2em;margin-bottom:2px;">${sType.toUpperCase()} — ${new Date().toLocaleDateString('en-AU')} — ${loc.toUpperCase()}${estMins ? ` — ~${estMins} MIN` : ''}</div>
     ${plan.map((e, i) => `
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:2px solid rgba(34,197,94,0.25);border-radius:8px;padding:10px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
@@ -547,9 +548,25 @@ function hideTyping() {
   document.getElementById('send-btn').disabled = false;
 }
 
+function estimateSessionMins(planArr) {
+  if (!planArr || !planArr.length) return null;
+  const totalSets = planArr.reduce((s, e) => s + (e.sets || 4), 0);
+  const pace = sessionPace?.minPerSet || 4.5;
+  // logged_at spans first→last set, so warm-up/setup before set 1 isn't captured
+  const mins = totalSets * pace + 6;
+  return Math.round(mins / 5) * 5;
+}
+
 function renderPlanCards(parsed) {
   const cards = document.getElementById('plan-cards');
   cards.innerHTML = '';
+  const est = estimateSessionMins(parsed.exercises || plan);
+  if (est) {
+    const estEl = document.createElement('div');
+    estEl.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--text2);background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:5px 12px;margin-bottom:12px;letter-spacing:0.04em;';
+    estEl.innerHTML = `⏱ ~${est} min` + (sessionPace?.minPerSet ? ` <span style="color:var(--text3);font-weight:400;">· based on your pace over the last ${sessionPace.sessions} sessions</span>` : ` <span style="color:var(--text3);font-weight:400;">· rough estimate</span>`);
+    cards.appendChild(estEl);
+  }
   if (parsed.session_notes) {
     const note = document.createElement('div');
     note.style.cssText = 'font-size:12px;color:var(--text2);margin-bottom:16px;font-style:italic;line-height:1.6;';
