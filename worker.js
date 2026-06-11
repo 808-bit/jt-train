@@ -494,6 +494,41 @@ async function executeTool(toolName, toolInput, context, env) {
   return { error: `Unknown tool: ${toolName}` };
 }
 
+// Extract the first balanced JSON object from a model response.
+function extractPlanJson(text) {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) throw new Error('no JSON object');
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+// VALIDATE (code-fix): strip exercises that aren't in the allowed list or are
+// duplicated. Returns the cleaned exercise array plus a list of what was removed
+// and why — so the agent can repair if too much was stripped.
+function codefixPlan(plan, allowedIds) {
+  const allowed = new Set(allowedIds);
+  const seen = new Set();
+  const cleaned = [];
+  const removed = [];
+  for (const e of (plan.exercises || [])) {
+    const id = e.exercise_id;
+    if (!allowed.has(id)) { removed.push(`${id || '(blank)'}: not in available list`); continue; }
+    if (seen.has(id)) { removed.push(`${id}: duplicate`); continue; }
+    seen.add(id);
+    cleaned.push(e);
+  }
+  return { cleaned, removed };
+}
+
+async function callAnthropic(env, payload) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify(payload),
+  });
+  return { ok: res.ok, status: res.status, data: await res.json() };
+}
+
 async function runGeraldAgent(body, env) {
   const { context } = body;
   const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes } = context;
@@ -545,26 +580,43 @@ HARD CONSTRAINTS:
   }];
 
   for (let i = 0; i < MAX_ITER; i++) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-opus-4-8', max_tokens: 4000, system, tools: GERALD_TOOLS, messages }),
-    });
-    const data = await res.json();
-    if (!res.ok) return json({ error: data }, res.status);
+    const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 4000, system, tools: GERALD_TOOLS, messages });
+    if (!res.ok) return json({ error: res.data }, res.status);
+    const data = res.data;
 
     messages.push({ role: 'assistant', content: data.content });
 
+    // ── PLAN complete → VALIDATE ──────────────────────────────────────────────
     if (data.stop_reason === 'end_turn') {
       const text = data.content.map(b => b.text || '').join('');
-      const start = text.indexOf('{');
-      const end   = text.lastIndexOf('}');
-      if (start === -1) return json({ error: 'No plan in response', raw: text }, 500);
-      try {
-        return json({ plan: JSON.parse(text.slice(start, end + 1)) });
-      } catch (e) {
-        return json({ error: 'Invalid JSON', raw: text }, 500);
+      let plan;
+      try { plan = extractPlanJson(text); }
+      catch (e) { return json({ error: 'Invalid JSON', raw: text }, 500); }
+
+      // Code-fix: strip hallucinated/duplicate exercise_ids (injury- and
+      // equipment-unsafe ids are already excluded from availableExerciseIds).
+      let { cleaned, removed } = codefixPlan(plan, context.availableExerciseIds);
+
+      // If too little survived, make ONE repair call (no tools — the valid
+      // exercise list is already in the conversation from earlier tool calls).
+      if (cleaned.length < 3) {
+        messages.push({
+          role: 'user',
+          content: `That plan only kept ${cleaned.length} valid exercise(s). Removed — ${removed.join('; ') || 'none'}. Rebuild it with 4-6 exercises using ONLY the exercise_ids that get_available_exercises returned earlier. Return just the corrected JSON, no commentary.`,
+        });
+        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 4000, system, messages });
+        if (repair.ok && repair.data.content) {
+          const rtext = repair.data.content.map(b => b.text || '').join('');
+          try {
+            const rplan = extractPlanJson(rtext);
+            const fixed = codefixPlan(rplan, context.availableExerciseIds);
+            if (fixed.cleaned.length > cleaned.length) { plan = rplan; cleaned = fixed.cleaned; removed = fixed.removed; }
+          } catch (e) { /* keep best-effort original */ }
+        }
       }
+
+      plan.exercises = cleaned;
+      return json({ plan, validation: { removed, count: cleaned.length } });
     }
 
     if (data.stop_reason === 'tool_use') {

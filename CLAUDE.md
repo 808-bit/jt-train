@@ -275,13 +275,25 @@ Gym:    { rings:false, pull_up_bar:true, parallettes_high:false, parallettes_low
 
 ## Plan Gen Flow
 
-### Coach's Workout path (`sType === "Coach's Workout"`)
-`generateCoachesWorkout()` — fully autonomous, cross-type:
-1. Parallel fetch: `getSessionHistory` (limit 20), `fetchSSOContext(10, null)`, `getProgressionTree`, `getMovementPatterns`
-2. Formats pattern chains + 20-session cross-type history with session_type per set
-3. Hypertrophy principles: 6-12 reps, RIR 0-2, 3-5 sets per pattern
-4. Readiness gates exercise count: low=3-4, moderate=4-5, high=5-7
-5. No `coachBrief` injection — plan has more context than the brief
+### Coach's Workout path (`sType === "Coach's Workout"`) — agentic
+`generateCoachesWorkout()` is thin: it builds `availableExerciseIds` on the
+frontend (via `filterByEquipmentOnly` + `shoulder_safe`) and POSTs `action: 'agent'`
+with a `context` object. All the work happens **server-side** in `worker.js`
+`runGeraldAgent()` — a tool-use loop (Opus, `MAX_ITER = 8`):
+
+- **ASSESS → PLAN**: Gerald calls D1-backed tools (`GERALD_TOOLS`): `assess_training_state`
+  (pattern gaps + recent debriefs), `get_available_exercises` (constrained to
+  `availableExerciseIds`), `get_exercise_history` (load/RIR per lift), `check_progressions`
+  (tier-advance readiness). It reasons over results, then returns a JSON plan on `end_turn`.
+- **VALIDATE** (in `runGeraldAgent`, before returning): `codefixPlan()` strips
+  hallucinated/duplicate exercise_ids (injury- and equipment-unsafe ids are already
+  excluded from `availableExerciseIds`). If fewer than 3 valid exercises survive, it
+  makes **one** repair call (no tools — valid ids are already in the conversation).
+  Response shape: `{ plan, validation: { removed, count } }`.
+
+The frontend still re-filters `parsed.exercises` against the allowed set as a final
+safety net. Tools and validation live server-side because D1 is the source of truth;
+keep arithmetic/constraint enforcement in code, let the model reason over context.
 
 ### Named session type path
 `generatePlan()` (non-Coach's Workout):
