@@ -234,6 +234,10 @@ async function handlePost(request, env) {
     return json({ text });
   }
 
+  if (action === 'agent') {
+    return await runGeraldAgent(body, env);
+  }
+
   if (action === 'appendSession') {
     const r = body.data || {};
     await env.DB.prepare(`
@@ -346,6 +350,241 @@ async function handlePost(request, env) {
   return json({ error: 'Unknown action: ' + action }, 400);
 
 }
+
+// ─── Gerald Agent ────────────────────────────────────────────────────────────
+
+const GERALD_TOOLS = [
+  {
+    name: 'assess_training_state',
+    description: 'Scan recent training to identify which movement patterns are overdue, days since each was last trained, and what recent debrief signals say. Call this first.',
+    input_schema: {
+      type: 'object',
+      properties: { days_back: { type: 'number', description: 'Days of history to scan. Default 21.' } }
+    }
+  },
+  {
+    name: 'get_available_exercises',
+    description: 'List exercises available today, optionally filtered by movement pattern. Use to find options for the patterns you want to target.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        movement_pattern: { type: 'string', description: 'Filter by pattern, e.g. "pull", "push", "hinge", "squat", "carry". Omit for all.' }
+      }
+    }
+  },
+  {
+    name: 'get_exercise_history',
+    description: 'Get recent sets for a specific exercise — dates, reps, weight, RIR. Use to set precise load and rep targets for exercises you plan to include.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        exercise_id: { type: 'string', description: 'Exercise ID, e.g. "ring_rows"' },
+        limit: { type: 'number', description: 'Sets to return. Default 8.' }
+      },
+      required: ['exercise_id']
+    }
+  },
+  {
+    name: 'check_progressions',
+    description: 'Check which exercises are approaching or ready to advance to the next tier based on recent performance vs targets.',
+    input_schema: { type: 'object', properties: {} }
+  }
+];
+
+function fmtD(dateStr) {
+  if (!dateStr) return '';
+  const [, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+  return `${d} ${'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[m - 1]}`;
+}
+
+async function executeTool(toolName, toolInput, context, env) {
+  const { availableExerciseIds = [], injuries = [] } = context;
+
+  if (toolName === 'assess_training_state') {
+    const daysBack = toolInput.days_back || 21;
+    const cutoff = new Date(Date.now() - daysBack * 86400000).toISOString().slice(0, 10);
+    const [setsRes, debriefRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT s.date, e.movement_pattern, st.exercise_id, e.display_name
+        FROM sets st
+        JOIN sessions s ON st.session_id = s.id
+        JOIN exercises e ON st.exercise_id = e.id
+        WHERE s.date >= ? AND s.id NOT LIKE '%-H'
+        ORDER BY s.date DESC
+      `).bind(cutoff).all(),
+      env.DB.prepare(`SELECT * FROM debriefs WHERE date >= ? ORDER BY date DESC LIMIT 8`).bind(cutoff).all(),
+    ]);
+
+    const patternDates = {};
+    setsRes.results.forEach(s => {
+      const p = s.movement_pattern || 'unknown';
+      if (!patternDates[p] || s.date > patternDates[p]) patternDates[p] = s.date;
+    });
+    const today = new Date().toISOString().slice(0, 10);
+    const patternGaps = Object.entries(patternDates)
+      .map(([pattern, lastDate]) => ({
+        pattern,
+        last_trained: fmtD(lastDate),
+        days_ago: Math.round((new Date(today) - new Date(lastDate)) / 86400000),
+      }))
+      .sort((a, b) => b.days_ago - a.days_ago);
+
+    const recentDebriefs = debriefRes.results.map(d => {
+      const flagged = (() => { try { return JSON.parse(d.exercises_flagged || '[]'); } catch { return []; } })();
+      return `${fmtD(d.date)} ${d.session_type}: ${d.performance_signal}${flagged.length ? ', flagged: ' + flagged.join(', ') : ''}. ${d.recommendation}`;
+    });
+
+    return { pattern_gaps: patternGaps, recent_debriefs: recentDebriefs };
+  }
+
+  if (toolName === 'get_available_exercises') {
+    if (!availableExerciseIds.length) return { exercises: [] };
+    const { movement_pattern } = toolInput;
+    const placeholders = availableExerciseIds.map(() => '?').join(',');
+    let query = `SELECT id, display_name, movement_pattern, matrix_level, equipment, notes FROM exercises WHERE id IN (${placeholders})`;
+    const binds = [...availableExerciseIds];
+    if (movement_pattern) { query += ' AND movement_pattern = ?'; binds.push(movement_pattern); }
+    query += ' ORDER BY matrix_level, display_name';
+    const { results } = await env.DB.prepare(query).bind(...binds).all();
+    return { exercises: results.map(e => ({ id: e.id, name: e.display_name, pattern: e.movement_pattern, level: e.matrix_level, equipment: e.equipment, notes: e.notes || '' })) };
+  }
+
+  if (toolName === 'get_exercise_history') {
+    const { exercise_id, limit = 8 } = toolInput;
+    const { results } = await env.DB.prepare(`
+      SELECT s.date, st.set_num, st.reps, st.weight_kg, st.rir, st.tempo, st.notes
+      FROM sets st JOIN sessions s ON st.session_id = s.id
+      WHERE st.exercise_id = ? AND s.id NOT LIKE '%-H'
+      ORDER BY s.date DESC, st.set_num ASC LIMIT ?
+    `).bind(exercise_id, limit).all();
+    return {
+      exercise_id,
+      history: results.map(s => ({ date: fmtD(s.date), set: s.set_num, reps: s.reps, kg: s.weight_kg, rir: s.rir, tempo: s.tempo, notes: s.notes }))
+    };
+  }
+
+  if (toolName === 'check_progressions') {
+    const { results: rules } = await env.DB.prepare(`
+      SELECT pr.*, e.display_name FROM progression_rules pr
+      JOIN exercises e ON pr.exercise_id = e.id
+    `).all();
+    const status = [];
+    for (const rule of rules.slice(0, 12)) {
+      const { results: recent } = await env.DB.prepare(`
+        SELECT s.date, st.reps, st.weight_kg, st.rir
+        FROM sets st JOIN sessions s ON st.session_id = s.id
+        WHERE st.exercise_id = ? AND s.id NOT LIKE '%-H'
+        ORDER BY s.date DESC LIMIT 5
+      `).bind(rule.exercise_id).all();
+      if (!recent.length) continue;
+      const qualifying = recent.filter(s => s.reps >= rule.rep_target && (s.rir ?? 99) <= rule.rir_target).length;
+      status.push({
+        exercise: rule.display_name,
+        id: rule.exercise_id,
+        target: `${rule.rep_target} reps @ RIR ≤${rule.rir_target} × ${rule.sessions_to_confirm}`,
+        qualifying_sessions: qualifying,
+        ready: qualifying >= rule.sessions_to_confirm,
+        next: rule.next_exercise_id || 'peak',
+        recent: recent.slice(0, 3).map(s => `${s.reps}r ${s.weight_kg}kg RIR${s.rir ?? '?'}`).join(' | '),
+      });
+    }
+    return { progressions: status };
+  }
+
+  return { error: `Unknown tool: ${toolName}` };
+}
+
+async function runGeraldAgent(body, env) {
+  const { context } = body;
+  const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes } = context;
+  const MAX_ITER = 8;
+
+  const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
+  const readinessNote = (readiness.sleep <= 2 || readiness.energy <= 2)
+    ? '⚠ LOW — reduce volume, higher RIR, quality over output'
+    : (readiness.sleep >= 4 && readiness.energy >= 4)
+    ? '✓ HIGH — push load and volume'
+    : 'MODERATE — standard dose';
+
+  const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+
+Rules: lead with the insight, not the preamble. Use numbers. If something looks off, say it plainly. Dry humour is fine. Motivation-poster energy is not.
+${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
+TODAY:
+Location: ${location} | Kit: ${kit}
+Readiness: Sleep ${readiness.sleep}/5 · Energy ${readiness.energy}/5 · Soreness ${readiness.soreness}/5 — ${readinessNote}
+Injuries: ${injStr}
+${preNotes ? `Athlete note: ${preNotes}` : ''}
+${pendingProgressions.length ? `Approved progressions: ${pendingProgressions.map(p => `${p.fromName} → ${p.toName || 'peak'}`).join(', ')}` : ''}
+
+PROCESS:
+1. assess_training_state — see what patterns are overdue
+2. get_available_exercises — find options per pattern (call once per pattern if helpful)
+3. get_exercise_history — nail load prescription for 2-3 key exercises
+4. Optionally check_progressions if anything looks close to advancing
+5. Return the session plan as JSON and nothing else
+
+OUTPUT (when done, return only this — no preamble, no commentary):
+{
+  "session_notes": "one sharp sentence on what you're targeting and why",
+  "exercises": [
+    { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
+  ]
+}
+
+HARD CONSTRAINTS:
+- Only use exercise_ids from get_available_exercises — never invent one
+- 4-6 exercises, ordered as executed (compounds and high-skill first)
+- Respect all injury restrictions
+- RIR protocol: 0=hold | 1=small step | 2=push | 3+=undertested so push significantly
+- Apply any approved progressions (use new exercise, not old)`;
+
+  const messages = [{
+    role: 'user',
+    content: `Design today's session. Location: ${location}.${preNotes ? ' Athlete note: ' + preNotes : ''}`
+  }];
+
+  for (let i = 0; i < MAX_ITER; i++) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-opus-4-8', max_tokens: 4000, system, tools: GERALD_TOOLS, messages }),
+    });
+    const data = await res.json();
+    if (!res.ok) return json({ error: data }, res.status);
+
+    messages.push({ role: 'assistant', content: data.content });
+
+    if (data.stop_reason === 'end_turn') {
+      const text = data.content.map(b => b.text || '').join('');
+      const start = text.indexOf('{');
+      const end   = text.lastIndexOf('}');
+      if (start === -1) return json({ error: 'No plan in response', raw: text }, 500);
+      try {
+        return json({ plan: JSON.parse(text.slice(start, end + 1)) });
+      } catch (e) {
+        return json({ error: 'Invalid JSON', raw: text }, 500);
+      }
+    }
+
+    if (data.stop_reason === 'tool_use') {
+      const toolResults = [];
+      for (const block of data.content) {
+        if (block.type !== 'tool_use') continue;
+        const result = await executeTool(block.name, block.input, context, env);
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+      }
+      messages.push({ role: 'user', content: toolResults });
+      continue;
+    }
+
+    break; // unexpected stop_reason
+  }
+
+  return json({ error: 'Agent did not complete within iteration limit' }, 500);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {

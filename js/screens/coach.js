@@ -197,134 +197,45 @@ async function fetchSSOContext(limit, sessionTypeFilter) {
 
 async function generateCoachesWorkout() {
   preNotes = document.getElementById('pre-notes').value.trim();
-  document.getElementById('gen-status').textContent = 'Analysing your training data...';
+  document.getElementById('gen-status').textContent = 'Gerald is thinking...';
 
-  const [histRes, ssoContext, progRes, mpRes, memoRes] = await Promise.all([
-    api('getSessionHistory', { limit: 20 }),
-    fetchSSOContext(10, null),
-    api('getProgressionTree'),
-    api('getMovementPatterns'),
-    apiPost({ action: 'getMemo' }).catch(() => ({ memo: null })),
-  ]);
+  const memoRes = await apiPost({ action: 'getMemo' }).catch(() => ({ memo: null }));
   coachMemo = memoRes.memo || '';
 
-  const progRules = progRes.data || [];
-  const progContext = progRules.length
-    ? progRules.map(p => {
-        const levers = (() => { try { return JSON.parse(p.intensity_levers || '[]'); } catch { return []; } })();
-        return `${p.display_name}: target ${p.rep_target} @ RIR ${p.rir_target} for ${p.sessions_to_confirm} sessions → next: ${p.next_exercise_id || 'peak'}${p.next_requires ? ' (needs ' + p.next_requires + ')' : ''}. Levers: ${levers.slice(0, 2).join(', ')}`;
-      }).join('\n')
-    : 'No progression data.';
-
-  const patterns = mpRes.patterns || [];
-  const patternProgs = mpRes.progressions || [];
-  const patternsStr = patterns.length
-    ? patterns.map(p => {
-        const chain = patternProgs
-          .filter(pp => pp.pattern_id === p.id)
-          .sort((a, b) => a.level - b.level)
-          .map(pp => `  L${pp.level}: ${pp.exercise_name}${pp.rep_target ? ' (' + pp.rep_target + ' reps @ RIR' + pp.rir_target + ')' : ''}`)
-          .join('\n');
-        return `${p.name}${p.description ? ' — ' + p.description : ''}\n${chain || '  (no chain)'}`;
-      }).join('\n\n')
-    : 'No pattern data.';
-
-  const sets = histRes.sets || [];
-  const sessions = histRes.sessions || [];
-  const histStr = sets.length
-    ? 'Last ' + sessions.length + ' sessions (all types):\n' +
-      sets.map(s =>
-        s.session_id.slice(0, 10) + ' | ' + (s.session_type || '') + ' | ' + s.exercise_id +
-        ' S' + s.set_num + ': ' + s.reps + ' reps @ ' + s.weight_kg + 'kg' +
-        (s.rir != null ? ' RIR' + s.rir : '') + (s.tempo ? ' ' + s.tempo : '') + (s.notes ? ' (' + s.notes + ')' : '')
-      ).join('\n')
-    : 'No history yet.';
-
-  const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
-  const kitStr = buildKitString(loc);
-  const availEx = filterByEquipmentOnly(exercises, loc)
+  // Equipment + injury filter runs on the frontend where the logic already lives.
+  // We pass the resulting IDs to the worker so the agent's tool is constrained.
+  const availableExerciseIds = filterByEquipmentOnly(exercises, loc)
     .filter(e => !injuries.length || isTrue(e.shoulder_safe))
-    .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment}${e.notes ? ', note: ' + e.notes : ''})`)
-    .join('\n');
+    .map(e => e.id);
 
-  const readinessStr = (preSleep <= 2 || preEnergy <= 2)
-    ? '⚠ LOW — reduce to 3-4 exercises, RIR 2-3, quality over output.'
-    : (preSleep >= 4 && preEnergy >= 4)
-    ? '✓ HIGH — 5-7 exercises, RIR 0-1, push loads.'
-    : 'MODERATE — 4-5 exercises, RIR 1-2, standard dose.';
+  const result = await apiPost({
+    action: 'agent',
+    context: {
+      location: loc,
+      readiness: { sleep: preSleep, energy: preEnergy, soreness: preSoreness },
+      injuries: injuries.map(i => ({ body_part: i.body_part, restrictions: i.restrictions })),
+      kit: buildKitString(loc),
+      memo: coachMemo,
+      pendingProgressions,
+      preNotes,
+      availableExerciseIds,
+    }
+  });
 
-  const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+  if (!result.plan) throw new Error(result.error || 'No plan returned');
+  const parsed = result.plan;
 
-Rules: lead with the insight, not the preamble. Use numbers. If something looks off, say it plainly. Max 120 words per response. Dry humour is fine. Motivation-poster energy is not. Data drives decisions.
-${coachMemo ? `\nCOACH'S RUNNING NOTES (your persistent memory — read this first, it overrides generic defaults):\n${coachMemo}\n` : ''}
-ATHLETE PROFILE:
-Goal: Lean bulk / hypertrophy — Q2 2026.
-Equipment: ${kitStr}
-Active injuries: ${injStr}
-Location: ${loc}
-
-READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
-${readinessStr}
-
-HYPERTROPHY PRINCIPLES (non-negotiable):
-- Primary driver: mechanical tension. Work sets in 6-12 rep range.
-- RIR 0-2 on work sets. First set conservative, final set close to failure.
-- 3-5 hard sets per movement pattern trained.
-- Compounds anchor the session. Isolation only where it fills a genuine gap.
-- Tempo: note a 2-3s eccentric where it matters for tension.
-
-LOAD PRESCRIPTION PROTOCOL — apply to every exercise using the raw history:
-- RIR 0 last session → at limit. Same load, recover before pushing.
-- RIR 1 last session → target zone. +1-2 reps or +weight if at rep range ceiling.
-- RIR 2 last session → room available. Push reps toward top of range or increase load.
-- RIR 3+ last session → undertested. Do NOT anchor to the logged rep count — it is not a ceiling. Prescribe significantly more reps. Estimated capacity = logged reps + RIR; target RIR 1-2 from there.
-- Low reps + high RIR = athlete stopped conservatively, not a limit. Treat it as undertesting and push accordingly.
-
-MOVEMENT PATTERN ARCHITECTURE (scan this to identify what's overdue):
-${patternsStr}
-
-PROGRESSION TREE (use to determine if an exercise should advance to next tier):
-${progContext}
-
-${pendingProgressions.length ? `CONFIRMED PROGRESSIONS (athlete approved — use new exercise, not old):\n${pendingProgressions.map(p => `- SWAP ${p.fromName} → ${p.toName || 'peak tier'}`).join('\n')}\n\n` : ''}DEBRIEF INTELLIGENCE (last 10 sessions):
-${ssoContext}
-
-RAW SET HISTORY (last 20 sessions — use to assess per-pattern frequency, loads, and fatigue):
-${histStr}
-
-AVAILABLE EXERCISES (ONLY use these exercise_ids — never invent one):
-${availEx}
-
-DESIGN PROCESS:
-1. Scan history. Which movement patterns were trained most/least recently?
-2. Prioritise patterns 5+ days undertrained or absent from recent sessions.
-3. Apply readiness signal to set exercise count and intensity ceiling.
-4. Apply any confirmed progressions.
-5. Set loads from the most recent logged sets — push if readiness allows.
-6. session_notes: one sharp sentence on what you're targeting and why.
-
-Return ONLY valid JSON, no markdown:
-{
-  "session_notes": "tactical rationale",
-  "exercises": [
-    { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
-  ]
-}`;
-
-  document.getElementById('gen-status').textContent = 'Building your plan...';
-  const userMsg = 'Design the optimal hypertrophy session for today. Location: ' + loc +
-    (preNotes ? '\n\nPre-session notes: ' + preNotes : '');
-  const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
-  const clean = raw.replace(/```json|```/g, '').trim();
-  const parsed = JSON.parse(clean);
-  const allowedIds = new Set(filterExercises(exercises, loc, "Coach's Workout").map(e => e.id));
+  // Safety net: strip any exercise Gerald hallucinated outside the allowed list
+  const allowedIds = new Set(availableExerciseIds);
   parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
+
   plan = parsed.exercises;
   const planIds = new Set(plan.map(e => e.exercise_id));
   pendingProgressions.forEach(p => { if (planIds.has(p.to)) appliedProgressions.add(p.from); });
   pendingProgressions = pendingProgressions.filter(p => !planIds.has(p.to));
   localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
   localStorage.setItem('appliedProgressions', JSON.stringify([...appliedProgressions]));
+
   document.getElementById('review-title').textContent = "Coach's Workout";
   document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
   document.getElementById('review-chat').innerHTML = '';
@@ -449,6 +360,8 @@ For each exercise, find the last logged sets in the raw history. Then:
 5. No history → start conservative (RIR 2-3) but do not default to lowest possible reps.
 
 CRITICAL: A low rep count paired with a high RIR means the session was conservative, not that the athlete can't do more. Use estimated capacity = logged reps + RIR as a floor, then prescribe at RIR 1-2.
+
+EXERCISE ORDER: sequence exercises as they should be performed. Compounds and high-skill movements first (rings, heavy KB), accessories and isolation last. If the coach brief calls out a specific exercise to open with — honour it, put it first.
 
 Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
 {
