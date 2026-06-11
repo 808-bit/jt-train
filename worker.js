@@ -659,6 +659,10 @@ HARD CONSTRAINTS:
       continue;
     }
 
+    if (data.stop_reason === 'max_tokens') {
+      return json({ error: 'Gerald hit the output token limit mid-plan — try again' }, 500);
+    }
+
     break; // unexpected stop_reason
   }
 
