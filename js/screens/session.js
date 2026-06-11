@@ -237,9 +237,8 @@ Write a debrief. Cover:
 Max 200 words. Data-driven. High fitness literacy — skip basics. No generic encouragement.
 
 Return ONLY the JSON object. No explanation. No markdown. Just the JSON starting with { and ending with }.
+(Note: total volume and set count are computed automatically from logged data — do NOT include them.)
 {
-  "total_volume_kg": 320,
-  "total_sets": 12,
   "performance_signal": "stable",
   "outcome": "maintained",
   "shoulder_flag": false,
@@ -259,6 +258,10 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
     const clean = (jsonStart >= 0 && jsonEnd > jsonStart) ? raw.slice(jsonStart, jsonEnd + 1) : raw.replace(/```json|```/g, '').trim();
     let sso;
     try { sso = JSON.parse(clean); } catch(e) { addMsg('coach', raw); hideTyping(); isTyping = false; return; }
+
+    // Volume and set count are arithmetic — compute them from logged data, never trust the LLM.
+    sso.total_volume_kg = Math.round(totalVol);
+    sso.total_sets = totalSets;
 
     apiPost({ action: 'saveDebrief', data: {
       session_id: sessionId,
