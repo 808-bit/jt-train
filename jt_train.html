@@ -350,10 +350,9 @@
   .prog-row-hdr { font-family: var(--font-ui); font-size: 9px; font-weight: 700; color: var(--text3); letter-spacing: 0.1em; border-bottom: 1px solid var(--border2); padding-bottom: 6px; margin-bottom: 2px; }
 
   /* ── Analytics tab ───────────────────────────────────────────────────────── */
-  .prog-tabs { display: flex; border: 1px solid var(--border2); border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
-  .prog-tab { flex: 1; background: none; border: none; border-right: 1px solid var(--border2); font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--text3); cursor: pointer; padding: 9px 0; transition: all 0.15s; }
-  .prog-tab:last-child { border-right: none; }
-  .prog-tab.active { background: var(--text); color: var(--bg); }
+  .prog-tabs { display: flex; background: var(--bg2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; margin-bottom: 16px; }
+  .prog-tab { flex: 1; background: none; border: none; border-radius: 999px; font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: var(--text3); cursor: pointer; padding: 9px 0; transition: all 0.18s; }
+  .prog-tab.active { background: var(--text); color: var(--bg); box-shadow: 0 1px 6px rgba(0,0,0,0.35); }
   .an-section { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
   .an-section:last-child { border-bottom: none; margin-bottom: 0; }
   .an-chart-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 10px 0; }
@@ -719,15 +718,26 @@
   </div>
   <div class="prog-body">
     <div class="prog-tabs">
-      <button class="prog-tab" id="ptab-exercise" onclick="switchProgTab('exercise')">EXERCISE</button>
-      <button class="prog-tab active" id="ptab-overview" onclick="switchProgTab('overview')">OVERVIEW</button>
-      <button class="prog-tab" id="ptab-analytics" onclick="switchProgTab('analytics')">DATA</button>
-      <button class="prog-tab" id="ptab-tree" onclick="switchProgTab('tree')">TREE</button>
-      <button class="prog-tab" id="ptab-review" onclick="switchProgTab('review')">REVIEW</button>
+      <button class="prog-tab active" id="ptab-home" onclick="switchProgTab('home')">HOME</button>
+      <button class="prog-tab" id="ptab-lifts" onclick="switchProgTab('lifts')">LIFTS</button>
+      <button class="prog-tab" id="ptab-data" onclick="switchProgTab('data')">DATA</button>
     </div>
 
-    <!-- EXERCISE TAB -->
-    <div id="prog-exercise-tab" style="display:none;">
+    <!-- HOME TAB · dashboard -->
+    <div id="prog-home-tab">
+      <div id="prog-home-content">
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;"><div class="skel" style="height:96px;border-radius:14px;"></div><div class="skel" style="height:120px;border-radius:10px;"></div><div class="skel" style="height:110px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div>
+      </div>
+    </div>
+
+    <!-- LIFTS TAB · per-exercise stats + progression paths -->
+    <div id="prog-lifts-tab" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:12px;">
+        <button class="pill active" id="lview-stats" onclick="switchLiftsView('stats')">Exercise Stats</button>
+        <button class="pill" id="lview-path" onclick="switchLiftsView('path')">Progression Paths</button>
+      </div>
+
+      <div id="lifts-stats-view">
       <!-- Category filter -->
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;" id="category-filters">
         <button class="pill" id="pcat-all" onclick="filterExCategory('all',this)">All</button>
@@ -752,36 +762,18 @@
       <div id="prog-ex-content">
         <div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:24px 0;">Select an exercise above</div>
       </div>
-    </div>
-
-    <!-- OVERVIEW TAB -->
-    <div id="prog-overview-tab">
-      <div id="prog-overview-content">
-        <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div class="skel" style="height:80px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div><div class="skel" style="height:120px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div>
       </div>
-    </div>
 
-    <!-- ANALYTICS TAB -->
-    <div id="prog-analytics-tab" style="display:none;">
-      <div id="prog-analytics-content"></div>
-    </div>
-
-    <!-- TREE TAB -->
-    <div id="prog-tree-tab" style="display:none;">
-      <div id="prog-tree-content">
-        <div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Loading progression tree...</div>
-      </div>
-    </div>
-
-    <!-- REVIEW TAB -->
-    <div id="prog-review-tab" style="display:none;">
-      <div id="prog-review-content">
-        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;">
-          <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">6-WEEK COACH REVIEW</div>
-          <div style="font-family:var(--font);font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6;">A full sports science analysis of your training. Volume trends, movement balance, progression velocity, recovery patterns.</div>
-          <button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:12px;font-weight:700;color:var(--bg);background:var(--green);border:none;border-radius:8px;padding:12px 24px;cursor:pointer;letter-spacing:0.06em;">Generate Review →</button>
+      <div id="lifts-path-view" style="display:none;">
+        <div id="prog-tree-content">
+          <div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Loading progression tree...</div>
         </div>
       </div>
+    </div>
+
+    <!-- DATA TAB · deep analytics -->
+    <div id="prog-data-tab" style="display:none;">
+      <div id="prog-analytics-content"></div>
     </div>
   </div>
 </div>

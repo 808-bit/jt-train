@@ -15,7 +15,7 @@ function initProgress() {
     renderExPicker();
   });
   renderExPicker();
-  loadOverview();
+  loadHome();
 }
 
 function filterExCategory(cat, el) {
@@ -83,16 +83,30 @@ function selectExercise(id) {
 }
 
 function switchProgTab(tab) {
-  document.getElementById('prog-exercise-tab').style.display  = tab === 'exercise'  ? '' : 'none';
-  document.getElementById('prog-overview-tab').style.display  = tab === 'overview'  ? '' : 'none';
-  document.getElementById('prog-analytics-tab').style.display = tab === 'analytics' ? '' : 'none';
-  document.getElementById('prog-tree-tab').style.display      = tab === 'tree'      ? '' : 'none';
-  document.getElementById('prog-review-tab').style.display    = tab === 'review'    ? '' : 'none';
+  // Legacy aliases used by deep-links from cards
+  if (tab === 'exercise' || tab === 'overview' || tab === 'tree' || tab === 'analytics' || tab === 'review') {
+    const map = { exercise: 'lifts', overview: 'home', tree: 'lifts', analytics: 'data', review: 'home' };
+    const sub = tab === 'tree' ? 'path' : tab === 'exercise' ? 'stats' : null;
+    switchProgTab(map[tab]);
+    if (sub) switchLiftsView(sub);
+    return;
+  }
+  document.getElementById('prog-home-tab').style.display  = tab === 'home'  ? '' : 'none';
+  document.getElementById('prog-lifts-tab').style.display = tab === 'lifts' ? '' : 'none';
+  document.getElementById('prog-data-tab').style.display  = tab === 'data'  ? '' : 'none';
   document.querySelectorAll('.prog-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('ptab-' + tab).classList.add('active');
-  if (tab === 'overview') loadOverview();
-  if (tab === 'analytics') loadAnalytics();
-  if (tab === 'tree') loadTreeTab();
+  if (tab === 'home') loadHome();
+  if (tab === 'data') loadAnalytics();
+}
+
+let treeLoaded = false;
+function switchLiftsView(view) {
+  document.getElementById('lifts-stats-view').style.display = view === 'stats' ? '' : 'none';
+  document.getElementById('lifts-path-view').style.display  = view === 'path'  ? '' : 'none';
+  document.getElementById('lview-stats').classList.toggle('active', view === 'stats');
+  document.getElementById('lview-path').classList.toggle('active', view === 'path');
+  if (view === 'path' && !treeLoaded) { treeLoaded = true; loadTreeTab(); }
 }
 
 function linearRegression(pts) {
@@ -326,8 +340,10 @@ async function loadTreeTab() {
   }).join('');
 }
 
+let reviewHTML = null;
+
 async function generateCoachReview() {
-  const content = document.getElementById('prog-review-content');
+  const content = document.getElementById('prog-review-inline');
   content.innerHTML = `<div style="text-align:center;padding:48px 0;">
     <div style="font-family:var(--font);font-size:12px;color:var(--text2);margin-bottom:8px;">Analysing 6 weeks of training data...</div>
     <div class="typing" style="justify-content:center;"><span></span><span></span><span></span></div>
@@ -399,7 +415,7 @@ Return ONLY valid JSON, no markdown:
     const stCol = { good:'var(--green)', warning:'var(--amber)', attention:'#ef4444' };
     const stLbl = { good:'✓ GOOD', warning:'⚠ WATCH', attention:'⚡ FIX' };
 
-    content.innerHTML =
+    reviewHTML =
       `<div style="background:var(--bg2);border:1px solid var(--border);border-left:2px solid ${sigCol};border-radius:10px;padding:14px;margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;">6-WEEK REVIEW · ${review.period}</div>
@@ -429,7 +445,8 @@ Return ONLY valid JSON, no markdown:
         ${review.risk_flags.map(f=>`<div style="font-family:var(--font);font-size:11px;color:var(--text2);margin-bottom:4px;">· ${f}</div>`).join('')}
       </div>` : '') +
 
-      `<button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:6px;padding:8px 16px;cursor:pointer;width:100%;letter-spacing:0.06em;">↺ Regenerate</button>`;
+      `<button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:6px;padding:8px 16px;cursor:pointer;width:100%;letter-spacing:0.06em;margin-bottom:12px;">↺ Regenerate</button>`;
+    content.innerHTML = reviewHTML;
 
   } catch(e) {
     content.innerHTML = `<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Review failed — ${e.message}<br><br><button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:10px;color:var(--green);background:none;border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:6px 14px;cursor:pointer;">Retry</button></div>`;
@@ -566,8 +583,8 @@ async function loadExerciseProgress(exerciseId) {
     </div>`;
 }
 
-async function loadOverview() {
-  const content = document.getElementById('prog-overview-content');
+async function loadHome() {
+  const content = document.getElementById('prog-home-content');
   const [debriefRes, allSetsRes, progTreeRes, sessionsRes] = await Promise.all([
     api('getRecentDebriefs', { limit: 10 }),
     api('getAllProgressionData', { limit: 2000 }),
@@ -599,6 +616,12 @@ async function loadOverview() {
   const thisCount = (sessionsByWeek[thisWeek]?.size || 0);
   const lastCount = (sessionsByWeek[lastWeek]?.size || 0);
   const streakDelta = thisCount - lastCount;
+
+  const lastTrained = sessions.map(s => s.date.slice(0,10)).sort().pop() || null;
+  const daysSince = lastTrained ? Math.max(0, Math.round((new Date(todayStr) - new Date(lastTrained)) / 86400000)) : null;
+
+  const heat = {};
+  allSets.forEach(s => { heat[s.date] = (heat[s.date] || 0) + 1; });
 
   const thisMonth = new Date().toLocaleDateString('en-CA').slice(0,7);
   const allTimeMax = {};
@@ -647,9 +670,6 @@ async function loadOverview() {
   const weeks   = Object.keys(weekVols).sort().slice(-8);
   const weekMax = Math.max(...weeks.map(w=>weekVols[w]), 1);
 
-  const patternSets = {};
-  allSets.forEach(s => { const ex = exercises.find(e=>e.id===s.exercise_id); const p=ex?.movement_pattern||'other'; patternSets[p]=(patternSets[p]||0)+1; });
-  const totalPS = Object.values(patternSets).reduce((a,b)=>a+b,0);
   const outcomeColour = { progressed:'var(--green)', maintained:'var(--text2)', declined:'var(--amber)', incomplete:'var(--text3)' };
 
   const accomplished = progScores.filter(p => p.ready);
@@ -706,22 +726,31 @@ async function loadOverview() {
     </div>`;
   };
 
+  const dCol = daysSince == null ? 'var(--text3)' : daysSince <= 2 ? 'var(--green)' : daysSince <= 4 ? 'var(--amber)' : 'var(--red)';
+
   content.innerHTML =
-    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
-        <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">THIS WEEK</div>
-        <div style="font-family:var(--font-display);font-size:36px;color:var(--text);line-height:1;">${thisCount}</div>
-        <div style="font-family:var(--font);font-size:10px;color:${streakDelta>0?'var(--green)':streakDelta<0?'var(--amber)':'var(--text3)'};margin-top:4px;">${streakDelta>0?'↑ +'+streakDelta+' vs last week':streakDelta<0?'↓ '+streakDelta+' vs last week':'→ same as last week'}</div>
+    `<div style="background:linear-gradient(140deg,var(--bg2) 45%,rgba(34,197,94,0.08));border:1px solid var(--border);border-radius:14px;padding:16px 12px 12px;margin-bottom:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
+        <div>
+          <div style="font-family:var(--font-display);font-size:38px;color:${dCol};line-height:1;">${daysSince ?? '—'}</div>
+          <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.12em;margin-top:6px;">DAYS SINCE<br>SESSION</div>
+        </div>
+        <div style="border-left:1px solid var(--border);border-right:1px solid var(--border);">
+          <div style="font-family:var(--font-display);font-size:38px;color:var(--text);line-height:1;">${thisCount}</div>
+          <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.12em;margin-top:6px;">SESSIONS<br>THIS WEEK</div>
+        </div>
+        <div>
+          <div style="font-family:var(--font-display);font-size:38px;color:${pbs.length?'var(--green)':'var(--text3)'};line-height:1;">${pbs.length}</div>
+          <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.12em;margin-top:6px;">PBs THIS<br>MONTH</div>
+        </div>
       </div>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
-        <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">PBs THIS MONTH</div>
-        ${pbs.length
-          ? `<div style="font-family:var(--font-display);font-size:36px;color:var(--green);line-height:1;">${pbs.length}</div>
-             <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:4px;line-height:1.6;">${pbs.join('<br>')}</div>`
-          : `<div style="font-family:var(--font-display);font-size:36px;color:var(--text3);line-height:1;">0</div>
-             <div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:4px;">none yet this month</div>`}
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+        <span style="font-family:var(--font);font-size:10px;color:${streakDelta>0?'var(--green)':streakDelta<0?'var(--amber)':'var(--text3)'};">${streakDelta>0?'↑ +'+streakDelta+' vs last week':streakDelta<0?'↓ '+streakDelta+' vs last week':'→ same as last week'}</span>
+        ${pbs.length?`<span style="font-family:var(--font);font-size:10px;color:var(--text2);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">🏆 ${pbs.slice(0,2).join(', ')}${pbs.length>2?' +'+(pbs.length-2):''}</span>`:''}
       </div>
     </div>` +
+
+    renderAnalyticsHeatmap(heat) +
 
     renderProgTier(accomplished, 'accomplished') +
     renderProgTier(thisClose, 'thisClose') +
@@ -736,18 +765,6 @@ async function loadOverview() {
         <span style="font-family:var(--font);font-size:9px;color:var(--text3);">${weeks[0]?.slice(5)||''}</span>
         <span style="font-family:var(--font);font-size:9px;color:var(--text3);">this week</span>
       </div>
-    </div>` +
-
-    `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
-      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">MOVEMENT BALANCE</div>
-      ${Object.entries(patternSets).sort((a,b)=>b[1]-a[1]).map(([p,n])=>{
-        const pct=Math.round((n/totalPS)*100);
-        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
-          <div style="font-family:var(--font-ui);font-size:9px;font-weight:600;color:var(--text2);width:60px;flex-shrink:0;text-transform:uppercase;">${p}</div>
-          <div style="flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;"><div style="height:100%;background:var(--text3);width:${pct}%;border-radius:2px;"></div></div>
-          <div style="font-family:var(--font);font-size:10px;color:var(--text2);width:28px;text-align:right;">${pct}%</div>
-        </div>`;
-      }).join('')}
     </div>` +
 
     (debriefs.length ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
@@ -782,7 +799,14 @@ async function loadOverview() {
         <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:10px;">🏆 ALL-TIME BESTS</div>
         ${pbRows}
       </div>` : '';
-    })();
+    })() +
+
+    `<div id="prog-review-inline">${reviewHTML || `
+      <div style="background:linear-gradient(140deg,var(--bg2) 45%,rgba(34,197,94,0.06));border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;margin-bottom:12px;">
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">6-WEEK COACH REVIEW</div>
+        <div style="font-family:var(--font);font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.6;">Volume trends, movement balance, progression velocity and recovery — analysed across your last 6 weeks.</div>
+        <button type="button" onclick="generateCoachReview()" style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--bg);background:var(--green);border:none;border-radius:8px;padding:11px 22px;cursor:pointer;letter-spacing:0.06em;">Generate Review →</button>
+      </div>`}</div>`;
 }
 
 // ─── Analytics (DATA tab) ────────────────────────────────────────────────────
@@ -807,30 +831,13 @@ async function loadAnalytics(force) {
     }
   }
   const a = analyticsCache;
+  const lastLine = a.daysSince == null ? '' : a.daysSince === 0 ? ' · last trained today' : a.daysSince === 1 ? ' · last trained yesterday' : ` · last trained ${a.daysSince} days ago`;
   content.innerHTML =
-    renderAnalyticsStats(a) +
-    renderAnalyticsHeatmap(a.heatmap) +
+    `<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin:2px 2px 12px;">Averaging <span style="color:var(--text);font-weight:600;">${a.sessionsPerWeek}</span> sessions/week over the last 8 weeks${lastLine}.</div>` +
     renderAnalyticsPatterns(a.patterns) +
     renderAnalyticsAdherence(a.adherence) +
     renderAnalyticsReadiness(a.readiness) +
     (a.injuries || []).map(renderInjuryImpact).join('');
-}
-
-function renderAnalyticsStats(a) {
-  const d = a.daysSince;
-  const col = d == null ? 'var(--text3)' : d <= 2 ? 'var(--green)' : d <= 4 ? 'var(--amber)' : '#ef4444';
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
-      <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">DAYS SINCE LAST SESSION</div>
-      <div style="font-family:var(--font-display);font-size:36px;color:${col};line-height:1;">${d ?? '—'}</div>
-      <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">${d === 0 ? 'trained today' : d === 1 ? 'trained yesterday' : ''}</div>
-    </div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
-      <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">SESSIONS PER WEEK</div>
-      <div style="font-family:var(--font-display);font-size:36px;color:var(--text);line-height:1;">${a.sessionsPerWeek}</div>
-      <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">average over last 8 weeks</div>
-    </div>
-  </div>`;
 }
 
 function renderAnalyticsHeatmap(heat) {
