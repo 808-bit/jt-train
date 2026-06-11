@@ -195,6 +195,10 @@ async function handleGet(request, env) {
     return json({ data: results });
   }
 
+  if (action === 'getAnalytics') {
+    return await getAnalytics(env);
+  }
+
   if (action === 'getRecentDebriefs') {
     const exerciseId   = searchParams.get('exercise_id');
     const sessionType  = searchParams.get('session_type') || '';
@@ -358,6 +362,185 @@ async function handlePost(request, env) {
 
   return json({ error: 'Unknown action: ' + action }, 400);
 
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+async function getAnalytics(env) {
+  const [sessRes, setsRes, planRes, injRes, debriefRes] = await env.DB.batch([
+    env.DB.prepare(`SELECT id, date, session_type, pre_sleep, pre_energy FROM sessions ORDER BY date`),
+    env.DB.prepare(`
+      SELECT s.date, st.session_id, st.exercise_id, st.reps, st.weight_kg, st.rir,
+             e.display_name, e.movement_pattern
+      FROM sets st
+      JOIN sessions s ON st.session_id = s.id
+      JOIN exercises e ON st.exercise_id = e.id
+      ORDER BY s.date`),
+    env.DB.prepare(`
+      SELECT sp.session_id, sp.exercise_id, sp.prescribed_sets,
+             COALESCE(e.display_name, sp.exercise_id) AS display_name, s.date, s.session_type
+      FROM session_plan sp
+      JOIN sessions s ON sp.session_id = s.id
+      LEFT JOIN exercises e ON sp.exercise_id = e.id
+      ORDER BY s.date DESC`),
+    env.DB.prepare(`SELECT id, body_part, active, date_start, date_end FROM injuries WHERE date_start IS NOT NULL ORDER BY date_start DESC`),
+    env.DB.prepare(`SELECT session_id, performance_signal, outcome FROM debriefs`),
+  ]);
+  const sessions = sessRes.results, sets = setsRes.results, plans = planRes.results,
+        injuries = injRes.results, debriefs = debriefRes.results;
+
+  const today = sydneyToday();
+  const dayNum = d => Math.floor(new Date(d).getTime() / 86400000);
+  const todayN = dayNum(today);
+
+  // ── Recency + frequency ──
+  const sessionDates = [...new Set(sessions.map(s => s.date))].sort();
+  const lastDate = sessionDates[sessionDates.length - 1] || null;
+  const daysSince = lastDate ? todayN - dayNum(lastDate) : null;
+  const sessionsPerWeek = +(sessionDates.filter(d => todayN - dayNum(d) < 56).length / 8).toFixed(1);
+
+  // ── Heatmap: sets per day, last 119 days (17 weeks) ──
+  const setsPerDay = {};
+  sets.forEach(s => { if (todayN - dayNum(s.date) < 119) setsPerDay[s.date] = (setsPerDay[s.date] || 0) + 1; });
+  sessionDates.forEach(d => { if (todayN - dayNum(d) < 119 && !setsPerDay[d]) setsPerDay[d] = 1; });
+
+  // ── Pattern dose: hard sets (RIR ≤ 2) per week + share, last 28 days ──
+  const recent = sets.filter(s => todayN - dayNum(s.date) < 28);
+  const pat = {};
+  recent.forEach(s => {
+    const p = s.movement_pattern || 'other';
+    pat[p] = pat[p] || { total: 0, hard: 0 };
+    pat[p].total++;
+    if (s.rir != null && s.rir <= 2) pat[p].hard++;
+  });
+  const totalRecent = recent.length || 1;
+  const patterns = Object.entries(pat)
+    .map(([pattern, v]) => ({
+      pattern,
+      hardPerWeek: +(v.hard / 4).toFixed(1),
+      sharePct: Math.round((v.total / totalRecent) * 100),
+    }))
+    .sort((a, b) => b.sharePct - a.sharePct);
+
+  // ── Adherence: prescribed vs logged sets, last 10 planned sessions ──
+  const actualSets = {};
+  sets.forEach(s => {
+    const k = s.session_id + '|' + s.exercise_id;
+    actualSets[k] = (actualSets[k] || 0) + 1;
+  });
+  const planBySession = new Map();
+  plans.forEach(p => {
+    if (!planBySession.has(p.session_id)) planBySession.set(p.session_id, { date: p.date, type: p.session_type, items: [] });
+    planBySession.get(p.session_id).items.push(p);
+  });
+  const skipCounts = {};
+  const adherenceSessions = [...planBySession.entries()].slice(0, 10).map(([sid, sess]) => {
+    let prescribed = 0, done = 0;
+    const items = sess.items.map(p => {
+      const planned = p.prescribed_sets || 0;
+      const actual = actualSets[sid + '|' + p.exercise_id] || 0;
+      prescribed += planned;
+      done += Math.min(actual, planned);
+      const status = actual === 0 ? 'skipped' : actual >= planned ? 'done' : 'partial';
+      if (status === 'skipped') skipCounts[p.display_name] = (skipCounts[p.display_name] || 0) + 1;
+      return { name: p.display_name, planned, actual, status };
+    });
+    return { date: sess.date, type: sess.type, pct: prescribed ? Math.round((done / prescribed) * 100) : null, items };
+  }).filter(s => s.pct != null);
+  const avgAdherence = adherenceSessions.length
+    ? Math.round(adherenceSessions.reduce((s, x) => s + x.pct, 0) / adherenceSessions.length) : null;
+  const mostSkipped = Object.entries(skipCounts).sort((a, b) => b[1] - a[1])[0] || null;
+
+  // ── Readiness vs results ──
+  const debriefBySession = {};
+  debriefs.forEach(d => { debriefBySession[d.session_id] = d; });
+  const volBySession = {};
+  sets.forEach(s => { volBySession[s.session_id] = (volBySession[s.session_id] || 0) + (s.reps || 0) * (s.weight_kg || 0); });
+  const bands = { low: [], moderate: [], high: [] };
+  sessions.forEach(s => {
+    if (s.pre_sleep == null && s.pre_energy == null) return;
+    const band = (s.pre_sleep <= 2 || s.pre_energy <= 2) ? 'low'
+               : (s.pre_sleep >= 4 && s.pre_energy >= 4) ? 'high' : 'moderate';
+    const d = debriefBySession[s.id];
+    bands[band].push({
+      volume: volBySession[s.id] || 0,
+      progressed: d ? (d.outcome === 'progressed' || d.performance_signal === 'improving') : null,
+    });
+  });
+  const readiness = Object.entries(bands).map(([band, arr]) => {
+    const rated = arr.filter(x => x.progressed != null);
+    return {
+      band,
+      sessions: arr.length,
+      avgVolume: arr.length ? Math.round(arr.reduce((s, x) => s + x.volume, 0) / arr.length) : 0,
+      progressedPct: rated.length ? Math.round(rated.filter(x => x.progressed).length / rated.length * 100) : null,
+    };
+  });
+
+  // ── Injury impact: best set before vs during vs after each injury ──
+  // Best value per exercise per day: e1RM when loaded, reps when bodyweight.
+  // (Best-set comparison, not regression slope — at 1-2 sessions/week the
+  // windows are too sparse for slopes to mean anything.)
+  const daily = {};
+  sets.forEach(s => {
+    const loaded = s.weight_kg > 0;
+    const val = loaded ? s.weight_kg * (1 + (s.reps || 0) / 30) : (s.reps || 0);
+    if (val <= 0) return;
+    const ex = daily[s.exercise_id] = daily[s.exercise_id] || { name: s.display_name, unit: loaded ? 'kg' : 'reps', days: {} };
+    if (!ex.days[s.date] || val > ex.days[s.date]) ex.days[s.date] = val;
+  });
+  const bestIn = (ex, from, to) => {
+    const vals = Object.entries(ex.days).filter(([d]) => d >= from && d <= to).map(([, v]) => v);
+    return vals.length ? Math.max(...vals) : null;
+  };
+  const addDays = (dateStr, n) => new Date(new Date(dateStr).getTime() + n * 86400000).toISOString().slice(0, 10);
+
+  const injuryImpact = injuries
+    .filter(inj => inj.active || dayNum(inj.date_end || today) - dayNum(inj.date_start) >= 2)
+    .map(inj => {
+      const start = inj.date_start;
+      const end = inj.date_end || today;
+      const preFrom = addDays(start, -56);
+      const freq = range => {
+        const ds = sessionDates.filter(d => d >= range[0] && d <= range[1]);
+        const weeks = Math.max((dayNum(range[1]) - dayNum(range[0])) / 7, 1);
+        return +(ds.length / weeks).toFixed(1);
+      };
+      const exercises = Object.values(daily).map(ex => {
+        const pre = bestIn(ex, preFrom, addDays(start, -1));
+        const during = bestIn(ex, start, end);
+        const post = inj.date_end ? bestIn(ex, addDays(end, 1), addDays(end, 56)) : null;
+        if (pre == null || during == null) return null;
+        return {
+          name: ex.name, unit: ex.unit,
+          pre: +pre.toFixed(1), during: +during.toFixed(1), post: post != null ? +post.toFixed(1) : null,
+          deltaPct: Math.round(((during - pre) / pre) * 100),
+        };
+      }).filter(Boolean).sort((a, b) => a.deltaPct - b.deltaPct).slice(0, 8);
+      return {
+        body_part: inj.body_part,
+        active: !!inj.active,
+        date_start: start,
+        date_end: inj.date_end,
+        days: dayNum(end) - dayNum(start),
+        freqPre: freq([preFrom, addDays(start, -1)]),
+        freqDuring: freq([start, end]),
+        exercises,
+      };
+    });
+
+  return json({
+    daysSince, sessionsPerWeek,
+    heatmap: setsPerDay,
+    patterns,
+    adherence: {
+      avgPct: avgAdherence,
+      mostSkipped: mostSkipped ? { name: mostSkipped[0], times: mostSkipped[1], outOf: adherenceSessions.length } : null,
+      sessions: adherenceSessions,
+    },
+    readiness,
+    injuries: injuryImpact,
+  });
 }
 
 // ─── Gerald Agent ────────────────────────────────────────────────────────────

@@ -721,6 +721,7 @@
     <div class="prog-tabs">
       <button class="prog-tab" id="ptab-exercise" onclick="switchProgTab('exercise')">EXERCISE</button>
       <button class="prog-tab active" id="ptab-overview" onclick="switchProgTab('overview')">OVERVIEW</button>
+      <button class="prog-tab" id="ptab-analytics" onclick="switchProgTab('analytics')">DATA</button>
       <button class="prog-tab" id="ptab-tree" onclick="switchProgTab('tree')">TREE</button>
       <button class="prog-tab" id="ptab-review" onclick="switchProgTab('review')">REVIEW</button>
     </div>
@@ -758,6 +759,11 @@
       <div id="prog-overview-content">
         <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div class="skel" style="height:80px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div><div class="skel" style="height:120px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div>
       </div>
+    </div>
+
+    <!-- ANALYTICS TAB -->
+    <div id="prog-analytics-tab" style="display:none;">
+      <div id="prog-analytics-content"></div>
     </div>
 
     <!-- TREE TAB -->

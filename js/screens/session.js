@@ -49,6 +49,11 @@ async function startSession() {
     showToast('Session not saved — ' + e.message, 'error');
   });
 
+  // Persist the prescription so plan-vs-actual adherence can be measured
+  if (plan && plan.length) {
+    apiPost({ action: 'appendPlan', data: { session_id: sessionId, exercises: plan } }).catch(() => {});
+  }
+
   const planWrap = document.createElement('div');
   planWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%;';
   planWrap.innerHTML = `

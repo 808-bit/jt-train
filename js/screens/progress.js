@@ -83,13 +83,15 @@ function selectExercise(id) {
 }
 
 function switchProgTab(tab) {
-  document.getElementById('prog-exercise-tab').style.display = tab === 'exercise' ? '' : 'none';
+  document.getElementById('prog-exercise-tab').style.display  = tab === 'exercise'  ? '' : 'none';
   document.getElementById('prog-overview-tab').style.display  = tab === 'overview'  ? '' : 'none';
+  document.getElementById('prog-analytics-tab').style.display = tab === 'analytics' ? '' : 'none';
   document.getElementById('prog-tree-tab').style.display      = tab === 'tree'      ? '' : 'none';
   document.getElementById('prog-review-tab').style.display    = tab === 'review'    ? '' : 'none';
   document.querySelectorAll('.prog-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('ptab-' + tab).classList.add('active');
   if (tab === 'overview') loadOverview();
+  if (tab === 'analytics') loadAnalytics();
   if (tab === 'tree') loadTreeTab();
 }
 
@@ -781,6 +783,189 @@ async function loadOverview() {
         ${pbRows}
       </div>` : '';
     })();
+}
+
+// ─── Analytics (DATA tab) ────────────────────────────────────────────────────
+
+let analyticsCache = null;
+
+const aCard = (title, caption, body) => `
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+    <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:4px;">${title}</div>
+    ${caption ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-bottom:10px;line-height:1.5;">${caption}</div>` : '<div style="margin-bottom:6px;"></div>'}
+    ${body}
+  </div>`;
+
+async function loadAnalytics(force) {
+  const content = document.getElementById('prog-analytics-content');
+  if (!analyticsCache || force) {
+    content.innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div class="skel" style="height:80px;border-radius:10px;"></div><div class="skel" style="height:80px;border-radius:10px;"></div></div><div class="skel" style="height:110px;border-radius:10px;"></div><div class="skel" style="height:140px;border-radius:10px;"></div><div class="skel" style="height:140px;border-radius:10px;"></div></div>';
+    try { analyticsCache = await api('getAnalytics'); }
+    catch (e) {
+      content.innerHTML = `<div style="font-family:var(--font);font-size:11px;color:var(--text2);text-align:center;padding:32px 0;">Couldn't load analytics — ${e.message}<br><br><button type="button" onclick="loadAnalytics(true)" style="font-family:var(--font-ui);font-size:10px;color:var(--green);background:none;border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:6px 14px;cursor:pointer;">Retry</button></div>`;
+      return;
+    }
+  }
+  const a = analyticsCache;
+  content.innerHTML =
+    renderAnalyticsStats(a) +
+    renderAnalyticsHeatmap(a.heatmap) +
+    renderAnalyticsPatterns(a.patterns) +
+    renderAnalyticsAdherence(a.adherence) +
+    renderAnalyticsReadiness(a.readiness) +
+    (a.injuries || []).map(renderInjuryImpact).join('');
+}
+
+function renderAnalyticsStats(a) {
+  const d = a.daysSince;
+  const col = d == null ? 'var(--text3)' : d <= 2 ? 'var(--green)' : d <= 4 ? 'var(--amber)' : '#ef4444';
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+      <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">DAYS SINCE LAST SESSION</div>
+      <div style="font-family:var(--font-display);font-size:36px;color:${col};line-height:1;">${d ?? '—'}</div>
+      <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">${d === 0 ? 'trained today' : d === 1 ? 'trained yesterday' : ''}</div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+      <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:6px;">SESSIONS PER WEEK</div>
+      <div style="font-family:var(--font-display);font-size:36px;color:var(--text);line-height:1;">${a.sessionsPerWeek}</div>
+      <div style="font-family:var(--font);font-size:10px;color:var(--text3);margin-top:4px;">average over last 8 weeks</div>
+    </div>
+  </div>`;
+}
+
+function renderAnalyticsHeatmap(heat) {
+  heat = heat || {};
+  // 17 columns of weeks (Mon–Sun), oldest left, ending this week
+  const today = new Date(new Date().toLocaleDateString('en-CA'));
+  const monday = new Date(today); monday.setDate(monday.getDate() - ((monday.getDay() || 7) - 1));
+  const weeks = [];
+  for (let w = 16; w >= 0; w--) { const d = new Date(monday); d.setDate(d.getDate() - w * 7); weeks.push(d); }
+  const max = Math.max(...Object.values(heat), 1);
+  const todayStr = today.toLocaleDateString('en-CA');
+
+  const monthLabels = weeks.map((d, i) => {
+    const prev = i > 0 ? weeks[i - 1] : null;
+    const show = !prev || prev.getMonth() !== d.getMonth();
+    return `<div style="flex:1;font-family:var(--font);font-size:7px;color:var(--text3);">${show ? d.toLocaleDateString('en-AU', { month: 'short' }) : ''}</div>`;
+  }).join('');
+
+  const grid = Array.from({ length: 7 }, (_, row) =>
+    `<div style="display:flex;gap:2px;margin-bottom:2px;">${weeks.map(wk => {
+      const d = new Date(wk); d.setDate(d.getDate() + row);
+      const ds = d.toLocaleDateString('en-CA');
+      if (ds > todayStr) return '<div style="flex:1;aspect-ratio:1;"></div>';
+      const n = heat[ds] || 0;
+      const bg = n ? `rgba(34,197,94,${Math.max(0.25, n / max).toFixed(2)})` : 'rgba(255,255,255,0.04)';
+      return `<div title="${fmtDate(ds)}${n ? ' · ' + n + ' sets' : ''}" style="flex:1;aspect-ratio:1;background:${bg};border-radius:2px;"></div>`;
+    }).join('')}</div>`
+  ).join('');
+
+  return aCard('TRAINING DAYS · LAST 4 MONTHS', 'Each square is a day. Green = trained; darker = more sets.',
+    `<div style="display:flex;gap:2px;margin-bottom:3px;">${monthLabels}</div>${grid}`);
+}
+
+function renderAnalyticsPatterns(patterns) {
+  if (!patterns || !patterns.length) return aCard('MOVEMENT DOSE · LAST 4 WEEKS', '', '<div style="font-family:var(--font);font-size:10px;color:var(--text3);">No sets logged in the last 4 weeks.</div>');
+  const BAR_MAX = 24; // x-axis cap in hard sets/week; growth zone 10–20
+  const rows = patterns.map(p => {
+    const w = Math.min(100, (p.hardPerWeek / BAR_MAX) * 100);
+    const zone = p.hardPerWeek < 10 ? 'LOW' : p.hardPerWeek <= 20 ? 'OK' : 'HIGH';
+    const zoneCol = zone === 'OK' ? 'var(--green)' : 'var(--amber)';
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:600;color:var(--text2);width:52px;flex-shrink:0;text-transform:uppercase;">${p.pattern}</div>
+      <div style="flex:1;height:10px;background:var(--bg3);border-radius:3px;position:relative;overflow:hidden;">
+        <div style="position:absolute;left:${(10 / BAR_MAX) * 100}%;width:${(10 / BAR_MAX) * 100}%;height:100%;background:rgba(34,197,94,0.12);"></div>
+        <div style="position:absolute;left:0;height:100%;background:${zoneCol};width:${w}%;border-radius:3px;opacity:0.8;"></div>
+      </div>
+      <div style="font-family:var(--font);font-size:10px;color:var(--text);width:42px;text-align:right;flex-shrink:0;">${p.hardPerWeek}/wk</div>
+      <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:${zoneCol};width:30px;flex-shrink:0;">${zone}</div>
+      <div style="font-family:var(--font);font-size:9px;color:var(--text3);width:30px;text-align:right;flex-shrink:0;">${p.sharePct}%</div>
+    </div>`;
+  }).join('');
+  return aCard('MOVEMENT DOSE · LAST 4 WEEKS',
+    'Hard sets per week by movement pattern (sets at RIR ≤ 2). The shaded band, 10–20 per week, is the muscle-growth zone. Right column = share of all your sets.',
+    rows);
+}
+
+function renderAnalyticsAdherence(adh) {
+  if (!adh || adh.avgPct == null) return aCard("GERALD'S PLAN VS REALITY", '', '<div style="font-family:var(--font);font-size:10px;color:var(--text3);">No planned sessions logged yet.</div>');
+  const col = adh.avgPct >= 85 ? 'var(--green)' : adh.avgPct >= 65 ? 'var(--amber)' : '#ef4444';
+  const icon = { done: '✓', partial: '◐', skipped: '✗' };
+  const iconCol = { done: 'var(--green)', partial: 'var(--amber)', skipped: '#ef4444' };
+  const rows = adh.sessions.map((s, i) => `
+    <div onclick="const d=document.getElementById('adh-d-${i}');d.style.display=d.style.display==='none'?'':'none';" style="cursor:pointer;padding:7px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="font-family:var(--font);font-size:10px;color:var(--text3);width:46px;flex-shrink:0;">${fmtDate(s.date)}</div>
+        <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--text2);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.type || ''}</div>
+        <div style="width:64px;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;flex-shrink:0;"><div style="height:100%;width:${s.pct}%;background:${s.pct >= 85 ? 'var(--green)' : s.pct >= 65 ? 'var(--amber)' : '#ef4444'};"></div></div>
+        <div style="font-family:var(--font);font-size:10px;color:var(--text);width:34px;text-align:right;flex-shrink:0;">${s.pct}%</div>
+      </div>
+      <div id="adh-d-${i}" style="display:none;padding:6px 0 2px 54px;">
+        ${s.items.map(it => `<div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-bottom:3px;"><span style="color:${iconCol[it.status]};">${icon[it.status]}</span> ${it.name} — ${it.status === 'skipped' ? 'skipped' : it.actual + '/' + it.planned + ' sets'}</div>`).join('')}
+      </div>
+    </div>`).join('');
+  return aCard("GERALD'S PLAN VS REALITY",
+    `How much of the prescribed work you actually completed, over your last ${adh.sessions.length} planned sessions. Tap a session for the exercise-by-exercise breakdown.`,
+    `<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
+      <div style="font-family:var(--font-display);font-size:36px;color:${col};line-height:1;">${adh.avgPct}%</div>
+      <div style="font-family:var(--font);font-size:10px;color:var(--text3);">of prescribed sets completed</div>
+    </div>
+    ${rows}
+    ${adh.mostSkipped ? `<div style="font-family:var(--font);font-size:10px;color:var(--amber);margin-top:8px;">Most skipped: ${adh.mostSkipped.name} — ${adh.mostSkipped.times} of ${adh.mostSkipped.outOf} plans</div>` : ''}`);
+}
+
+function renderAnalyticsReadiness(readiness) {
+  const bands = { low: { label: 'LOW', col: '#ef4444' }, moderate: { label: 'MODERATE', col: 'var(--amber)' }, high: { label: 'HIGH', col: 'var(--green)' } };
+  const withData = (readiness || []).filter(r => r.sessions > 0);
+  if (withData.length < 2) return aCard('READINESS VS RESULTS', '', '<div style="font-family:var(--font);font-size:10px;color:var(--text3);">Not enough rated sessions yet — log sleep & energy before sessions and this fills in.</div>');
+  const rows = (readiness || []).filter(r => r.sessions > 0).map(r => `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
+      <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:${bands[r.band].col};width:70px;flex-shrink:0;">${bands[r.band].label}</div>
+      <div style="font-family:var(--font);font-size:10px;color:var(--text2);flex:1;">${r.sessions} session${r.sessions === 1 ? '' : 's'}</div>
+      <div style="font-family:var(--font);font-size:10px;color:var(--text);width:70px;text-align:right;">${r.avgVolume.toLocaleString()} kg</div>
+      <div style="font-family:var(--font);font-size:10px;color:${r.progressedPct == null ? 'var(--text3)' : r.progressedPct >= 50 ? 'var(--green)' : 'var(--text2)'};width:78px;text-align:right;">${r.progressedPct == null ? '—' : r.progressedPct + '% progressed'}</div>
+    </div>`).join('');
+  const low = readiness.find(r => r.band === 'low'), high = readiness.find(r => r.band === 'high');
+  let verdict = '';
+  if (low?.sessions >= 2 && high?.sessions >= 2 && high.avgVolume > 0) {
+    const diff = Math.round((1 - low.avgVolume / high.avgVolume) * 100);
+    verdict = diff >= 10
+      ? `On low-readiness days you move ${diff}% less volume — Gerald's reduce-the-dose rule is earning its keep.`
+      : `Your output barely changes on low-readiness days (${Math.abs(diff)}% difference) — you may be able to keep the normal dose when tired.`;
+  } else {
+    verdict = 'Once there are a few sessions in each band, a verdict appears here.';
+  }
+  return aCard('READINESS VS RESULTS',
+    'Sessions grouped by your pre-session sleep &amp; energy scores. Does feeling rough actually cost you performance?',
+    rows + `<div style="font-family:var(--font);font-size:10px;color:var(--text2);margin-top:8px;font-style:italic;">${verdict}</div>`);
+}
+
+function renderInjuryImpact(inj) {
+  const endLabel = inj.active ? 'now' : (inj.date_end ? fmtDate(inj.date_end) : '?');
+  const period = `${fmtDate(inj.date_start)} → ${endLabel} · ${inj.days} days`;
+  const freqLine = `<div style="display:flex;gap:14px;margin-bottom:10px;">
+    <div><div style="font-family:var(--font);font-size:9px;color:var(--text3);">Sessions/wk before</div><div style="font-family:var(--font-display);font-size:20px;color:var(--text);">${inj.freqPre}</div></div>
+    <div style="align-self:center;color:var(--text3);">→</div>
+    <div><div style="font-family:var(--font);font-size:9px;color:var(--text3);">during injury</div><div style="font-family:var(--font-display);font-size:20px;color:${inj.freqDuring < inj.freqPre ? 'var(--amber)' : 'var(--green)'};">${inj.freqDuring}</div></div>
+  </div>`;
+  const chip = (label, v, unit) => `<span style="font-family:var(--font);font-size:9px;color:${v == null ? 'var(--text3)' : 'var(--text2)'};">${label} <span style="color:var(--text);">${v == null ? '—' : v + ' ' + unit}</span></span>`;
+  const injKey = 'inj' + inj.date_start.replace(/-/g, '');
+  const exRows = inj.exercises.length ? inj.exercises.map((e, i) => `
+    <div style="padding:6px 0;border-bottom:1px solid var(--border);${i >= 4 ? `display:none;" data-injmore="${injKey}` : ''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+        <span style="font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--text);">${e.name}</span>
+        <span style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:${e.deltaPct < -2 ? '#ef4444' : e.deltaPct > 2 ? 'var(--green)' : 'var(--text3)'};">${e.deltaPct > 0 ? '+' : ''}${e.deltaPct}% during</span>
+      </div>
+      <div style="display:flex;gap:12px;">${chip('BEFORE', e.pre, e.unit)}${chip('DURING', e.during, e.unit)}${chip('AFTER', e.post, e.unit)}</div>
+    </div>`).join('')
+    : '<div style="font-family:var(--font);font-size:10px;color:var(--text3);">Not enough logged data around this injury to measure per-exercise impact.</div>';
+  const moreBtn = inj.exercises.length > 4
+    ? `<button type="button" onclick="document.querySelectorAll('[data-injmore=&quot;${injKey}&quot;]').forEach(el=>el.style.display='');this.style.display='none';" style="font-family:var(--font-ui);font-size:9px;color:var(--text2);background:none;border:1px solid var(--border2);border-radius:5px;padding:5px 12px;cursor:pointer;margin-top:8px;">Show all ${inj.exercises.length} exercises</button>`
+    : '';
+  return aCard(
+    `INJURY IMPACT · ${inj.body_part.toUpperCase()} <span style="font-weight:400;color:${inj.active ? '#ef4444' : 'var(--green)'};letter-spacing:0;">${inj.active ? '● active' : '✓ resolved'}</span>`,
+    `${period}. Your best set on each exercise before the injury vs during it${inj.date_end ? ' vs the 8 weeks after' : ''} — kg of estimated 1RM for loaded lifts, reps for bodyweight.`,
+    freqLine + exRows + moreBtn);
 }
 
 function applyProgression(fromId, toId, fromName, toName) {
