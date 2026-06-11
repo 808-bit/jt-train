@@ -13,19 +13,28 @@
 
 ## Deploy
 
+**Frontend and worker deploy by different mechanisms — don't conflate them:**
+
+| Change | How it goes live |
+|---|---|
+| Frontend (`jt_train.html`, `js/**`, `sw.js`, `manifest.json`) | **`git push`** → GitHub Pages auto-publishes. `wrangler deploy` does NOT touch the frontend. |
+| Worker (`worker.js`, `wrangler.toml`) | **`wrangler deploy`**. A `git push` alone does NOT update the live API. |
+
 ```bash
-# Full deploy (frontend + worker)
-cd ~/Projects/jt-train && git add . && git commit -m "msg" && git push && wrangler deploy
+# Frontend change → push only
+cd ~/Projects/jt-train && git add . && git commit -m "msg" && git push
+
+# Worker change → deploy (commit too, for history)
+git add . && git commit -m "msg" && git push && wrangler deploy
 
 # D1 migration
 wrangler d1 execute jt-train-db --file=path/to/migration.sql --remote
 
-# Worker only
-wrangler deploy
-
 # Tail worker logs
 wrangler tail jt-workout-worke --format=pretty
 ```
+
+**⚠ When you change any cached JS/HTML, bump the service-worker cache** (`sw.js`: `const CACHE = 'jt-train-vN'` → `vN+1`). The SW cache-firsts the `js/**` files listed in its `STATIC` array, so installed PWAs keep serving the OLD code after a push until the cache version changes. Forgetting this makes a correct push look like it "didn't work." `public/index.html` is a stale legacy bundle — not served; ignore it.
 
 ## File Structure
 
@@ -151,6 +160,9 @@ Two distinct filters — use the right one:
 - **`filterByEquipmentOnly(exList, loc)`** — kit-only filter: no injury or session-type filtering. Use when building the exercise library handed to Claude for plan gen or substitutions — gives Claude the full equipment-matched menu and lets it select by movement pattern, level, and context.
 
 `analyseExerciseTrends` swap candidates: always use `filterByEquipmentOnly` (field `e.session_types` does not exist).
+
+### Debrief volume/sets are computed, not LLM-generated
+In `generateDebrief` (session.js), `total_volume_kg` and `total_sets` are **overridden in code** from `loggedSets` (`sso.total_volume_kg = Math.round(totalVol)`) immediately after parsing the model's JSON. The LLM only produces the qualitative fields (`performance_signal`, `outcome`, `recommendation`, flags). Do NOT ask the model to emit the numeric totals — it previously echoed the prompt's placeholder (`320kg`), saving garbage volumes. Never trust an LLM for arithmetic; compute totals from the source data.
 
 ### buildSessionContext() — pre-computed progression signals
 `session.js` helper. Called before every `getCoachReply` (mid-workout) and `generateDebrief` call. Maps each plan exercise to a readable line with prescribed vs actual and a signal:
