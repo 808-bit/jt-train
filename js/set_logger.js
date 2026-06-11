@@ -232,6 +232,8 @@ function endSession() {
 function closeEndModal() {
   document.getElementById('end-modal').style.display='none';
   _resetDiscardBtn();
+  // endSession() released the wake lock; if the session continues, re-acquire
+  if (sessionId) requestWakeLock();
 }
 
 let _discardPending = false;

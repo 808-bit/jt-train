@@ -146,6 +146,9 @@ async function requestWakeLock() {
   if (!('wakeLock' in navigator)) return;
   try {
     wakeLock = await navigator.wakeLock.request('screen');
+    // The browser silently releases the lock whenever the page is hidden;
+    // null the handle on release so visibilitychange knows to re-acquire.
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
     console.log('Wake lock active');
   } catch (e) {
     console.log('Wake lock failed:', e.message);
@@ -154,7 +157,8 @@ async function requestWakeLock() {
 
 function releaseWakeLock() {
   if (wakeLock) {
-    wakeLock.release().then(() => { wakeLock = null; console.log('Wake lock released'); });
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
   }
 }
 
