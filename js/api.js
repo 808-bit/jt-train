@@ -11,7 +11,17 @@ async function api(action, params = {}) {
 }
 
 async function apiPost(body) {
-  const r = await fetch(W, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const headers = { 'Content-Type': 'application/json' };
+  const token = localStorage.getItem('appToken');
+  if (token) headers['X-App-Token'] = token;
+  const r = await fetch(W, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (r.status === 401) {
+    const entered = prompt('App token required (one-time per device):');
+    if (entered && entered.trim()) {
+      localStorage.setItem('appToken', entered.trim());
+      return apiPost(body);
+    }
+  }
   return r.json();
 }
 

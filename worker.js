@@ -18,7 +18,7 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-App-Token',
 };
 
 export default {
@@ -216,6 +216,15 @@ async function handleGet(request, env) {
 async function handlePost(request, env) {
   const body = await request.json();
   const { action } = body;
+
+  // Anthropic-backed actions burn API credits — require the app token.
+  // Other POST actions (set logging etc.) stay open so a lost token can't
+  // block a workout mid-session.
+  if (action === 'agent' || action === 'claude') {
+    if (!env.APP_TOKEN || request.headers.get('X-App-Token') !== env.APP_TOKEN) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+  }
 
   if (action === 'claude') {
     const { system, messages, model = 'claude-haiku-4-5-20251001', max_tokens = 2000 } = body;
@@ -470,19 +479,31 @@ async function executeTool(toolName, toolInput, context, env) {
   }
 
   if (toolName === 'check_progressions') {
-    const { results: rules } = await env.DB.prepare(`
-      SELECT pr.*, e.display_name FROM progression_rules pr
-      JOIN exercises e ON pr.exercise_id = e.id
+    // One windowed query: 5 most recent sets per ruled exercise (rules with
+    // no recorded sets drop out via the inner join, matching old behaviour).
+    const { results: rows } = await env.DB.prepare(`
+      SELECT * FROM (
+        SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
+               pr.next_exercise_id, e.display_name,
+               s.date, st.reps, st.weight_kg, st.rir,
+               ROW_NUMBER() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC, st.set_num DESC) AS rn
+        FROM progression_rules pr
+        JOIN exercises e ON pr.exercise_id = e.id
+        JOIN sets st ON st.exercise_id = pr.exercise_id
+        JOIN sessions s ON st.session_id = s.id
+        WHERE s.id NOT LIKE '%-H'
+      ) WHERE rn <= 5
+      ORDER BY exercise_id, rn
     `).all();
+
+    const byExercise = new Map();
+    for (const r of rows) {
+      if (!byExercise.has(r.exercise_id)) byExercise.set(r.exercise_id, []);
+      byExercise.get(r.exercise_id).push(r);
+    }
     const status = [];
-    for (const rule of rules.slice(0, 12)) {
-      const { results: recent } = await env.DB.prepare(`
-        SELECT s.date, st.reps, st.weight_kg, st.rir
-        FROM sets st JOIN sessions s ON st.session_id = s.id
-        WHERE st.exercise_id = ? AND s.id NOT LIKE '%-H'
-        ORDER BY s.date DESC LIMIT 5
-      `).bind(rule.exercise_id).all();
-      if (!recent.length) continue;
+    for (const recent of byExercise.values()) {
+      const rule = recent[0];
       const qualifying = recent.filter(s => s.reps >= rule.rep_target && (s.rir ?? 99) <= rule.rir_target).length;
       status.push({
         exercise: rule.display_name,
@@ -586,7 +607,7 @@ HARD CONSTRAINTS:
   }];
 
   for (let i = 0; i < MAX_ITER; i++) {
-    const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 4000, system, tools: GERALD_TOOLS, messages });
+    const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, messages });
     if (!res.ok) return json({ error: res.data }, res.status);
     const data = res.data;
 
@@ -611,7 +632,7 @@ HARD CONSTRAINTS:
           role: 'user',
           content: `That plan only kept ${cleaned.length} valid exercise(s). Removed — ${removed.join('; ') || 'none'}. Rebuild it with 4-6 exercises using ONLY the exercise_ids that get_available_exercises returned earlier. Return just the corrected JSON, no commentary.`,
         });
-        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 4000, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
+        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
         if (!repair.ok) console.error('Gerald repair call failed:', repair.status, JSON.stringify(repair.data));
         if (repair.ok && repair.data.content) {
           const rtext = repair.data.content.map(b => b.text || '').join('');

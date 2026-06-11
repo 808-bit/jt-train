@@ -204,8 +204,12 @@ async function generateCoachesWorkout() {
 
   // Equipment + injury filter runs on the frontend where the logic already lives.
   // We pass the resulting IDs to the worker so the agent's tool is constrained.
+  // shoulder_safe is the only per-exercise safety flag — apply it only when a
+  // shoulder injury is active; other injuries reach Gerald via the prompt's
+  // restrictions text, not this hard filter.
+  const hasShoulderInjury = injuries.some(i => /shoulder/i.test(i.body_part || ''));
   const availableExerciseIds = filterByEquipmentOnly(exercises, loc)
-    .filter(e => !injuries.length || isTrue(e.shoulder_safe))
+    .filter(e => !hasShoulderInjury || isTrue(e.shoulder_safe))
     .map(e => e.id);
 
   const result = await apiPost({
