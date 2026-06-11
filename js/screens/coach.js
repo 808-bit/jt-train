@@ -288,6 +288,7 @@ async function generatePlan() {
       }).join('\n\n')
     : 'No pattern data.';
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
+  const shoulderGuard = injuries.some(i => i.active && /shoulder/i.test(i.body_part)) ? ' Protect the right shoulder.' : '';
   const kitStr = buildKitString(loc);
   const availEx = filterByEquipmentOnly(exercises, loc)
     .filter(e => !injuries.length || isTrue(e.shoulder_safe))
@@ -370,7 +371,7 @@ Generate a ${sType} workout. Return ONLY valid JSON, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Rules: 4-6 exercises. Base load/volume on history. Protect right shoulder. Only use exercise_ids from the provided list. Select exercises appropriate for ${sType} — choose by movement pattern balance, training history, and injury context. Do not rigidly filter by session type tag; use your judgement across the full equipment-matched library.`;
+Rules: 4-6 exercises. Base load/volume on history.${shoulderGuard} Only use exercise_ids from the provided list. Select exercises appropriate for ${sType} — choose by movement pattern balance, training history, and injury context. Do not rigidly filter by session type tag; use your judgement across the full equipment-matched library.`;
 
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';

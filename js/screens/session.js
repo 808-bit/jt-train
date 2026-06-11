@@ -604,6 +604,7 @@ async function sendReviewMsg() {
   chat.appendChild(typingDiv);
   chat.scrollTop = chat.scrollHeight;
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
+  const shoulderGuard = injuries.some(i => i.active && /shoulder/i.test(i.body_part)) ? ' Protect the right shoulder.' : '';
   const kitStr2 = buildKitString(loc);
   const histStr = buildHistStr();
   const system = `You are The Tactical Partner — adjusting a workout plan pre-session for James Thornton.
@@ -628,7 +629,7 @@ Return ONLY valid JSON — same format, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Keep what works. Only change what was asked. Weights on any new exercises must come from history, not defaults. Protect the right shoulder.`;
+Keep what works. Only change what was asked. Weights on any new exercises must come from history, not defaults.${shoulderGuard}`;
   try {
     const raw = await claude(system, [{ role: 'user', content: msg }], SONNET);
     const clean = raw.replace(/\`\`\`json|\`\`\`/g, '').trim();
