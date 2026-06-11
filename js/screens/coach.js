@@ -1,3 +1,10 @@
+function fmtDate(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${d} ${months[m - 1]}`;
+}
+
 async function init() {
   try {
     const [injR, exR, eqR] = await Promise.all([
@@ -57,14 +64,16 @@ async function autoRecommend() {
     cachedDebriefs = debriefs;
 
     const sessionSummary = recentSessions.map(s =>
-      `${s.date}: ${s.session_type} @ ${s.location}`
+      `${fmtDate(s.date)}: ${s.session_type} @ ${s.location}`
     ).join('\n') || 'No recent sessions';
 
     const debriefSummary = debriefs.map(d =>
-      `${d.date} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
+      `${fmtDate(d.date)} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
     ).join('\n') || 'No debrief data';
 
-    const system = `You are a precision strength coach writing today's session card for James. Be specific, data-driven, direct. No generic filler — every sentence should reference what's actually in the data.
+    const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+
+Rules: lead with the insight, not the preamble — never say "Great question" or "Based on your data". Use numbers, not vibes. If something looks off, say it plainly. Dry humour is fine. Motivation-poster energy is not.
 
 RECENT SESSIONS (last 10):
 ${sessionSummary}
@@ -168,7 +177,7 @@ function formatSSOContext(debriefs, sTypeFilter, limit) {
   if (!filtered.length) return 'No previous debrief data available.';
   return filtered.map(d => {
     const flagged = (() => { try { return JSON.parse(d.exercises_flagged || '[]'); } catch { return []; } })();
-    return `[${d.date} ${d.session_type}] Signal: ${d.performance_signal} | Volume: ${d.total_volume_kg}kg / ${d.total_sets} sets${d.shoulder_flag ? ' | ⚠ Shoulder flagged' : ''}${flagged.length ? ' | Flagged: ' + flagged.join(', ') : ''} | Rec: ${d.recommendation}`;
+    return `[${fmtDate(d.date)} ${d.session_type}] Signal: ${d.performance_signal} | Volume: ${d.total_volume_kg}kg / ${d.total_sets} sets${d.shoulder_flag ? ' | ⚠ Shoulder flagged' : ''}${flagged.length ? ' | Flagged: ' + flagged.join(', ') : ''} | Rec: ${d.recommendation}`;
   }).join('\n');
 }
 
@@ -181,7 +190,7 @@ async function fetchSSOContext(limit, sessionTypeFilter) {
     if (!debriefs.length) return 'No previous debrief data available.';
     return debriefs.map(d => {
       const flagged = (() => { try { return JSON.parse(d.exercises_flagged || '[]'); } catch { return []; } })();
-      return `[${d.date} ${d.session_type}] Signal: ${d.performance_signal} | Volume: ${d.total_volume_kg}kg / ${d.total_sets} sets${d.shoulder_flag ? ' | ⚠ Shoulder flagged' : ''}${flagged.length ? ' | Flagged: ' + flagged.join(', ') : ''} | Rec: ${d.recommendation}`;
+      return `[${fmtDate(d.date)} ${d.session_type}] Signal: ${d.performance_signal} | Volume: ${d.total_volume_kg}kg / ${d.total_sets} sets${d.shoulder_flag ? ' | ⚠ Shoulder flagged' : ''}${flagged.length ? ' | Flagged: ' + flagged.join(', ') : ''} | Rec: ${d.recommendation}`;
     }).join('\n');
   } catch(e) { return 'SSO context unavailable.'; }
 }
@@ -244,8 +253,9 @@ async function generateCoachesWorkout() {
     ? '✓ HIGH — 5-7 exercises, RIR 0-1, push loads.'
     : 'MODERATE — 4-5 exercises, RIR 1-2, standard dose.';
 
-  const system = `You are The Tactical Partner — a precision strength coach with full autonomy to design today's hypertrophy session for James Thornton.
-Operating principle: maintain the machine, respect the load, optimise for life. No fluff. Data drives decisions.
+  const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+
+Rules: lead with the insight, not the preamble. Use numbers. If something looks off, say it plainly. Max 120 words per response. Dry humour is fine. Motivation-poster energy is not. Data drives decisions.
 ${coachMemo ? `\nCOACH'S RUNNING NOTES (your persistent memory — read this first, it overrides generic defaults):\n${coachMemo}\n` : ''}
 ATHLETE PROFILE:
 Goal: Lean bulk / hypertrophy — Q2 2026.
@@ -390,9 +400,9 @@ async function generatePlan() {
     'Rings Only': 'All exercises on gymnastics rings. Push, pull, core — rings only. No KB.',
     'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
   };
-  const system = `You are The Tactical Partner — an intelligent, analytical training operator for James Thornton.
-Your operating principle: maintain the machine, respect the load, optimise for life.
-You are not a motivator. You are a precision instrument. No fluff, no toxic positivity, no filler.
+  const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+
+Rules: lead with the insight, not the preamble. Use numbers. If something looks off, say it plainly. Max 120 words per response. Dry humour is fine. Motivation-poster energy is not.
 ${coachMemo ? `\nCOACH'S RUNNING NOTES (your persistent memory — read this first, it supersedes generic defaults):\n${coachMemo}\n` : ''}
 ${coachBrief ? `COACH PRESCRIPTION (follow this closely — it overrides generic session type):
 ${coachBrief}
