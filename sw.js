@@ -1,9 +1,10 @@
-const CACHE = 'jt-train-v16';
+const CACHE = 'jt-train-v17';
 const STATIC = [
   '/jt-train/jt_train.html',
   '/jt-train/manifest.json',
   '/jt-train/js/api.js',
   '/jt-train/js/equipment.js',
+  '/jt-train/js/doctrine.js',
   '/jt-train/js/set_logger.js',
   '/jt-train/js/app.js',
   '/jt-train/js/screens/history.js',
