@@ -118,7 +118,7 @@ async function getCoachReply(userMsg) {
   let system;
   if (isDebriefMode && lastSSO) {
     system = `You are a post-session coach reviewing this session with James. Direct, insightful, no filler.
-
+${userContextBlock()}
 Session: ${sType}
 Signal: ${lastSSO.performance_signal} | Outcome: ${lastSSO.outcome}
 Summary: ${lastSSO.headline}
@@ -139,7 +139,7 @@ Full set log: ${JSON.stringify(loggedSets)}
       .join('\n');
 
     system = `You are an elite strength coach for James Thornton mid-workout.
-Session: ${sType} | Location: ${loc}
+${userContextBlock()}Session: ${sType} | Location: ${loc}
 Kit: ${kitStr}
 Active injuries: ${injStr}
 
@@ -221,7 +221,7 @@ async function generateDebrief() {
 
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
   const system = `You are an elite strength coach debriefing James Thornton post-workout.
-Session: ${sType} | Location: ${loc}
+${userContextBlock()}Session: ${sType} | Location: ${loc}
 Total: ${totalSets} sets across ${exCount} exercises | Loaded volume: ${Math.round(totalVol)}kg${bwSets.length ? ` + ${bwSets.length} BW sets (volume not in kg)` : ''}
 Active injuries: ${injStr}
 

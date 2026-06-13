@@ -762,7 +762,7 @@ async function callAnthropic(env, payload) {
 
 async function runGeraldAgent(body, env) {
   const { context } = body;
-  const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes } = context;
+  const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '' } = context;
   const MAX_ITER = 8;
 
   const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
@@ -775,7 +775,7 @@ async function runGeraldAgent(body, env) {
   const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
 
 Rules: lead with the insight, not the preamble. Use numbers. If something looks off, say it plainly. Dry humour is fine. Motivation-poster energy is not.
-${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
+${userContext ? `\nATHLETE CONTEXT (always factor this in):\n${userContext}\n` : ''}${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
 TODAY:
 Location: ${location} | Kit: ${kit}
 Readiness: Sleep ${readiness.sleep}/5 · Energy ${readiness.energy}/5 · Soreness ${readiness.soreness}/5 — ${readinessNote}

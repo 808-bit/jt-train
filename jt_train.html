@@ -452,7 +452,7 @@
       <button class="btn-sm" id="theme-toggle" onclick="toggleTheme()" style="font-size:9px;letter-spacing:0.18em;min-width:44px;">B</button>
       <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
       <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
-      <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc)">⚙</button>
+      <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc);loadCoachBio()">⚙</button>
     </div>
   </div>
   <div class="idle-body">
@@ -689,6 +689,11 @@
       <button class="eq-loc-tab"        id="eqtab-Gym"    onclick="selectEquipLoc('Gym')">GYM</button>
     </div>
     <div id="eq-config-body"></div>
+    <div style="margin-top:24px;padding-top:24px;border-top:1px solid var(--border);padding-bottom:8px;">
+      <div class="eq-section-lbl">COACH PROFILE</div>
+      <div style="font-family:var(--font);font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.65;">Tell the coach about your life — job, family, schedule, goals. Shapes every recommendation.</div>
+      <textarea id="coach-bio" placeholder="e.g. Office job 9-5. 3yr old twins. Train at 6am or it doesn't happen. Love the process but motivation tanks in winter. Right shoulder history." style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:12px;font-family:var(--font);resize:none;height:100px;outline:none;line-height:1.6;transition:border-color 0.15s;" onfocus="this.style.borderColor='var(--border2)'" onblur="this.style.borderColor='var(--border)';localStorage.setItem('user_context',this.value.trim())"></textarea>
+    </div>
   </div>
   <div class="review-footer">
     <button class="btn-main" onclick="saveEquipConfig()">Save equipment →</button>

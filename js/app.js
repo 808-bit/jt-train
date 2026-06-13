@@ -82,6 +82,17 @@ function stopAllTimers() {
 }
 
 function isTrue(v) { return v === true || v === 1 || v === '1' || v === 'TRUE' || v === 'true'; }
+
+function getUserContext() { return localStorage.getItem('user_context') || ''; }
+function userContextBlock() {
+  const ctx = getUserContext();
+  return ctx ? `\nATHLETE CONTEXT (always factor this in):\n${ctx}\n` : '';
+}
+function loadCoachBio() {
+  const el = document.getElementById('coach-bio');
+  if (el) el.value = getUserContext();
+}
+
 function goScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   document.getElementById(id).classList.add('on');
