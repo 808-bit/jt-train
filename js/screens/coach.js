@@ -7,15 +7,17 @@ function fmtDate(dateStr) {
 
 async function init() {
   try {
-    const [injR, exR, eqR] = await Promise.all([
+    const [injR, exR, eqR, bmR] = await Promise.all([
       api('getActiveInjuries'),
       api('getExercises'),
       api('getEquipmentConfig'),
+      api('getBodyMetrics', { limit: 180 }),
     ]);
     equipmentConfig = eqR.data || {};
     ['Home','Travel','Gym'].forEach(l => { if (!equipmentConfig[l]) equipmentConfig[l] = {...DEFAULT_CONFIG[l]}; });
     injuries = injR.data || [];
     exercises = exR.data || [];
+    bodyMetrics = bmR.data || [];
 
     if (injuries.length) {
       const b = document.getElementById('inj-banner');
@@ -73,9 +75,7 @@ async function autoRecommend() {
       `${fmtDate(d.date)} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
     ).join('\n') || 'No debrief data';
 
-    const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
-
-Rules: lead with the insight, not the preamble — never say "Great question" or "Based on your data". Use numbers, not vibes. If something looks off, say it plainly. Dry humour is fine. Motivation-poster energy is not.
+    const system = `${GERALD_PERSONA}
 ${userContextBlock()}
 RECENT SESSIONS (last 10):
 ${sessionSummary}
@@ -87,6 +87,7 @@ READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSorenes
 LOCATION: ${loc}
 INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
 KIT: ${buildKitString(loc)}
+${bodyweightContext(bodyMetrics)}
 
 Write a session card. Fields:
 - headline: 4-6 words. The session in a punchy phrase. Not a list of exercises.
@@ -319,14 +320,14 @@ async function generatePlan() {
     'Rings Only': 'All exercises on gymnastics rings. Push, pull, core — rings only. No KB.',
     'KB Only': 'All exercises with kettlebells only. No rings, no parallettes.',
   };
-  const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+  const system = `${GERALD_PERSONA}
 
-Rules: lead with the insight, not the preamble. Use numbers. If something looks off, say it plainly. Max 120 words per response. Dry humour is fine. Motivation-poster energy is not.
+${MODALITY_DOCTRINE}
 ${userContextBlock()}${coachMemo ? `\nCOACH'S RUNNING NOTES (your persistent memory — read this first, it supersedes generic defaults):\n${coachMemo}\n` : ''}
 ${coachBrief ? `COACH PRESCRIPTION (follow this closely — it overrides generic session type):
 ${coachBrief}
 
-` : ''}Phase: Lean bulk Q2 2026. Hypertrophy focus.
+` : ''}Phase: ${TRAINING_PHASE}
 Session type: ${sType} — ${sessionFocus[sType] || ''}
 Equipment available: ${kitStr}
 Active injuries:\n${injStr}
@@ -344,6 +345,8 @@ ${pendingProgressions.length ? `CONFIRMED PROGRESSIONS (athlete has approved the
 
 Available exercises (use ONLY these exercise_ids):\n${availEx}
 Raw set history:\n${histStr}
+
+${bodyweightContext(bodyMetrics)}
 
 PRE-SESSION SIGNALS (1=worst, 5=best):
 Sleep: ${preSleep}/5 | Energy: ${preEnergy}/5 | Soreness: ${preSoreness}/5
@@ -368,6 +371,8 @@ For each exercise, find the last logged sets in the raw history. Then:
 5. No history → start conservative (RIR 2-3) but do not default to lowest possible reps.
 
 CRITICAL: A low rep count paired with a high RIR means the session was conservative, not that the athlete can't do more. Use estimated capacity = logged reps + RIR as a floor, then prescribe at RIR 1-2.
+
+${BW_PROGRESSION_RULE}
 
 EXERCISE ORDER: sequence exercises as they should be performed. Compounds and high-skill movements first (rings, heavy KB), accessories and isolation last. If the coach brief calls out a specific exercise to open with — honour it, put it first.
 

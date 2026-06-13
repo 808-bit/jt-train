@@ -21,6 +21,23 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, X-App-Token',
 };
 
+// ── Coaching constants — keep in sync with js/doctrine.js (separate runtime) ──
+const TRAINING_PHASE = 'Lean bulk Q2 2026. Hypertrophy focus.';
+
+const GERALD_PERSONA = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+
+Rules: lead with the insight, not the preamble — never say "Great question" or "Based on your data". Use numbers, not vibes. If something looks off, say it plainly. Dry humour is fine. Motivation-poster energy is not.`;
+
+const MODALITY_DOCTRINE = `EVIDENCE-BASED MODALITY CONTEXT (reference for judgement — apply where relevant, never recite papers verbatim or lecture):
+James trains rings + kettlebells + calisthenics + parallettes. This stack is evidence-supported on its own terms — not a compromise for lacking a barbell:
+- PROXIMITY TO FAILURE IS THE STIMULUS: Low-load and bodyweight training drive hypertrophy comparable to heavy-load training when sets are taken close to failure (Sports Medicine 2022 meta-analysis; push-up vs bench-press trials show comparable chest/triceps growth at matched effort). The decisive variable is RIR, not the implement or the kg. Judge a set by how close it ran to failure, not by tonnage.
+- LONGEVITY: Large 30-year cohorts (BJSM 2026, n≈147k; BMJ Medicine 2026, n≈111k) link resistance training and calisthenics to lower all-cause mortality, with calisthenics measured comparably to weight training. Roughly 90–120 min/week of resistance work is the all-cause-mortality sweet spot; past ~120 min/week there is little added all-cause benefit, so pivot to quality and intensity rather than piling on volume. Variety across modalities is itself an independent longevity lever. (These cohorts did not all isolate calisthenics cleanly — treat the modality-specific figures as directional, not precise, and don't overstate a "ranking" between modalities.)
+- STRENGTH → LONGEVITY: Greater muscular strength is inversely associated with mortality across populations and is highly trainable at any age. Getting stronger on the rings and bells is a direct longevity investment, not just an aesthetic one.
+- KETTLEBELLS FILL THE LOWER-BODY GAP: KB training builds muscle, grip and lower-limb strength and lowers systemic inflammation markers (12-month trial in older adults). Bodyweight lower-body work drifts into cardio at high reps, so KB hinge/squat loading (swings, deadlifts, goblet/front squats) is the most evidence-critical slot in the week — it covers the lower-body hypertrophy that calisthenics leaves open.
+PRACTICAL IMPLICATION: prize proximity to failure and consistency over raw tonnage; protect recovery rather than chasing minutes past the weekly sweet spot; keep modality variety high; treat KB lower-body loading as non-negotiable.`;
+
+const BW_PROGRESSION_RULE = `BODYWEIGHT PROGRESSION: pure calisthenics has no "+weight" lever — progress it by harder leverage (e.g. ring push-up → RTO → archer → one-arm), slower tempo / longer eccentric, added pause, or unilateral variation. Add external load (vest/belt, KB) only where the movement allows it. For KB and weighted work, progress by load or reps per the RIR protocol.`;
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -106,15 +123,29 @@ async function handleGet(request, env) {
     const { results } = await env.DB.prepare(`
       SELECT s.date, st.exercise_id, e.display_name,
              CAST(e.shoulder_safe AS INTEGER) AS shoulder_safe,
-             st.set_num, st.reps, st.weight_kg,
-             ROUND(st.weight_kg * (1 + st.reps / 30.0), 2) AS estimated_1rm
+             e.bw_load_factor,
+             st.set_num, st.reps, st.weight_kg, st.rir,
+             bw.weight_kg AS bodyweight_kg,
+             ROUND(st.weight_kg + e.bw_load_factor * COALESCE(bw.weight_kg, 0), 2) AS effective_load_kg,
+             ROUND((st.weight_kg + e.bw_load_factor * COALESCE(bw.weight_kg, 0)) * (1 + st.reps / 30.0), 2) AS estimated_1rm
       FROM sets st
       JOIN sessions s ON st.session_id = s.id
       JOIN exercises e ON st.exercise_id = e.id
+      LEFT JOIN body_metrics bw ON bw.id = (
+        SELECT b.id FROM body_metrics b WHERE b.date <= s.date ORDER BY b.date DESC LIMIT 1
+      )
       WHERE s.id NOT LIKE '%-H'
       ORDER BY s.date ASC, st.exercise_id, st.set_num
       LIMIT ?
     `).bind(limit).all();
+    return json({ data: results });
+  }
+
+  if (action === 'getBodyMetrics') {
+    const limit = parseInt(searchParams.get('limit') || '180');
+    const { results } = await env.DB.prepare(
+      'SELECT date, weight_kg, bodyfat_pct, notes FROM body_metrics ORDER BY date DESC LIMIT ?'
+    ).bind(limit).all();
     return json({ data: results });
   }
 
@@ -378,6 +409,24 @@ async function handlePost(request, env) {
     if (!memo) return json({ error: 'memo required' }, 400);
     await env.DB.prepare('INSERT OR REPLACE INTO coach_memo (id, memo, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
       .bind('singleton', memo).run();
+    return json({ ok: true });
+  }
+
+  if (action === 'logBodyMetric') {
+    const r = body.data || body;
+    const date = r.date || new Date().toISOString().slice(0, 10);
+    const weight = parseFloat(r.weight_kg);
+    if (!weight || isNaN(weight)) return json({ error: 'weight_kg required' }, 400);
+    const bf = (r.bodyfat_pct === '' || r.bodyfat_pct == null) ? null : parseFloat(r.bodyfat_pct);
+    await env.DB.prepare(`
+      INSERT INTO body_metrics (date, weight_kg, bodyfat_pct, notes)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(date) DO UPDATE SET
+        weight_kg = excluded.weight_kg,
+        bodyfat_pct = COALESCE(excluded.bodyfat_pct, body_metrics.bodyfat_pct),
+        notes = COALESCE(excluded.notes, body_metrics.notes),
+        logged_at = CURRENT_TIMESTAMP
+    `).bind(date, weight, bf, r.notes || null).run();
     return json({ ok: true });
   }
 
@@ -766,20 +815,24 @@ async function runGeraldAgent(body, env) {
   const MAX_ITER = 8;
 
   const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
+  const bwRow = await env.DB.prepare('SELECT date, weight_kg, bodyfat_pct FROM body_metrics ORDER BY date DESC LIMIT 1').first();
+  const bwLine = bwRow ? `Bodyweight: ${bwRow.weight_kg} kg${bwRow.bodyfat_pct != null ? ` (${bwRow.bodyfat_pct}% bf)` : ''} as of ${bwRow.date} — use it for effective load on calisthenics.` : '';
   const readinessNote = (readiness.sleep <= 2 || readiness.energy <= 2)
     ? '⚠ LOW — reduce volume, higher RIR, quality over output'
     : (readiness.sleep >= 4 && readiness.energy >= 4)
     ? '✓ HIGH — push load and volume'
     : 'MODERATE — standard dose';
 
-  const system = `You are Gerald — a training partner who knows James's history better than he does. You've watched every session, every set, every stall and every breakthrough. You talk like someone who trains alongside him: straight, familiar, no performance. You don't motivate, you observe and advise. You know he has maybe 45 minutes before life intervenes — so you don't waste his time.
+  const system = `${GERALD_PERSONA}
 
-Rules: lead with the insight, not the preamble. Use numbers. If something looks off, say it plainly. Dry humour is fine. Motivation-poster energy is not.
+${MODALITY_DOCTRINE}
+
+${BW_PROGRESSION_RULE}
 ${userContext ? `\nATHLETE CONTEXT (always factor this in):\n${userContext}\n` : ''}${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
 TODAY:
 Location: ${location} | Kit: ${kit}
 Readiness: Sleep ${readiness.sleep}/5 · Energy ${readiness.energy}/5 · Soreness ${readiness.soreness}/5 — ${readinessNote}
-Injuries: ${injStr}
+${bwLine ? bwLine + '\n' : ''}Injuries: ${injStr}
 ${preNotes ? `Athlete note: ${preNotes}` : ''}
 ${pendingProgressions.length ? `Approved progressions: ${pendingProgressions.map(p => `${p.fromName} → ${p.toName || 'peak'}`).join(', ')}` : ''}
 

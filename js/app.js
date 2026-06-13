@@ -15,7 +15,56 @@ function adjustSignal(key, delta) {
 }
 let injuries = [], exercises = [], history = { sessions: [], sets: [] };
 let plan = [], chatLog = [], sessionId = '', loggedSets = [], preNotes = '', coachMemo = '';
+let bodyMetrics = [];
 let isTyping = false;
+
+async function loadBodyMetrics() {
+  try { const r = await api('getBodyMetrics', { limit: 180 }); bodyMetrics = r.data || []; }
+  catch (e) { console.log('bodyMetrics load failed:', e); }
+}
+
+function openWeighIn() {
+  const latest = (bodyMetrics || []).find(m => m.weight_kg != null);
+  const today = new Date().toISOString().slice(0, 10);
+  const inp = 'width:100%;margin-top:6px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font-display);font-size:20px;text-align:center;';
+  const lbl = 'flex:1;font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.14em;';
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = 'weighin-overlay';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-title">Weigh-in</div>
+      <div class="modal-sub">Saved against ${today}. Bodyfat is optional — log weight alone any day.</div>
+      <div style="display:flex;gap:12px;margin-bottom:18px;">
+        <label style="${lbl}">WEIGHT (KG)<input id="wi-weight" type="number" inputmode="decimal" step="0.1" value="${latest ? latest.weight_kg : ''}" style="${inp}"></label>
+        <label style="${lbl}">BODYFAT %<input id="wi-bf" type="number" inputmode="decimal" step="0.1" placeholder="—" style="${inp}"></label>
+      </div>
+      <button class="modal-btn modal-btn-save" onclick="saveWeighIn()">Save</button>
+      <button class="modal-btn modal-btn-cancel" onclick="document.getElementById('weighin-overlay').remove()">Cancel</button>
+    </div>`;
+  document.body.appendChild(ov);
+  setTimeout(() => document.getElementById('wi-weight')?.focus(), 50);
+}
+
+async function saveWeighIn() {
+  const w = parseFloat(document.getElementById('wi-weight').value);
+  if (!w || isNaN(w)) { showToast('Enter a weight', 'error'); return; }
+  const bfRaw = document.getElementById('wi-bf').value;
+  const bf = bfRaw === '' ? null : parseFloat(bfRaw);
+  try {
+    const r = await apiPost({ action: 'logBodyMetric', data: { weight_kg: w, bodyfat_pct: bf } });
+    if (r.error) throw new Error(typeof r.error === 'string' ? r.error : JSON.stringify(r.error));
+    await loadBodyMetrics();
+    document.getElementById('weighin-overlay')?.remove();
+    showToast('Weigh-in saved', 'success');
+    if (typeof renderBodyweightCard === 'function' && document.getElementById('s-progress')?.classList.contains('on')) {
+      renderBodyweightCard();
+    }
+  } catch (e) {
+    showToast('Save failed: ' + e.message, 'error');
+  }
+}
 
 function buildHistStr() {
   if (!history.sets || !history.sets.length) return 'No recent history for ' + sType + '.';

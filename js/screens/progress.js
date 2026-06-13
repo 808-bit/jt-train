@@ -16,6 +16,48 @@ function initProgress() {
   });
   renderExPicker();
   loadHome();
+  (bodyMetrics && bodyMetrics.length ? Promise.resolve() : loadBodyMetrics()).then(renderBodyweightCard);
+}
+
+let bwChart = null;
+function renderBodyweightCard() {
+  const el = document.getElementById('prog-bw-card');
+  if (!el) return;
+  const rows = (bodyMetrics || []).filter(m => m.weight_kg != null);
+  if (!rows.length) {
+    el.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:8px;font-family:var(--font);font-size:12px;color:var(--text2);">No weigh-ins yet — tap ⚖ on the home screen to start tracking bodyweight.</div>`;
+    return;
+  }
+  const asc = [...rows].reverse();               // rows arrive DESC; chart wants ASC
+  const latest = rows[0];
+  const cutoff = new Date(Date.now() - 42 * 86400000).toISOString().slice(0, 10);
+  const old = rows.find(m => m.date <= cutoff) || rows[rows.length - 1];
+  const days = Math.max(1, (new Date(latest.date) - new Date(old.date)) / 86400000);
+  const perWeek = ((latest.weight_kg - old.weight_kg) / days) * 7;
+  const dir = perWeek > 0.05 ? '↑' : perWeek < -0.05 ? '↓' : '→';
+  const col = (perWeek >= 0.2 && perWeek <= 0.55) ? 'var(--green)' : (perWeek > 0.55 || perWeek < -0.1) ? 'var(--amber)' : 'var(--text2)';
+  el.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;">BODYWEIGHT</div>
+        <button type="button" onclick="openWeighIn()" style="font-family:var(--font-ui);font-size:9px;color:var(--green);background:none;border:none;cursor:pointer;letter-spacing:0.06em;padding:0;">+ Log</button>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+        <span style="font-family:var(--font-display);font-size:26px;color:var(--text);line-height:1;">${latest.weight_kg}<span style="font-size:13px;color:var(--text3);"> kg</span></span>
+        ${latest.bodyfat_pct != null ? `<span style="font-family:var(--font);font-size:12px;color:var(--text2);">${latest.bodyfat_pct}% bf</span>` : ''}
+        ${days >= 7 ? `<span style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:${col};">${dir} ${perWeek >= 0 ? '+' : ''}${perWeek.toFixed(2)} kg/wk</span>` : ''}
+      </div>
+      <div style="height:90px;"><canvas id="bw-canvas"></canvas></div>
+    </div>`;
+  if (bwChart) { bwChart.destroy(); bwChart = null; }
+  const ctx = document.getElementById('bw-canvas');
+  if (ctx && window.Chart) {
+    bwChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: asc.map(m => m.date.slice(5)), datasets: [{ data: asc.map(m => m.weight_kg), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } } } }
+    });
+  }
 }
 
 function filterExCategory(cat, el) {
@@ -372,18 +414,25 @@ async function generateCoachReview() {
 
     const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('; ') : 'None';
     const kitStr = buildKitString(loc);
+    const stimulusStr = summariseStimulus(allSets, exercises, latestBodyweight(bodyMetrics));
 
     const system = `You are a sports scientist reviewing 6 weeks of training data for James. Be direct, specific, evidence-based. No filler. Reference actual numbers.
+
+${MODALITY_DOCTRINE}
 
 ATHLETE CONTEXT:
 Location: ${loc}
 Equipment: ${kitStr}
 Active injuries: ${injStr}
+${bodyweightContext(bodyMetrics)}
 
 TRAINING DATA (last 6 weeks):
 Sessions: ${sessions.length}
-Total sets: ${allSets.length}
-Total volume: ${Math.round(totalVolume)}kg (BW sets counted as 1kg for relative comparison)
+
+${stimulusStr}
+
+Secondary (kg tonnage — biased toward KB, under-counts calisthenics, use only for loaded-lift trend):
+Total loaded volume: ${Math.round(totalVolume)}kg (BW sets counted as 1kg)
 Movement pattern breakdown: ${Object.entries(byPattern).map(([p,n])=>`${p}: ${n} sets`).join(', ')}
 Weekly volume trend: ${Object.entries(weeklyVols).sort().map(([w,v])=>`${w.slice(5)}: ${Math.round(v)}kg`).join(', ')}
 

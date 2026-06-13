@@ -138,7 +138,9 @@ Full set log: ${JSON.stringify(loggedSets)}
       .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment})`)
       .join('\n');
 
-    system = `You are an elite strength coach for James Thornton mid-workout.
+    system = `${GERALD_PERSONA}
+
+You are coaching James live, mid-workout — terse directives, no chat.
 ${userContextBlock()}Session: ${sType} | Location: ${loc}
 Kit: ${kitStr}
 Active injuries: ${injStr}
@@ -161,6 +163,7 @@ PROGRESS signal → next set: increase weight (smallest kit increment) or increa
 HOLD signal → same weight and reps.
 REGRESS weight signal → drop 10-15%, state new target.
 SWAP EXERCISE signal → pick lower level (L) from library, same pattern.
+${BW_PROGRESSION_RULE}
 
 ## Band / KB loads
 RIR >= 3 on band/BW → name specific next load from kit string.
@@ -220,10 +223,20 @@ async function generateDebrief() {
   }).join('\n');
 
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
-  const system = `You are an elite strength coach debriefing James Thornton post-workout.
+  const stimulusStr = summariseStimulus(loggedSets, exercises, latestBodyweight(bodyMetrics));
+  const system = `${GERALD_PERSONA}
+
+You are debriefing James right after his session.
+
+${MODALITY_DOCTRINE}
+
+${bodyweightContext(bodyMetrics)}
+
 ${userContextBlock()}Session: ${sType} | Location: ${loc}
 Total: ${totalSets} sets across ${exCount} exercises | Loaded volume: ${Math.round(totalVol)}kg${bwSets.length ? ` + ${bwSets.length} BW sets (volume not in kg)` : ''}
 Active injuries: ${injStr}
+
+## ${stimulusStr}
 
 ## Per-exercise breakdown (prescribed vs actual + signal)
 ${sessionCtx}
@@ -235,7 +248,7 @@ ${signals}
 ${histStr}
 
 Write a debrief. Cover:
-1. Session volume and intensity verdict (was this a quality stimulus?)
+1. Stimulus verdict — judge by hard sets per pattern (proximity to failure), NOT kg volume. Was this a quality stimulus, and was modality balance right (KB covering lower-body, calisthenics taken close to failure)?
 2. Per-exercise progression calls for next session — be explicit (increase X to Y, swap A for B)
 3. Any injury flags from today's data
 4. One priority focus for next ${sType} session
@@ -363,6 +376,10 @@ async function updateCoachMemo(sso) {
 
   const system = `You are maintaining a running coach's memo for James Thornton. This memo is your persistent memory — it carries forward what you know about him as an athlete across all sessions. It is read at the start of every plan generation.
 
+${MODALITY_DOCTRINE}
+
+${bodyweightContext(bodyMetrics)}
+
 Update it now based on the session that just completed. The memo should reflect a coach who has been working with James for months and knows his patterns, tendencies, strengths, and what needs attention.
 
 Write in third-person factual style ("James has...", "Ring pull-ups are..."). No motivational language. No filler. Every sentence should contain a specific, actionable or observable fact.
@@ -371,7 +388,9 @@ Cover all of these, updating each with the latest data:
 - PROGRESSION STATUS: per-exercise trends (progressing / stalling / regressing) with specific numbers
 - PATTERNS & TENDENCIES: how James trains, what he skips, energy/readiness trends, consistency
 - INJURY STATUS: current restrictions and how they're affecting programming
-- VOLUME & FATIGUE: set volume per pattern per week, any overreaching signals
+- VOLUME & FATIGUE: hard sets per pattern per week (proximity to failure, not kg tonnage), any overreaching signals
+- MODALITY BALANCE: calisthenics vs KB split, whether KB is covering lower-body loading, variety across modalities; flag if resistance work is drifting well past the ~90–120 min/week sweet spot or if variety has narrowed
+- BODY COMPOSITION: current bodyweight and trend vs lean-bulk target (~0.25–0.5 kg/wk); whether strength is tracking with weight gain or the gain looks like fat
 - WHAT TO WATCH: early warning flags, anything that needs monitoring
 - NEXT PRIORITIES: 2-3 specific coaching actions for upcoming sessions
 
@@ -633,7 +652,7 @@ async function sendReviewMsg() {
 Operating principle: maintain the machine, respect the load, optimise for life.
 Make the requested change surgically. Don't restructure what wasn't asked about.
 
-Phase: Lean bulk Q2 2026, hypertrophy.
+Phase: ${TRAINING_PHASE}
 Active injuries: ${injStr}
 Available kit: ${kitStr2}
 ${preNotes ? 'Pre-session notes from James: ' + preNotes : ''}
