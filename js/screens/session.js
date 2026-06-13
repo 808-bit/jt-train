@@ -745,6 +745,8 @@ function selectRPE(n) {
 
 async function savePostSession() {
   const notes = document.getElementById('post-notes')?.value.trim() || '';
+  // Real session duration from the live timer (still running here — timers stop below).
+  const durationMin = sessionTimerStart ? Math.round((Date.now() - sessionTimerStart) / 60000) : null;
   try {
     await apiPost({
       action: 'appendSession',
@@ -758,6 +760,7 @@ async function savePostSession() {
         rpe_session: selectedRPE || '',
         notes: notes,
         ai_plan_used: true,
+        duration_min: durationMin,
       }
     });
     stopAllTimers();

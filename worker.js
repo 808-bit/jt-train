@@ -149,6 +149,28 @@ async function handleGet(request, env) {
     return json({ data: results });
   }
 
+  if (action === 'getWeeklyMinutes') {
+    // Resistance minutes per ISO week. Real timer duration where we have it,
+    // else the set-timestamp working span. Excludes historical imports (-H).
+    const weeks = parseInt(searchParams.get('weeks') || '12');
+    const { results } = await env.DB.prepare(`
+      SELECT week, SUM(mins) AS mins, COUNT(*) AS sessions
+      FROM (
+        SELECT strftime('%Y-%W', s.date) AS week, s.id,
+               COALESCE(s.duration_min,
+                        (julianday(MAX(st.logged_at)) - julianday(MIN(st.logged_at))) * 1440.0) AS mins
+        FROM sessions s
+        LEFT JOIN sets st ON st.session_id = s.id
+        WHERE s.id NOT LIKE '%-H'
+        GROUP BY s.id
+      )
+      GROUP BY week
+      ORDER BY week DESC
+      LIMIT ?
+    `).bind(weeks).all();
+    return json({ data: results });
+  }
+
   if (action === 'getPace') {
     // Minutes-per-set from recent sessions with real timestamps.
     // Backfilled imports have identical logged_at on every set (0-min span),
@@ -306,15 +328,17 @@ async function handlePost(request, env) {
   if (action === 'appendSession') {
     const r = body.data || {};
     await env.DB.prepare(`
-      INSERT INTO sessions (id, phase_id, date, session_type, location, rpe, notes, ai_plan_used, pre_sleep, pre_energy, pre_soreness)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET rpe = excluded.rpe, notes = excluded.notes
+      INSERT INTO sessions (id, phase_id, date, session_type, location, rpe, notes, ai_plan_used, pre_sleep, pre_energy, pre_soreness, duration_min)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET rpe = excluded.rpe, notes = excluded.notes,
+        duration_min = COALESCE(excluded.duration_min, sessions.duration_min)
     `).bind(
       r.session_id || '', r.phase_id || 'lean-bulk-q2-2026',
       r.date || new Date().toISOString().slice(0, 10),
       r.session_type || '', r.location || 'Home',
       r.rpe_session || null, r.notes || null, r.ai_plan_used ? 1 : 0,
       r.pre_sleep || null, r.pre_energy || null, r.pre_soreness || null,
+      (r.duration_min != null && !isNaN(parseFloat(r.duration_min))) ? parseFloat(r.duration_min) : null,
     ).run();
     return json({ ok: true });
   }

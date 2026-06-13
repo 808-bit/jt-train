@@ -11,12 +11,90 @@ function initProgress() {
     api('getAllProgressionData', { limit: 2000 })
   ]).then(([progRes, setsRes]) => {
     progRuleIds = new Set((progRes.data||[]).map(p => p.exercise_id));
+    progAllSets = setsRes.data || [];
     (setsRes.data||[]).forEach(s => exercisesWithData.add(s.exercise_id));
     renderExPicker();
+    renderLongevityCard();
   });
   renderExPicker();
   loadHome();
   (bodyMetrics && bodyMetrics.length ? Promise.resolve() : loadBodyMetrics()).then(renderBodyweightCard);
+}
+
+// Longevity dashboard card — operationalizes the two longevity doctrine bullets
+// as tracked proxies: weekly resistance dose (90–120 min sweet spot), modality
+// variety (independent longevity lever), and strength trend (getting stronger =
+// lower mortality risk). Dose uses real session durations via getWeeklyMinutes.
+async function renderLongevityCard() {
+  const el = document.getElementById('prog-longevity-card');
+  if (!el) return;
+
+  // ── Dose: real resistance minutes/week ──────────────────────────────────────
+  let wk = [];
+  try { const r = await api('getWeeklyMinutes', { weeks: 8 }); wk = (r.data || []).filter(w => w.mins > 0); } catch (e) { /* offline */ }
+  const recent = wk.slice(0, 4);                       // up to 4 most recent weeks
+  const avgMin = recent.length ? Math.round(recent.reduce((s, w) => s + w.mins, 0) / recent.length) : null;
+  const doseCol = avgMin == null ? 'var(--text3)' : (avgMin >= 90 && avgMin <= 120) ? 'var(--green)' : (avgMin >= 70 && avgMin < 150) ? 'var(--amber)' : 'var(--red)';
+  const doseVal = avgMin == null ? '—' : `${avgMin} min/wk`;
+  const doseSub = avgMin == null ? 'log a session to start tracking'
+    : avgMin < 90 ? `${90 - avgMin} min below the sweet spot`
+    : avgMin <= 120 ? 'in the 90–120 min sweet spot'
+    : 'past 120 — little added benefit, favour quality';
+
+  // ── Variety + Strength from the 6-week set history ──────────────────────────
+  const cutoff = new Date(Date.now() - 42 * 86400000).toISOString().slice(0, 10);
+  const sets = (progAllSets || []).filter(s => s.date >= cutoff);
+  const exById = {}; (exercises || []).forEach(e => { exById[e.id] = e; });
+  const pats = new Set(), mods = new Set();
+  sets.forEach(s => { const ex = exById[s.exercise_id]; if (!ex) return; if (ex.movement_pattern && ex.movement_pattern !== 'rehab') pats.add(ex.movement_pattern); mods.add(trainingModality(ex.equipment)); });
+  const PATTERN_TOTAL = 7;                              // push pull hinge squat lunge carry core
+  const nPat = pats.size;
+  const varietyCol = (nPat >= 5 && mods.size >= 2) ? 'var(--green)' : nPat >= 3 ? 'var(--amber)' : 'var(--red)';
+  const varietyVal = `${nPat}/${PATTERN_TOTAL} patterns`;
+  const varietySub = `${mods.size} modalit${mods.size === 1 ? 'y' : 'ies'} (rings/KB/calisthenics)`;
+
+  const byEx = {};
+  sets.forEach(s => { const e1 = parseFloat(s.estimated_1rm) || 0; if (!e1) return; (byEx[s.exercise_id] = byEx[s.exercise_id] || []).push({ d: s.date, e1 }); });
+  let pctSum = 0, pctN = 0, ups = 0, downs = 0;
+  Object.values(byEx).forEach(arr => {
+    if (arr.length < 3) return;
+    arr.sort((a, b) => a.d.localeCompare(b.d));
+    const mid = Math.floor(arr.length / 2);
+    const av = a => a.reduce((s, x) => s + x.e1, 0) / a.length;
+    const f = av(arr.slice(0, mid)), g = av(arr.slice(mid));
+    if (!f) return;
+    const pct = (g - f) / f * 100;
+    pctSum += pct; pctN++;
+    if (pct > 2) ups++; else if (pct < -2) downs++;
+  });
+  const avgPct = pctN ? pctSum / pctN : null;
+  const strCol = avgPct == null ? 'var(--text3)' : avgPct > 2 ? 'var(--green)' : avgPct < -2 ? 'var(--amber)' : 'var(--text2)';
+  const strDir = avgPct == null ? '' : avgPct > 2 ? '↑' : avgPct < -2 ? '↓' : '→';
+  const strVal = avgPct == null ? '—' : `${strDir} ${avgPct >= 0 ? '+' : ''}${avgPct.toFixed(1)}%`;
+  const strSub = avgPct == null ? 'not enough data yet' : `${ups} lifts up / ${downs} down`;
+
+  const row = (label, caption, val, sub, col) => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:9px 0;border-top:1px solid var(--border);">
+      <div style="min-width:0;">
+        <div style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--text);">${label}</div>
+        <div style="font-family:var(--font);font-size:9px;color:var(--text3);margin-top:2px;line-height:1.3;">${caption}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="font-family:var(--font-ui);font-size:12px;font-weight:700;color:${col};white-space:nowrap;">${val}</div>
+        <div style="font-family:var(--font);font-size:9px;color:var(--text3);margin-top:2px;white-space:nowrap;">${sub}</div>
+      </div>
+    </div>`;
+
+  el.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;">LONGEVITY</div>
+        <div style="font-family:var(--font);font-size:9px;color:var(--text3);">evidence-tracked</div>
+      </div>
+      ${row('Resistance dose', '90–120 min/wk all-cause mortality sweet spot', doseVal, doseSub, doseCol)}
+      ${row('Modality variety', 'breadth is an independent longevity lever', varietyVal, varietySub, varietyCol)}
+      ${row('Strength trend', 'getting stronger lowers mortality risk', strVal, strSub, strCol)}
+    </div>`;
 }
 
 let bwChart = null;
