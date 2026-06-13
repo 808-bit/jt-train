@@ -83,7 +83,23 @@ function stopAllTimers() {
 
 function isTrue(v) { return v === true || v === 1 || v === '1' || v === 'TRUE' || v === 'true'; }
 
-function getUserContext() { return localStorage.getItem('user_context') || ''; }
+const DEFAULT_USER_CONTEXT = `### Human Context & Identity
+- Life State: Father of twin daughters. Sleep, recovery time, and schedule flexibility are highly volatile and unpredictable.
+- Profession: Tech sales professional (Salesforce). High-stress, desk-bound individual contributor/leadership role. Days are dominated by screen time, deep focus, and strategic client management.
+- Mindset: Training is a non-negotiable anchor for mental clarity and physical capability, not a chore. Pragmatic, data-literate, and values high-leverage efficiency.
+
+### Environmental & Behavioral Realities
+- The "Balcony Escape": Training happens at home on a balcony ring rack/kettlebell setup. It is often squeezed into tight windows between work blocks or family duties. It needs to be low-friction to start.
+- Physical Stress Profile: Prolonged sitting from the desk job impacts hip and thoracic mobility. Mental fatigue from high-stakes sales cycles can heavily drain CNS energy, even if physical muscles are rested.
+
+### Coaching Directive (Contextual Application)
+- Life-Adaptive Programming: Do not treat missed sessions or low-energy days as a lack of discipline. Contextualize performance against family and work stress.
+- The "Desk Worker" Tax: Open intense ring work with short, effective mobility prep for hips, shoulders, and wrists to counteract desk-bound posture.`;
+
+function getUserContext() {
+  const stored = localStorage.getItem('user_context');
+  return stored !== null ? stored : DEFAULT_USER_CONTEXT;
+}
 function userContextBlock() {
   const ctx = getUserContext();
   return ctx ? `\nATHLETE CONTEXT (always factor this in):\n${ctx}\n` : '';
