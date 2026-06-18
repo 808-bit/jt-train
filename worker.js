@@ -674,6 +674,33 @@ const GERALD_TOOLS = [
     name: 'check_progressions',
     description: 'Check which exercises are approaching or ready to advance to the next tier based on recent performance vs targets.',
     input_schema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'get_weekly_load',
+    description: 'Get hard sets logged per movement pattern this ISO week and last week, plus total sessions this week. Call this after assess_training_state to understand accumulated fatigue before sizing today\'s volume.',
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'get_multi_exercise_history',
+    description: 'Get recent sets for multiple exercises in one call. Use instead of calling get_exercise_history repeatedly — pass all the exercise_ids you need load data for at once.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        exercise_ids: { type: 'array', items: { type: 'string' }, description: 'Array of exercise IDs to fetch history for, e.g. ["ring_rows", "kb_deadlift"]' },
+        limit_per_exercise: { type: 'number', description: 'Sets to return per exercise. Default 6.' }
+      },
+      required: ['exercise_ids']
+    }
+  },
+  {
+    name: 'get_body_metrics',
+    description: 'Get recent bodyweight and body composition trend. Use when you need to calculate effective load for calisthenics or assess whether lean bulk is tracking.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Number of recent entries to return. Default 8.' }
+      }
+    }
   }
 ];
 
@@ -795,6 +822,93 @@ async function executeTool(toolName, toolInput, context, env) {
     return { progressions: status };
   }
 
+  if (toolName === 'get_weekly_load') {
+    const today = sydneyToday();
+    const todayDate = new Date(today);
+    const dayOfWeek = (todayDate.getDay() + 6) % 7;
+    const thisWeekStart = new Date(todayDate);
+    thisWeekStart.setDate(todayDate.getDate() - dayOfWeek);
+    const lastWeekStart = new Date(thisWeekStart);
+    lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+    const thisWeekStr = thisWeekStart.toISOString().slice(0, 10);
+    const lastWeekStr = lastWeekStart.toISOString().slice(0, 10);
+
+    const { results } = await env.DB.prepare(`
+      SELECT s.date, st.exercise_id, e.movement_pattern, st.rir
+      FROM sets st
+      JOIN sessions s ON st.session_id = s.id
+      JOIN exercises e ON st.exercise_id = e.id
+      WHERE s.date >= ? AND s.id NOT LIKE '%-H'
+      ORDER BY s.date
+    `).bind(lastWeekStr).all();
+
+    const thisWeek = { sessions: new Set(), patterns: {} };
+    const lastWeek = { sessions: new Set(), patterns: {} };
+
+    results.forEach(r => {
+      const isHard = r.rir != null && r.rir <= 2;
+      const p = r.movement_pattern || 'other';
+      if (r.date >= thisWeekStr) {
+        thisWeek.sessions.add(r.date);
+        if (isHard) thisWeek.patterns[p] = (thisWeek.patterns[p] || 0) + 1;
+      } else {
+        lastWeek.sessions.add(r.date);
+        if (isHard) lastWeek.patterns[p] = (lastWeek.patterns[p] || 0) + 1;
+      }
+    });
+
+    return {
+      week_start: thisWeekStr,
+      sessions_this_week: thisWeek.sessions.size,
+      hard_sets_this_week: thisWeek.patterns,
+      hard_sets_last_week: lastWeek.patterns,
+      note: 'Hard sets = RIR <= 2. Use this to avoid stacking patterns already well-dosed this week.'
+    };
+  }
+
+  if (toolName === 'get_multi_exercise_history') {
+    const { exercise_ids = [], limit_per_exercise = 6 } = toolInput;
+    if (!exercise_ids.length) return { history: {} };
+    const placeholders = exercise_ids.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(`
+      SELECT * FROM (
+        SELECT st.exercise_id, e.display_name, s.date, st.set_num, st.reps, st.weight_kg, st.rir, st.tempo, st.notes,
+               ROW_NUMBER() OVER (PARTITION BY st.exercise_id ORDER BY s.date DESC, st.set_num DESC) AS rn
+        FROM sets st
+        JOIN sessions s ON st.session_id = s.id
+        JOIN exercises e ON st.exercise_id = e.id
+        WHERE st.exercise_id IN (${placeholders}) AND s.id NOT LIKE '%-H'
+      ) WHERE rn <= ?
+    `).bind(...exercise_ids, limit_per_exercise).all();
+
+    const history = {};
+    results.forEach(r => {
+      if (!history[r.exercise_id]) history[r.exercise_id] = { name: r.display_name, sets: [] };
+      history[r.exercise_id].sets.push({
+        date: fmtD(r.date), set: r.set_num, reps: r.reps,
+        kg: r.weight_kg, rir: r.rir, tempo: r.tempo, notes: r.notes
+      });
+    });
+    return { history };
+  }
+
+  if (toolName === 'get_body_metrics') {
+    const { limit = 8 } = toolInput;
+    const { results } = await env.DB.prepare(
+      'SELECT date, weight_kg, bodyfat_pct, notes FROM body_metrics ORDER BY date DESC LIMIT ?'
+    ).bind(limit).all();
+    if (!results.length) return { metrics: [], note: 'No body metrics logged yet.' };
+    const weights = results.map(r => r.weight_kg).filter(Boolean);
+    const trend = weights.length >= 2
+      ? +(weights[0] - weights[weights.length - 1]).toFixed(1)
+      : null;
+    return {
+      metrics: results.map(r => ({ date: fmtD(r.date), kg: r.weight_kg, bf_pct: r.bodyfat_pct, notes: r.notes })),
+      trend_kg: trend,
+      trend_note: trend != null ? (trend > 0 ? `+${trend}kg over ${results.length} entries` : `${trend}kg over ${results.length} entries`) : null
+    };
+  }
+
   return { error: `Unknown tool: ${toolName}` };
 }
 
@@ -880,7 +994,10 @@ HARD CONSTRAINTS:
 - 4-6 exercises, ordered as executed (compounds and high-skill first)
 - Respect all injury restrictions
 - RIR protocol: 0=hold | 1=small step | 2=push | 3+=undertested so push significantly
-- Apply any approved progressions (use new exercise, not old)`;
+- Apply any approved progressions (use new exercise, not old)
+- SESSION LENGTH: 45 min hard cap (~3 min/set including rest = 15 sets max).
+  Scale sets to exercise count: 4 exercises → 3–4 sets each, 5–6 exercises → 2–3 sets each.
+  Never prescribe 4 sets across 5+ exercises.`;
 
   const messages = [{
     role: 'user',
