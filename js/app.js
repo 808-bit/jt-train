@@ -141,6 +141,9 @@ const DEFAULT_USER_CONTEXT = `### Human Context & Identity
 - The "Balcony Escape": Primary setup is a home balcony ring rack + kettlebells, though sessions also happen while travelling or at a gym — always defer to the session's stated Location and Kit over this default. Training is often squeezed into tight windows between work blocks or family duties, so it needs to be low-friction to start.
 - Physical Stress Profile: Prolonged sitting from the desk job impacts hip and thoracic mobility. Mental fatigue from high-stakes sales cycles can heavily drain CNS energy, even if physical muscles are rested.
 
+### Session Duration
+- Hard cap: 45 minutes. This is a structural constraint, not a preference. At ~3 min/set including rest, that means 15 sets maximum per session. Plan density over volume.
+
 ### Coaching Directive (Contextual Application)
 - Life-Adaptive Programming: Do not treat missed sessions or low-energy days as a lack of discipline. Contextualize performance against family and work stress.
 - The "Desk Worker" Tax: Counteract desk-bound posture with hip, shoulder, and wrist prep — express this as an opening cue in the first exercise's notes, never as a separate plan exercise.`;
