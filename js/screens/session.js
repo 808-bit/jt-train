@@ -84,9 +84,24 @@ async function sendMsg() {
   await getCoachReply(msg);
 }
 
+// Deterministic per-exercise progress. The completion status (sets done vs
+// target) is computed in code, NOT inferred by the model — the coach previously
+// advanced exercises after only 2 of 3 sets because it counted from prose.
+function exerciseProgress(ex) {
+  // Normalise both sides: the set logger stores ids underscored
+  // (set_logger.js logSet), so compare normalised to avoid a silent 0 count.
+  const norm = id => (id || '').replace(/-/g, '_');
+  const exId = norm(ex.exercise_id || ex.id);
+  const sets = loggedSets.filter(s => norm(s.exercise_id) === exId);
+  const target = parseInt(ex.sets) || 0;
+  const done = sets.length;
+  const remaining = Math.max(0, target - done);
+  return { sets, target, done, remaining, complete: target > 0 && remaining === 0 };
+}
+
 function buildSessionContext() {
   return plan.map(ex => {
-    const sets = loggedSets.filter(s => s.exercise_id === ex.exercise_id);
+    const { sets, target, done, remaining, complete } = exerciseProgress(ex);
     const isBW = !sets.length
       ? (parseFloat(ex.weight) === 0 || String(ex.weight).toUpperCase() === 'BW')
       : sets.every(s => !s.weight_kg || parseFloat(s.weight_kg) === 0);
@@ -105,8 +120,14 @@ function buildSessionContext() {
       else if (actualReps < prescReps * 0.5) signal = '→ SWAP EXERCISE (far below target)';
       else signal = '→ HOLD';
     }
+    // Authoritative completion status — the coach must use THIS, not the prose.
+    const status = done === 0
+      ? `[${done}/${target} sets — NOT STARTED]`
+      : complete
+        ? `[${done}/${target} sets — ✅ COMPLETE, ok to advance]`
+        : `[${done}/${target} sets — ⏳ ${remaining} SET${remaining === 1 ? '' : 'S'} REMAINING, do NOT advance]`;
     const weightLabel = isBW ? 'BW' : ex.weight;
-    return `${ex.display_name}${isBW ? ' [BW]' : ''} | prescribed: ${ex.sets}×${ex.reps} @ ${weightLabel} RIR${ex.rir} | logged: ${logged || 'none yet'} ${signal}`;
+    return `${ex.display_name}${isBW ? ' [BW]' : ''} | prescribed: ${ex.sets}×${ex.reps} @ ${weightLabel} RIR${ex.rir} | logged: ${logged || 'none yet'} ${status} ${signal}`;
   }).join('\n');
 }
 
@@ -138,6 +159,20 @@ Full set log: ${JSON.stringify(loggedSets)}
       .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment})`)
       .join('\n');
 
+    // Deterministic anchor: the current exercise is the first one in plan order
+    // that is not yet complete. Computed in code so the coach never has to decide
+    // "are we done with this exercise?" from the conversation.
+    const active = plan.find(ex => !exerciseProgress(ex).complete);
+    let focusLine;
+    if (!active) {
+      focusLine = 'All exercises COMPLETE — tell the athlete to type \'done\'. Do not prescribe more work.';
+    } else {
+      const p = exerciseProgress(active);
+      focusLine = p.done === 0
+        ? `${active.display_name} — 0/${p.target} sets done. Athlete is starting this exercise.`
+        : `${active.display_name} — ${p.done}/${p.target} sets done, ${p.remaining} remaining. STAY on this exercise: prescribe the next set here. Do NOT name a different exercise until it reads ${p.target}/${p.target}.`;
+    }
+
     system = `${GERALD_PERSONA}
 
 You are coaching James live, mid-workout — terse directives, no chat.
@@ -146,7 +181,11 @@ Kit: ${kitStr}
 Active injuries: ${injStr}
 
 ## Session state (prescribed vs actual with progression signal)
+Each line shows an authoritative [done/target sets] status, computed from logged data — TRUST IT.
 ${sessionCtx}
+
+## CURRENT FOCUS (computed — this is the only exercise in play right now)
+${focusLine}
 
 ## Full exercise library (equipment-matched, use for substitutions)
 ${availEx}
@@ -154,7 +193,9 @@ ${availEx}
 ## Response rules
 - 1-3 sentences. Directives only — never echo set data back.
 - Act on the progression signal above — do not default to prescribed targets when signal says PROGRESS.
-- When exercise complete, name next exercise and opening prescription.
+- Completion is decided ONLY by the [done/target sets] count, never by the conversation. A set being logged this turn does NOT mean the exercise is finished.
+- Do NOT name the next exercise while CURRENT FOCUS shows sets remaining — prescribe the next set of the SAME exercise instead.
+- Only when CURRENT FOCUS reads COMPLETE (target/target) may you name the next exercise and its opening prescription.
 - When all exercises complete, tell athlete to type 'done'.
 - Pain reported: swap immediately using library above, same movement pattern, shoulder-safe.
 
