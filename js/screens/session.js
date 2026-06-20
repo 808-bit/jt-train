@@ -199,6 +199,14 @@ ${availEx}
 - When all exercises complete, tell athlete to type 'done'.
 - Pain reported: swap immediately using library above, same movement pattern, shoulder-safe.
 
+## Changing the plan / logger (structured)
+When you change the current exercise's prescription — because James asks (e.g. "make it single arm", "drop to 20kg", "do 4 sets") OR your progression call changes load/reps — append EXACTLY ONE line at the very end of your reply:
+[[ADJUST]]{"exercise_id":"<id>","weight":"24kg","reps":"6-8","sets":3,"rir":1,"logging_mode":"unilateral"}
+- Include ONLY the fields that change. exercise_id is required (use an id from the library; for the current lift use its id).
+- logging_mode (only when how it's logged changes): "standard" = one weight field · "unilateral" = one weight + L/R side toggle, logged one arm/leg at a time · "dual_kb" = two bells held at once, load summed.
+- A single-arm KB press/row/carry is "unilateral", NOT "dual_kb".
+- Do NOT mention the block or restate its values in your prose — the app applies it to the logger silently. Keep your spoken reply to the normal 1-3 directive sentences.
+
 ## Progression
 PROGRESS signal → next set: increase weight (smallest kit increment) or increase reps 1-2 above target.
 HOLD signal → same weight and reps.
@@ -218,7 +226,18 @@ All sets at top of rep range, RIR >= 2 → name next-level exercise from library
   try {
     const reply = await claude(system, messages, SONNET);
     hideTyping();
-    addMsg('coach', reply);
+    // The coach may append a structured [[ADJUST]]{...} block to change the live
+    // plan/logger. Apply it, then strip it from the visible message.
+    let visible = reply, applied = null;
+    if (!isDebriefMode) {
+      const m = reply.match(/\[\[ADJUST\]\]\s*(\{[\s\S]*?\})/);
+      if (m) {
+        try { applied = applyCoachAdjustment(JSON.parse(m[1])); } catch (e) { /* ignore malformed block */ }
+        visible = reply.replace(m[0], '').trim();
+      }
+    }
+    addMsg('coach', visible || 'Done.');
+    if (applied) showToast('Logger updated — ' + applied, 'success');
   } catch (e) {
     hideTyping();
     addMsg('coach', 'Error: ' + e.message);

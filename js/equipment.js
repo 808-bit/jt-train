@@ -5,8 +5,9 @@ const DEFAULT_CONFIG = {
   Travel: { rings:false, pull_up_bar:false, parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[],            kb_pairs:false, barbell:false, dumbbells:false, cable_machine:false },
   Gym:    { rings:false, pull_up_bar:true,  parallettes_high:false, parallettes_low:false, bands:true,  kb_weights:[8,12,16,20,24,28,32,36,40,44,48], kb_pairs:true, barbell:true, dumbbells:true, cable_machine:true }
 };
-const DOUBLE_KB_IDS = ['double_kb_front_squat','double_kb_deadlift','double_kb_swing','double_kb_clean','racked_squat','kb_renegade_row','kb_farmers_carry'];
-const PER_ARM_IDS   = ['kb_floor_press'];
+// Set-logger UI mode now comes from exercises.logging_mode (DB) with an optional
+// per-plan override — see set_logger.js renderSetLogger() and applyCoachAdjustment().
+// The former DOUBLE_KB_IDS / PER_ARM_IDS hardcoded arrays were removed.
 
 let equipLoc = 'Home';
 

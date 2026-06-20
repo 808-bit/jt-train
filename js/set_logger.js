@@ -1,4 +1,4 @@
-let slExIdx = 0, slDualMode = false, slKB1Idx = 0, slKB2Idx = 1, slSide = null, slIsPerArm = false;
+let slExIdx = 0, slDualMode = false, slKB1Idx = 0, slKB2Idx = 1, slSide = null;
 let slVals = { weight: 0, reps: 10, rir: 2 };
 let setsPerEx = {};
 
@@ -61,10 +61,12 @@ function renderSetLogger() {
   const sel = document.getElementById('sl-ex-select');
   if (sel) sel.innerHTML = plan.map((e,i) => `<option value="${i}" ${i===slExIdx?'selected':''}>${i+1}. ${e.display_name}</option>`).join('');
   const exId = (ex.exercise_id || ex.id || '').replace(/-/g, '_');
-  slDualMode = DOUBLE_KB_IDS.includes(exId) || PER_ARM_IDS.includes(exId);
-  slIsPerArm = PER_ARM_IDS.includes(exId);
   const exFull = exercises.find(e => e.id === exId || e.id === (ex.exercise_id || ex.id || '')) || {};
-  slSide = (!slDualMode && exFull.bilateral === 0) ? 'L' : null;
+  // Mode comes from the DB (logging_mode), but a plan entry can override it so the
+  // coach can change how a lift is logged mid-session (see applyCoachAdjustment).
+  const mode = ex.logging_mode || exFull.logging_mode || (exFull.bilateral === 0 ? 'unilateral' : 'standard');
+  slDualMode = (mode === 'dual_kb');
+  slSide = (mode === 'unilateral') ? 'L' : null;
   if (slDualMode) {
     const w = getKBWeights();
     const wStr = String(ex.weight || '');
@@ -91,8 +93,8 @@ function renderFieldsUI() {
   if (slDualMode) {
     const w = getKBWeights();
     const kb1 = w[slKB1Idx] ?? w[0]; const kb2 = w[slKB2Idx] ?? w[1];
-    const lbl1 = slIsPerArm ? 'LEFT' : 'KB 1';
-    const lbl2 = slIsPerArm ? 'RIGHT' : 'KB 2';
+    const lbl1 = 'KB 1';
+    const lbl2 = 'KB 2';
     fieldsEl.innerHTML = `
       <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl1}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(1,-1)">−</button><span class="sl-val" id="val-kb1">${kb1}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(1,1)">+</button></div></div>
       <div class="sl-field" style="flex:1"><div class="sl-field-lbl">${lbl2}</div><div class="sl-stepper"><button class="sl-btn" onclick="adjustKB(2,-1)">−</button><span class="sl-val" id="val-kb2">${kb2}</span><span class="sl-unit">kg</span><button class="sl-btn" onclick="adjustKB(2,1)">+</button></div></div>
@@ -165,6 +167,33 @@ function adjustKB(which, delta) {
   else { slKB2Idx=Math.max(0,Math.min(w.length-1,slKB2Idx+delta)); const el=document.getElementById('val-kb2'); if(el)el.textContent=w[slKB2Idx]; }
   const totalEl=document.getElementById('sl-total');
   if(totalEl){ const kb1=w[slKB1Idx],kb2=w[slKB2Idx]; totalEl.textContent=`Total: ${kb1+kb2}kg (${kb1}+${kb2})`; }
+}
+
+// Apply a structured mid-session adjustment from the coach to the live plan, so
+// the set logger reflects changes the coach makes (load, reps, sets, logging mode)
+// either on its own progression call or because James asked for a change.
+// Returns a short description of what changed, or null if nothing applied.
+function applyCoachAdjustment(adj) {
+  if (!adj || typeof adj !== 'object') return null;
+  const norm = id => (id || '').replace(/-/g, '_');
+  const targetId = norm(adj.exercise_id);
+  const idx = targetId
+    ? plan.findIndex(p => norm(p.exercise_id || p.id) === targetId)
+    : slExIdx;
+  if (idx < 0) return null;
+  const p = plan[idx];
+  const labels = { weight: 'weight', reps: 'reps', sets: 'sets', rir: 'RIR', tempo: 'tempo', notes: 'note', logging_mode: 'mode' };
+  const changes = [];
+  for (const key in labels) {
+    if (adj[key] !== undefined && adj[key] !== null && String(adj[key]) !== String(p[key] ?? '')) {
+      p[key] = adj[key];
+      changes.push(`${labels[key]} ${adj[key]}`);
+    }
+  }
+  if (!changes.length) return null;
+  if (idx === slExIdx) renderSetLogger();   // live-update the logger UI
+  updateProgress();
+  return `${p.display_name}: ${changes.join(', ')}`;
 }
 
 async function logSet() {
