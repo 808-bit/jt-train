@@ -7,6 +7,7 @@
  * GET  ?action=getProgressionData&exercise_id=X&limit=20
  * GET  ?action=getEquipmentConfig
  * GET  ?action=getAllProgressionData&limit=2000
+ * GET  ?action=companionDigest   (read-only Companion bridge; X-Companion-Token)
  * POST { action: 'appendSession', data: {...} }
  * POST { action: 'appendSet', data: {...} }
  * POST { action: 'appendPlan', data: { session_id, exercises: [...] } }
@@ -288,7 +289,135 @@ async function handleGet(request, env) {
     const { results } = await env.DB.prepare(query).bind(...binds).all();
     return json({ data: results });
   }
+
+  // ── Companion bridge ───────────────────────────────────────────────────────
+  // One consolidated read for the Companion app's "ask anything" brain. Companion
+  // never touches jt-train-db directly — it fetches this JSON over HTTP and treats
+  // it as one tool result. Gated behind COMPANION_TOKEN (a shared secret set on
+  // both workers) via the X-Companion-Token header. If the secret is unset the
+  // bridge stays closed. Everything here is read-only.
+  if (action === 'companionDigest') {
+    if (!env.COMPANION_TOKEN) return json({ error: 'Companion bridge not configured' }, 503);
+    if (request.headers.get('X-Companion-Token') !== env.COMPANION_TOKEN) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+    return await companionDigest(env);
+  }
+
   return json({ error: 'Unknown action: ' + action }, 400);
+}
+
+// Assembles the Companion digest: bodyweight trend, last session + recency,
+// this-week volume, training cadence, progression readiness, active injuries.
+// Reuses the same queries as getBodyMetrics / getWeeklyMinutes / check_progressions
+// so the numbers match the JT.TRAIN app exactly. Excludes historical imports (-H).
+async function companionDigest(env) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // ── Bodyweight trend ──
+  const bw = (await env.DB.prepare(
+    'SELECT date, weight_kg, bodyfat_pct FROM body_metrics ORDER BY date DESC LIMIT 30'
+  ).all()).results;
+  const latest = bw[0] || null;
+  // Closest weigh-in ≥28 days before the latest, for a monthly delta.
+  let delta30 = null, ref30 = null;
+  if (latest) {
+    const cutoff = new Date(new Date(latest.date).getTime() - 28 * 864e5).toISOString().slice(0, 10);
+    ref30 = bw.find((r) => r.date <= cutoff) || bw[bw.length - 1];
+    if (ref30 && ref30.date !== latest.date) delta30 = +(latest.weight_kg - ref30.weight_kg).toFixed(1);
+  }
+  const bwTrend = delta30 == null ? 'flat' : delta30 > 0.3 ? 'up' : delta30 < -0.3 ? 'down' : 'flat';
+
+  // ── Sessions (recent, non-historical) ──
+  const sessions = (await env.DB.prepare(
+    `SELECT id, date, session_type, location, rpe FROM sessions WHERE id NOT LIKE '%-H' ORDER BY date DESC LIMIT 60`
+  ).all()).results;
+  const last = sessions[0] || null;
+  const daysSince = last ? Math.floor((new Date(today) - new Date(last.date)) / 864e5) : null;
+  const since7  = new Date(new Date(today).getTime() - 7  * 864e5).toISOString().slice(0, 10);
+  const since28 = new Date(new Date(today).getTime() - 28 * 864e5).toISOString().slice(0, 10);
+  const last7  = sessions.filter((s) => s.date >= since7);
+  const last28 = sessions.filter((s) => s.date >= since28);
+  // Average gap over the last ~28 days of sessions.
+  let avgGap = null;
+  if (last28.length >= 2) {
+    const span = (new Date(last28[0].date) - new Date(last28[last28.length - 1].date)) / 864e5;
+    avgGap = +(span / (last28.length - 1)).toFixed(1);
+  }
+
+  // ── This-week volume (ISO week of the latest session's calendar) ──
+  const weekRow = (await env.DB.prepare(`
+    SELECT COUNT(DISTINCT s.id) AS sessions,
+           ROUND(SUM(mins)) AS minutes
+    FROM (
+      SELECT s.id, s.date,
+             COALESCE(s.duration_min,
+                      (julianday(MAX(st.logged_at)) - julianday(MIN(st.logged_at))) * 1440.0) AS mins
+      FROM sessions s
+      LEFT JOIN sets st ON st.session_id = s.id
+      WHERE s.id NOT LIKE '%-H' AND strftime('%Y-%W', s.date) = strftime('%Y-%W', 'now')
+      GROUP BY s.id
+    ) s
+  `).first().catch(() => null));
+
+  // ── Progression readiness (same logic as the check_progressions tool) ──
+  const progRows = (await env.DB.prepare(`
+    SELECT * FROM (
+      SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
+             pr.next_exercise_id, e.display_name,
+             s.date, st.reps, st.weight_kg, st.rir,
+             ROW_NUMBER() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC, st.set_num DESC) AS rn
+      FROM progression_rules pr
+      JOIN exercises e ON pr.exercise_id = e.id
+      JOIN sets st ON st.exercise_id = pr.exercise_id
+      JOIN sessions s ON st.session_id = s.id
+      WHERE s.id NOT LIKE '%-H'
+    ) WHERE rn <= 5
+    ORDER BY exercise_id, rn
+  `).all()).results;
+  const byExercise = new Map();
+  for (const r of progRows) {
+    if (!byExercise.has(r.exercise_id)) byExercise.set(r.exercise_id, []);
+    byExercise.get(r.exercise_id).push(r);
+  }
+  const progression = [];
+  for (const recent of byExercise.values()) {
+    const rule = recent[0];
+    // rep_target is 'SETSxREPS' ('3x10') or 'SETSxHOLDs' ('3x20s') — the per-set
+    // target reps/seconds is the part after the 'x'. (The check_progressions tool
+    // compares against the raw string, which coerces to NaN and never qualifies —
+    // parse it properly here so readiness is real.)
+    const targetReps = parseInt(String(rule.rep_target).split("x").pop());
+    const qualifying = recent.filter((s) => s.reps >= targetReps && (s.rir ?? 99) <= rule.rir_target).length;
+    progression.push({
+      exercise: rule.display_name,
+      target: `${rule.rep_target} @ RIR ≤${rule.rir_target} × ${rule.sessions_to_confirm}`,
+      qualifying_sessions: qualifying,
+      sessions_to_confirm: rule.sessions_to_confirm,
+      ready: qualifying >= rule.sessions_to_confirm,
+      next: rule.next_exercise_id || 'peak',
+    });
+  }
+  // Ready first, then closest to ready.
+  progression.sort((a, b) => (b.ready - a.ready) || (b.qualifying_sessions - a.qualifying_sessions));
+
+  const injuries = (await env.DB.prepare(
+    'SELECT body_part, restrictions FROM injuries WHERE active = 1 ORDER BY date_start DESC'
+  ).all()).results;
+
+  return json({
+    generated_at: new Date().toISOString(),
+    bodyweight: latest
+      ? { latest_kg: latest.weight_kg, latest_date: latest.date, bodyfat_pct: latest.bodyfat_pct,
+          delta_28d_kg: delta30, trend: bwTrend,
+          points: bw.slice(0, 8).map((r) => ({ date: r.date, weight_kg: r.weight_kg })) }
+      : null,
+    last_session: last ? { ...last, days_ago: daysSince } : null,
+    cadence: { days_since_last: daysSince, sessions_last_7d: last7.length, sessions_last_28d: last28.length, avg_gap_days: avgGap },
+    this_week: { sessions: weekRow?.sessions ?? 0, minutes: weekRow?.minutes ?? 0 },
+    progression_ready: progression,
+    active_injuries: injuries,
+  });
 }
 
 async function handlePost(request, env) {
@@ -808,7 +937,11 @@ async function executeTool(toolName, toolInput, context, env) {
     const status = [];
     for (const recent of byExercise.values()) {
       const rule = recent[0];
-      const qualifying = recent.filter(s => s.reps >= rule.rep_target && (s.rir ?? 99) <= rule.rir_target).length;
+      // rep_target is 'SETSxREPS' ('3x10') / 'SETSxHOLDs' ('3x20s') — the per-set
+      // target is the part after the 'x'. Comparing s.reps against the raw string
+      // coerces to NaN and never qualifies, so parse it first.
+      const targetReps = parseInt(String(rule.rep_target).split('x').pop());
+      const qualifying = recent.filter(s => s.reps >= targetReps && (s.rir ?? 99) <= rule.rir_target).length;
       status.push({
         exercise: rule.display_name,
         id: rule.exercise_id,

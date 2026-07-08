@@ -9,3 +9,7 @@ database_id  = "bc3254ce-c147-4bbd-a452-acecb770e9f0"  # output from: wrangler d
 
 # Secrets (set via: wrangler secret put ANTHROPIC_API_KEY)
 # ANTHROPIC_API_KEY — do NOT put real keys in this file
+# COMPANION_TOKEN   — shared secret gating the read-only ?action=companionDigest
+#                     bridge (X-Companion-Token header). Must equal
+#                     COMPANION_TRAIN_TOKEN on the Companion worker. Unset = bridge
+#                     returns 503 and stays closed.
