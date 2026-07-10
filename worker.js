@@ -413,6 +413,9 @@ async function companionDigest(env) {
           points: bw.slice(0, 8).map((r) => ({ date: r.date, weight_kg: r.weight_kg })) }
       : null,
     last_session: last ? { ...last, days_ago: daysSince } : null,
+    // Recent sessions (id/date/type/location/rpe) so the Companion can sync them into
+    // its own life_log for briefings/chat. id is the stable dedup key on that side.
+    recent_sessions: sessions.slice(0, 14),
     cadence: { days_since_last: daysSince, sessions_last_7d: last7.length, sessions_last_28d: last28.length, avg_gap_days: avgGap },
     this_week: { sessions: weekRow?.sessions ?? 0, minutes: weekRow?.minutes ?? 0 },
     progression_ready: progression,
