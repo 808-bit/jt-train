@@ -8,7 +8,6 @@
  * GET  ?action=getEquipmentConfig
  * GET  ?action=getAllProgressionData&limit=2000
  * GET  ?action=companionDigest    (read-only Companion bridge; X-Companion-Token)
- * POST ?action=companionWorkout    (Companion bridge → generate a coach's session; X-Companion-Token)
  * POST { action: 'appendSession', data: {...} }
  * POST { action: 'appendSet', data: {...} }
  * POST { action: 'appendPlan', data: { session_id, exercises: [...] } }
@@ -453,20 +452,6 @@ async function handlePost(request, env) {
 
   if (action === 'agent') {
     return await runGeraldAgent(body, env);
-  }
-
-  // ── Companion bridge: generate a coach's workout ────────────────────────────
-  // The Companion app asks for a session; we assemble the same context the
-  // frontend builds (kit, injury-safe exercise pool, coach memo) server-side and
-  // run Gerald, returning the plan JSON. READ-ONLY: nothing is written — logging a
-  // session stays the JT.TRAIN app's job (appendSession/appendSet). Gated by
-  // COMPANION_TOKEN (X-Companion-Token), same shared secret as companionDigest.
-  if (action === 'companionWorkout') {
-    if (!env.COMPANION_TOKEN) return json({ error: 'Companion bridge not configured' }, 503);
-    if (request.headers.get('X-Companion-Token') !== env.COMPANION_TOKEN) {
-      return json({ error: 'Unauthorized' }, 401);
-    }
-    return await companionWorkout(body, env);
   }
 
   if (action === 'appendSession') {
@@ -1095,161 +1080,10 @@ async function callAnthropic(env, payload) {
   return { ok: res.ok, status: res.status, data: await res.json() };
 }
 
-// Build the Gerald context server-side (the JT.TRAIN frontend normally does this in
-// equipment.js) and generate a session for the Companion app. Ports buildKitString +
-// the equipment/injury filter; for a Coach's Workout the session-type filter is
-// bypassed, so the pool is every exercise the kit + injuries allow.
-async function companionWorkout(body, env) {
-  const isTrue = (v) => v === 1 || v === true || v === 'TRUE';
-  const location = body.location || 'Home';
-  // Readiness on Gerald's 1–5 scale; default to a neutral 3 if the Companion has
-  // nothing logged today.
-  const r = body.readiness || {};
-  const readiness = {
-    sleep:    Number(r.sleep)    || 3,
-    energy:   Number(r.energy)   || 3,
-    soreness: Number(r.soreness) || 3,
-  };
-
-  // Equipment config for the location (stored JSON, else the app's defaults).
-  const DEFAULT_CONFIG = {
-    Home:   { rings: true,  pull_up_bar: true,  parallettes_high: false, parallettes_low: false, bands: true, kb_weights: [16, 20, 24, 32], kb_pairs: false, barbell: false, dumbbells: false, cable_machine: false },
-    Travel: { rings: false, pull_up_bar: false, parallettes_high: false, parallettes_low: false, bands: true, kb_weights: [], kb_pairs: false, barbell: false, dumbbells: false, cable_machine: false },
-    Gym:    { rings: false, pull_up_bar: true,  parallettes_high: false, parallettes_low: false, bands: true, kb_weights: [8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48], kb_pairs: true, barbell: true, dumbbells: true, cable_machine: true },
-  };
-  let cfg = DEFAULT_CONFIG[location] || DEFAULT_CONFIG.Home;
-  try {
-    const row = await env.DB.prepare('SELECT config FROM location_config WHERE location = ?').bind(location).first();
-    if (row?.config) cfg = { ...cfg, ...JSON.parse(row.config) };
-  } catch { /* fall back to defaults */ }
-
-  // Kit string (ported from equipment.js buildKitString).
-  const kitParts = [];
-  if (cfg.rings) kitParts.push('Gymnastics rings');
-  if (cfg.pull_up_bar) kitParts.push('Pull-up bar');
-  if (cfg.parallettes_high) kitParts.push('Parallettes (high — dips, L-sit, support hold)');
-  if (cfg.parallettes_low || cfg.parallettes) kitParts.push('Parallettes (low — push-ups)');
-  if (cfg.bands) kitParts.push('Resistance bands');
-  if (cfg.kb_weights?.length) {
-    const w = cfg.kb_weights;
-    if (cfg.kb_pairs) kitParts.push(`KB (${w.join('/')}kg, matching pairs available)`);
-    else {
-      const combos = [];
-      for (let i = 0; i < w.length; i++) for (let j = i + 1; j < w.length; j++) combos.push(`${w[i]}+${w[j]}=${w[i] + w[j]}kg`);
-      kitParts.push(`KB singles (${w.join('/')}kg). Double KB = asymmetric loads only. Available combos: ${combos.join(', ')}. When prescribing double KB you MUST specify both bells e.g. "20+24kg", never just the total.`);
-    }
-  }
-  if (cfg.barbell) kitParts.push('Barbell + squat rack');
-  if (cfg.dumbbells) kitParts.push('Full dumbbell rack');
-  if (cfg.cable_machine) kitParts.push('Cable machine');
-  kitParts.push('Bodyweight');
-  const kit = kitParts.join(', ');
-
-  const injuries = (await env.DB.prepare(
-    'SELECT body_part, restrictions FROM injuries WHERE active = 1 ORDER BY date_start DESC'
-  ).all()).results;
-
-  // Injury/kit-filtered exercise pool (ported from equipment.js filterByEquipmentOnly
-  // + the injury clause; session-type filter is skipped for a Coach's Workout).
-  const all = (await env.DB.prepare('SELECT id, equipment, home_available, shoulder_safe FROM exercises').all()).results;
-  const availableExerciseIds = all.filter((e) => {
-    const eq = e.equipment || '';
-    if (location === 'Travel') {
-      const ok = (eq === 'BW' || eq === 'Bodyweight')
-        || (eq.includes('Band') && cfg.bands)
-        || (eq.includes('Rings') && cfg.rings)
-        || (eq.includes('KB') && cfg.kb_weights?.length > 0);
-      if (!ok) return false;
-    } else if (location === 'Home') {
-      if (!isTrue(e.home_available)) return false;
-      if (eq.includes('Rings') && !cfg.rings) return false;
-      if (eq.includes('Parallettes') && !cfg.parallettes_high && !cfg.parallettes_low && !cfg.parallettes) return false;
-      if (eq.includes('Band') && !cfg.bands) return false;
-    }
-    if (injuries.length && !isTrue(e.shoulder_safe)) return false;
-    return true;
-  }).map((e) => e.id);
-
-  const memo = (await env.DB.prepare('SELECT memo FROM coach_memo WHERE id = ?').bind('singleton').first())?.memo || '';
-
-  // ── Pre-load Gerald's tool data so the fast path can one-shot the plan ─────────
-  // The in-app agent gathers this via 5–6 sequential tool calls (~45–70s). The
-  // Companion has a ~30s Telegram budget, so we compute the same data in SQL up
-  // front and inject it — the agent then returns the plan in ~1 call.
-  const idSet = new Set(availableExerciseIds);
-
-  // Last-trained date per movement pattern (which patterns are overdue).
-  const gapRows = (await env.DB.prepare(`
-    SELECT e.movement_pattern AS pattern, MAX(s.date) AS last_date
-    FROM sets st JOIN sessions s ON st.session_id = s.id JOIN exercises e ON st.exercise_id = e.id
-    WHERE s.id NOT LIKE '%-H' AND e.movement_pattern IS NOT NULL
-    GROUP BY e.movement_pattern ORDER BY last_date ASC
-  `).all()).results;
-  const today = sydneyToday();
-  const gapsBlock = gapRows.map((g) =>
-    `${g.pattern}: last ${g.last_date} (${Math.round((new Date(today) - new Date(g.last_date)) / 86400000)}d ago)`
-  ).join('\n') || '(no recent pattern data)';
-
-  // The available menu (id → name/pattern/level/notes), grouped for readability.
-  const menuRows = (await env.DB.prepare(`
-    SELECT id, display_name, movement_pattern, matrix_level, equipment, notes FROM exercises
-    ORDER BY movement_pattern, matrix_level, display_name
-  `).all()).results.filter((e) => idSet.has(e.id));
-  const menuBlock = menuRows.map((e) =>
-    `- ${e.id} · ${e.display_name} [${e.movement_pattern || '?'} L${e.matrix_level ?? '?'}, ${e.equipment}]${e.notes ? ' — ' + e.notes : ''}`
-  ).join('\n');
-
-  // Recent load anchors: last 2 logged sets per available exercise.
-  const loadRows = (await env.DB.prepare(`
-    SELECT exercise_id, display_name, date, reps, weight_kg, rir FROM (
-      SELECT st.exercise_id, e.display_name, s.date, st.reps, st.weight_kg, st.rir,
-             ROW_NUMBER() OVER (PARTITION BY st.exercise_id ORDER BY s.date DESC, st.set_num DESC) AS rn
-      FROM sets st JOIN sessions s ON st.session_id = s.id JOIN exercises e ON st.exercise_id = e.id
-      WHERE s.id NOT LIKE '%-H'
-    ) WHERE rn <= 2 ORDER BY exercise_id, rn
-  `).all()).results.filter((r) => idSet.has(r.exercise_id));
-  const loadByEx = {};
-  for (const r of loadRows) (loadByEx[r.display_name] ??= []).push(`${r.reps}r ${r.weight_kg}kg RIR${r.rir ?? '?'} (${r.date})`);
-  const loadBlock = Object.entries(loadByEx).map(([n, v]) => `- ${n}: ${v.join(' | ')}`).join('\n') || '(no recent load history)';
-
-  const preloaded = `PRE-LOADED TRAINING STATE (already fetched for you — do NOT call assess_training_state, get_available_exercises, or get_exercise_history; you have everything below. Return the plan JSON directly.)
-
-PATTERN GAPS (most overdue first):
-${gapsBlock}
-
-AVAILABLE EXERCISES (use ONLY these exercise_ids):
-${menuBlock}
-
-RECENT LOADS (for prescription):
-${loadBlock}`;
-
-  const context = {
-    location, readiness, injuries, kit, memo,
-    availableExerciseIds,
-    preNotes: body.note || '',
-    userContext: preloaded,
-    pendingProgressions: [],
-  };
-  // Fast path for the Companion: Sonnet, no extended thinking, and — with the state
-  // pre-loaded above — few/no tool calls, so it fits the ~30s Telegram budget. The
-  // in-app JT.TRAIN generator (action=agent) keeps full Opus + thinking.
-  return await runGeraldAgent({
-    context,
-    opts: { model: 'claude-sonnet-4-6', thinking: null, maxTokens: 4000, maxIter: 3 },
-  }, env);
-}
-
 async function runGeraldAgent(body, env) {
   const { context } = body;
   const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '' } = context;
-  // Model/latency knobs. Default = the in-app experience (Opus + extended thinking,
-  // ~70s, fine when you're watching a screen). The Companion bridge overrides these
-  // to a faster Sonnet run so the plan can be delivered over Telegram in ~20s.
-  const opts = body.opts || {};
-  const MODEL = opts.model || 'claude-opus-4-8';
-  const THINKING = opts.thinking === undefined ? { type: 'adaptive' } : opts.thinking;
-  const MAX_TOKENS = opts.maxTokens || 8000;
-  const MAX_ITER = opts.maxIter || 8;
+  const MAX_ITER = 8;
 
   const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
   const bwRow = await env.DB.prepare('SELECT date, weight_kg, bodyfat_pct FROM body_metrics ORDER BY date DESC LIMIT 1').first();
@@ -1304,7 +1138,7 @@ HARD CONSTRAINTS:
   }];
 
   for (let i = 0; i < MAX_ITER; i++) {
-    const res = await callAnthropic(env, { model: MODEL, max_tokens: MAX_TOKENS, ...(THINKING ? { thinking: THINKING } : {}), system, tools: GERALD_TOOLS, messages });
+    const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, messages });
     if (!res.ok) return json({ error: res.data }, res.status);
     const data = res.data;
 
@@ -1329,7 +1163,7 @@ HARD CONSTRAINTS:
           role: 'user',
           content: `That plan only kept ${cleaned.length} valid exercise(s). Removed — ${removed.join('; ') || 'none'}. Rebuild it with 4-6 exercises using ONLY the exercise_ids that get_available_exercises returned earlier. Return just the corrected JSON, no commentary.`,
         });
-        const repair = await callAnthropic(env, { model: MODEL, max_tokens: MAX_TOKENS, ...(THINKING ? { thinking: THINKING } : {}), system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
+        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
         if (!repair.ok) console.error('Gerald repair call failed:', repair.status, JSON.stringify(repair.data));
         if (repair.ok && repair.data.content) {
           const rtext = repair.data.content.map(b => b.text || '').join('');
