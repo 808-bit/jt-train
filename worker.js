@@ -1179,13 +1179,26 @@ async function companionWorkout(body, env) {
     userContext: body.userContext || '',
     pendingProgressions: [],
   };
-  return await runGeraldAgent({ context }, env);
+  // Fast path for the Companion: Sonnet, no extended thinking, fewer iterations —
+  // ~20s instead of ~70s, so the plan fits inside a Telegram background reply. The
+  // in-app JT.TRAIN generator (action=agent) keeps full Opus + thinking.
+  return await runGeraldAgent({
+    context,
+    opts: { model: 'claude-sonnet-4-6', thinking: null, maxTokens: 4000, maxIter: 6 },
+  }, env);
 }
 
 async function runGeraldAgent(body, env) {
   const { context } = body;
   const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '' } = context;
-  const MAX_ITER = 8;
+  // Model/latency knobs. Default = the in-app experience (Opus + extended thinking,
+  // ~70s, fine when you're watching a screen). The Companion bridge overrides these
+  // to a faster Sonnet run so the plan can be delivered over Telegram in ~20s.
+  const opts = body.opts || {};
+  const MODEL = opts.model || 'claude-opus-4-8';
+  const THINKING = opts.thinking === undefined ? { type: 'adaptive' } : opts.thinking;
+  const MAX_TOKENS = opts.maxTokens || 8000;
+  const MAX_ITER = opts.maxIter || 8;
 
   const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
   const bwRow = await env.DB.prepare('SELECT date, weight_kg, bodyfat_pct FROM body_metrics ORDER BY date DESC LIMIT 1').first();
@@ -1240,7 +1253,7 @@ HARD CONSTRAINTS:
   }];
 
   for (let i = 0; i < MAX_ITER; i++) {
-    const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, messages });
+    const res = await callAnthropic(env, { model: MODEL, max_tokens: MAX_TOKENS, ...(THINKING ? { thinking: THINKING } : {}), system, tools: GERALD_TOOLS, messages });
     if (!res.ok) return json({ error: res.data }, res.status);
     const data = res.data;
 
@@ -1265,7 +1278,7 @@ HARD CONSTRAINTS:
           role: 'user',
           content: `That plan only kept ${cleaned.length} valid exercise(s). Removed — ${removed.join('; ') || 'none'}. Rebuild it with 4-6 exercises using ONLY the exercise_ids that get_available_exercises returned earlier. Return just the corrected JSON, no commentary.`,
         });
-        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
+        const repair = await callAnthropic(env, { model: MODEL, max_tokens: MAX_TOKENS, ...(THINKING ? { thinking: THINKING } : {}), system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
         if (!repair.ok) console.error('Gerald repair call failed:', repair.status, JSON.stringify(repair.data));
         if (repair.ok && repair.data.content) {
           const rtext = repair.data.content.map(b => b.text || '').join('');
