@@ -1172,19 +1172,70 @@ async function companionWorkout(body, env) {
 
   const memo = (await env.DB.prepare('SELECT memo FROM coach_memo WHERE id = ?').bind('singleton').first())?.memo || '';
 
+  // ── Pre-load Gerald's tool data so the fast path can one-shot the plan ─────────
+  // The in-app agent gathers this via 5–6 sequential tool calls (~45–70s). The
+  // Companion has a ~30s Telegram budget, so we compute the same data in SQL up
+  // front and inject it — the agent then returns the plan in ~1 call.
+  const idSet = new Set(availableExerciseIds);
+
+  // Last-trained date per movement pattern (which patterns are overdue).
+  const gapRows = (await env.DB.prepare(`
+    SELECT e.movement_pattern AS pattern, MAX(s.date) AS last_date
+    FROM sets st JOIN sessions s ON st.session_id = s.id JOIN exercises e ON st.exercise_id = e.id
+    WHERE s.id NOT LIKE '%-H' AND e.movement_pattern IS NOT NULL
+    GROUP BY e.movement_pattern ORDER BY last_date ASC
+  `).all()).results;
+  const today = sydneyToday();
+  const gapsBlock = gapRows.map((g) =>
+    `${g.pattern}: last ${g.last_date} (${Math.round((new Date(today) - new Date(g.last_date)) / 86400000)}d ago)`
+  ).join('\n') || '(no recent pattern data)';
+
+  // The available menu (id → name/pattern/level/notes), grouped for readability.
+  const menuRows = (await env.DB.prepare(`
+    SELECT id, display_name, movement_pattern, matrix_level, equipment, notes FROM exercises
+    ORDER BY movement_pattern, matrix_level, display_name
+  `).all()).results.filter((e) => idSet.has(e.id));
+  const menuBlock = menuRows.map((e) =>
+    `- ${e.id} · ${e.display_name} [${e.movement_pattern || '?'} L${e.matrix_level ?? '?'}, ${e.equipment}]${e.notes ? ' — ' + e.notes : ''}`
+  ).join('\n');
+
+  // Recent load anchors: last 2 logged sets per available exercise.
+  const loadRows = (await env.DB.prepare(`
+    SELECT exercise_id, display_name, date, reps, weight_kg, rir FROM (
+      SELECT st.exercise_id, e.display_name, s.date, st.reps, st.weight_kg, st.rir,
+             ROW_NUMBER() OVER (PARTITION BY st.exercise_id ORDER BY s.date DESC, st.set_num DESC) AS rn
+      FROM sets st JOIN sessions s ON st.session_id = s.id JOIN exercises e ON st.exercise_id = e.id
+      WHERE s.id NOT LIKE '%-H'
+    ) WHERE rn <= 2 ORDER BY exercise_id, rn
+  `).all()).results.filter((r) => idSet.has(r.exercise_id));
+  const loadByEx = {};
+  for (const r of loadRows) (loadByEx[r.display_name] ??= []).push(`${r.reps}r ${r.weight_kg}kg RIR${r.rir ?? '?'} (${r.date})`);
+  const loadBlock = Object.entries(loadByEx).map(([n, v]) => `- ${n}: ${v.join(' | ')}`).join('\n') || '(no recent load history)';
+
+  const preloaded = `PRE-LOADED TRAINING STATE (already fetched for you — do NOT call assess_training_state, get_available_exercises, or get_exercise_history; you have everything below. Return the plan JSON directly.)
+
+PATTERN GAPS (most overdue first):
+${gapsBlock}
+
+AVAILABLE EXERCISES (use ONLY these exercise_ids):
+${menuBlock}
+
+RECENT LOADS (for prescription):
+${loadBlock}`;
+
   const context = {
     location, readiness, injuries, kit, memo,
     availableExerciseIds,
     preNotes: body.note || '',
-    userContext: body.userContext || '',
+    userContext: preloaded,
     pendingProgressions: [],
   };
-  // Fast path for the Companion: Sonnet, no extended thinking, fewer iterations —
-  // ~20s instead of ~70s, so the plan fits inside a Telegram background reply. The
+  // Fast path for the Companion: Sonnet, no extended thinking, and — with the state
+  // pre-loaded above — few/no tool calls, so it fits the ~30s Telegram budget. The
   // in-app JT.TRAIN generator (action=agent) keeps full Opus + thinking.
   return await runGeraldAgent({
     context,
-    opts: { model: 'claude-sonnet-4-6', thinking: null, maxTokens: 4000, maxIter: 6 },
+    opts: { model: 'claude-sonnet-4-6', thinking: null, maxTokens: 4000, maxIter: 3 },
   }, env);
 }
 
