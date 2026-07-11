@@ -786,7 +786,7 @@ const GERALD_TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        movement_pattern: { type: 'string', description: 'Filter by pattern, e.g. "pull", "push", "hinge", "squat", "carry". Omit for all.' }
+        movement_pattern: { type: 'string', description: 'Filter by pattern_id from assess_training_state — one of "mp_horiz_push", "mp_vert_push", "mp_horiz_pull", "mp_vert_pull", "mp_posterior_hinge", "mp_anterior_squat", "mp_overhead_press", "mp_carry", "mp_core", "mp_rehab". Omit for all.' }
       }
     }
   },
@@ -857,26 +857,34 @@ async function executeTool(toolName, toolInput, context, env) {
     const cutoff = new Date(new Date(today) - daysBack * 86400000).toISOString().slice(0, 10);
     const [setsRes, debriefRes] = await Promise.all([
       env.DB.prepare(`
-        SELECT s.date, e.movement_pattern, st.exercise_id, e.display_name
+        SELECT s.date, e.movement_pattern_id AS pattern_id, mp.name AS pattern_name, st.exercise_id, e.display_name
         FROM sets st
         JOIN sessions s ON st.session_id = s.id
         JOIN exercises e ON st.exercise_id = e.id
+        LEFT JOIN movement_patterns mp ON e.movement_pattern_id = mp.id
         WHERE s.date >= ? AND s.id NOT LIKE '%-H'
         ORDER BY s.date DESC
       `).bind(cutoff).all(),
       env.DB.prepare(`SELECT * FROM debriefs WHERE date >= ? ORDER BY date DESC LIMIT 8`).bind(cutoff).all(),
     ]);
 
+    // Grouped by the fine-grained pattern (e.g. "Horizontal Pull" vs "Vertical
+    // Pull" separately) — not the coarse 8-bucket field, which lumped ring
+    // rows and pull-ups together as one "pull" and made vertical pull look
+    // covered whenever only horizontal pull had actually been trained.
     const patternDates = {};
     setsRes.results.forEach(s => {
-      const p = s.movement_pattern || 'unknown';
-      if (!patternDates[p] || s.date > patternDates[p]) patternDates[p] = s.date;
+      const key = s.pattern_id || 'unknown';
+      if (!patternDates[key] || s.date > patternDates[key].date) {
+        patternDates[key] = { date: s.date, name: s.pattern_name || 'Unknown' };
+      }
     });
     const patternGaps = Object.entries(patternDates)
-      .map(([pattern, lastDate]) => ({
-        pattern,
-        last_trained: fmtD(lastDate),
-        days_ago: Math.round((new Date(today) - new Date(lastDate)) / 86400000),
+      .map(([id, v]) => ({
+        pattern: v.name,
+        pattern_id: id,
+        last_trained: fmtD(v.date),
+        days_ago: Math.round((new Date(today) - new Date(v.date)) / 86400000),
       }))
       .sort((a, b) => b.days_ago - a.days_ago);
 
@@ -892,12 +900,15 @@ async function executeTool(toolName, toolInput, context, env) {
     if (!availableExerciseIds.length) return { exercises: [] };
     const { movement_pattern } = toolInput;
     const placeholders = availableExerciseIds.map(() => '?').join(',');
-    let query = `SELECT id, display_name, movement_pattern, matrix_level, equipment, notes FROM exercises WHERE id IN (${placeholders})`;
+    let query = `
+      SELECT e.id, e.display_name, e.movement_pattern_id AS pattern_id, mp.name AS pattern_name, e.matrix_level, e.equipment, e.notes
+      FROM exercises e LEFT JOIN movement_patterns mp ON e.movement_pattern_id = mp.id
+      WHERE e.id IN (${placeholders})`;
     const binds = [...availableExerciseIds];
-    if (movement_pattern) { query += ' AND movement_pattern = ?'; binds.push(movement_pattern); }
-    query += ' ORDER BY matrix_level, display_name';
+    if (movement_pattern) { query += ' AND e.movement_pattern_id = ?'; binds.push(movement_pattern); }
+    query += ' ORDER BY e.matrix_level, e.display_name';
     const { results } = await env.DB.prepare(query).bind(...binds).all();
-    return { exercises: results.map(e => ({ id: e.id, name: e.display_name, pattern: e.movement_pattern, level: e.matrix_level, equipment: e.equipment, notes: e.notes || '' })) };
+    return { exercises: results.map(e => ({ id: e.id, name: e.display_name, pattern: e.pattern_name, pattern_id: e.pattern_id, level: e.matrix_level, equipment: e.equipment, notes: e.notes || '' })) };
   }
 
   if (toolName === 'get_exercise_history') {
@@ -970,10 +981,11 @@ async function executeTool(toolName, toolInput, context, env) {
     const lastWeekStr = lastWeekStart.toISOString().slice(0, 10);
 
     const { results } = await env.DB.prepare(`
-      SELECT s.date, st.exercise_id, e.movement_pattern, st.rir
+      SELECT s.date, st.exercise_id, mp.name AS pattern_name, st.rir
       FROM sets st
       JOIN sessions s ON st.session_id = s.id
       JOIN exercises e ON st.exercise_id = e.id
+      LEFT JOIN movement_patterns mp ON e.movement_pattern_id = mp.id
       WHERE s.date >= ? AND s.id NOT LIKE '%-H'
       ORDER BY s.date
     `).bind(lastWeekStr).all();
@@ -983,7 +995,7 @@ async function executeTool(toolName, toolInput, context, env) {
 
     results.forEach(r => {
       const isHard = r.rir != null && r.rir <= 2;
-      const p = r.movement_pattern || 'other';
+      const p = r.pattern_name || 'other';
       if (r.date >= thisWeekStr) {
         thisWeek.sessions.add(r.date);
         if (isHard) thisWeek.patterns[p] = (thisWeek.patterns[p] || 0) + 1;
