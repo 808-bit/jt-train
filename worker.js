@@ -782,11 +782,12 @@ const GERALD_TOOLS = [
   },
   {
     name: 'get_available_exercises',
-    description: 'List exercises available today, optionally filtered by movement pattern. Use to find options for the patterns you want to target.',
+    description: 'List exercises available today, optionally filtered by movement pattern(s). Pass every pattern you want to target in ONE call via movement_patterns — do not call this once per pattern.',
     input_schema: {
       type: 'object',
       properties: {
-        movement_pattern: { type: 'string', description: 'Filter by pattern_id from assess_training_state — one of "mp_horiz_push", "mp_vert_push", "mp_horiz_pull", "mp_vert_pull", "mp_posterior_hinge", "mp_anterior_squat", "mp_carry", "mp_core", "mp_rehab", "mp_power_conditioning". Omit for all.' }
+        movement_pattern: { type: 'string', description: 'Deprecated single-pattern filter — prefer movement_patterns.' },
+        movement_patterns: { type: 'array', items: { type: 'string' }, description: 'Filter by one or more pattern_ids from assess_training_state, e.g. ["mp_horiz_pull","mp_anterior_squat"]. One of "mp_horiz_push", "mp_vert_push", "mp_horiz_pull", "mp_vert_pull", "mp_posterior_hinge", "mp_anterior_squat", "mp_carry", "mp_core", "mp_rehab", "mp_power_conditioning". Omit for all.' }
       }
     }
   },
@@ -898,14 +899,15 @@ async function executeTool(toolName, toolInput, context, env) {
 
   if (toolName === 'get_available_exercises') {
     if (!availableExerciseIds.length) return { exercises: [] };
-    const { movement_pattern } = toolInput;
+    const { movement_pattern, movement_patterns } = toolInput;
+    const patterns = movement_patterns && movement_patterns.length ? movement_patterns : (movement_pattern ? [movement_pattern] : []);
     const placeholders = availableExerciseIds.map(() => '?').join(',');
     let query = `
       SELECT e.id, e.display_name, e.movement_pattern_id AS pattern_id, mp.name AS pattern_name, e.matrix_level, e.equipment, e.notes
       FROM exercises e LEFT JOIN movement_patterns mp ON e.movement_pattern_id = mp.id
       WHERE e.id IN (${placeholders})`;
     const binds = [...availableExerciseIds];
-    if (movement_pattern) { query += ' AND e.movement_pattern_id = ?'; binds.push(movement_pattern); }
+    if (patterns.length) { query += ` AND e.movement_pattern_id IN (${patterns.map(() => '?').join(',')})`; binds.push(...patterns); }
     query += ' ORDER BY e.matrix_level, e.display_name';
     const { results } = await env.DB.prepare(query).bind(...binds).all();
     return { exercises: results.map(e => ({ id: e.id, name: e.display_name, pattern: e.pattern_name, pattern_id: e.pattern_id, level: e.matrix_level, equipment: e.equipment, notes: e.notes || '' })) };
@@ -1122,12 +1124,14 @@ ${bwLine ? bwLine + '\n' : ''}Injuries: ${injStr}
 ${preNotes ? `Athlete note: ${preNotes}` : ''}
 ${pendingProgressions.length ? `Approved progressions: ${pendingProgressions.map(p => `${p.fromName} → ${p.toName || 'peak'}`).join(', ')}` : ''}
 
-PROCESS:
+PROCESS (minimize round-trips — every extra turn adds real latency):
 1. assess_training_state — see what patterns are overdue
-2. get_available_exercises — find options per pattern (call once per pattern if helpful)
-3. get_exercise_history — nail load prescription for 2-3 key exercises
+2. get_available_exercises — pass ALL the patterns you want to target at once via movement_patterns (array), not one call per pattern
+3. get_multi_exercise_history — pass ALL the exercise_ids you need load data for in ONE call, not repeated get_exercise_history calls
 4. Optionally check_progressions if anything looks close to advancing
 5. Return the session plan as JSON and nothing else
+
+You can call multiple tools in the same turn (e.g. assess_training_state + get_weekly_load together, or get_available_exercises + check_progressions together) — do this whenever the calls don't depend on each other's results, instead of spacing them across separate turns.
 
 OUTPUT (when done, return only this — no preamble, no commentary):
 {
@@ -1195,12 +1199,9 @@ HARD CONSTRAINTS:
     }
 
     if (data.stop_reason === 'tool_use') {
-      const toolResults = [];
-      for (const block of data.content) {
-        if (block.type !== 'tool_use') continue;
-        const result = await executeTool(block.name, block.input, context, env);
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
-      }
+      const calls = data.content.filter(b => b.type === 'tool_use');
+      const results = await Promise.all(calls.map(block => executeTool(block.name, block.input, context, env)));
+      const toolResults = calls.map((block, i) => ({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(results[i]) }));
       messages.push({ role: 'user', content: toolResults });
       continue;
     }
