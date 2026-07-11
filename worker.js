@@ -1156,10 +1156,15 @@ HARD CONSTRAINTS:
     content: `Design today's session. Location: ${location}.${preNotes ? ' Athlete note: ' + preNotes : ''}`
   }];
 
+  const startedAt = Date.now();
   for (let i = 0; i < MAX_ITER; i++) {
     const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, messages });
-    if (!res.ok) return json({ error: res.data }, res.status);
+    if (!res.ok) {
+      console.error(`Gerald iter ${i} Anthropic call failed after ${Date.now() - startedAt}ms:`, res.status, JSON.stringify(res.data));
+      return json({ error: res.data }, res.status);
+    }
     const data = res.data;
+    console.log(`Gerald iter ${i} stop_reason=${data.stop_reason} elapsed=${Date.now() - startedAt}ms`);
 
     messages.push({ role: 'assistant', content: data.content });
 
@@ -1168,7 +1173,10 @@ HARD CONSTRAINTS:
       const text = data.content.map(b => b.text || '').join('');
       let plan;
       try { plan = extractPlanJson(text); }
-      catch (e) { return json({ error: 'Invalid JSON', raw: text }, 500); }
+      catch (e) {
+        console.error(`Gerald iter ${i} invalid JSON after ${Date.now() - startedAt}ms:`, text.slice(0, 500));
+        return json({ error: 'Invalid JSON', raw: text }, 500);
+      }
 
       // Code-fix: strip hallucinated/duplicate exercise_ids (injury- and
       // equipment-unsafe ids are already excluded from availableExerciseIds).
@@ -1207,12 +1215,15 @@ HARD CONSTRAINTS:
     }
 
     if (data.stop_reason === 'max_tokens') {
+      console.error(`Gerald hit max_tokens at iter ${i}, elapsed=${Date.now() - startedAt}ms`);
       return json({ error: 'Gerald hit the output token limit mid-plan — try again' }, 500);
     }
 
+    console.error(`Gerald unexpected stop_reason=${data.stop_reason} at iter ${i}, elapsed=${Date.now() - startedAt}ms`);
     break; // unexpected stop_reason
   }
 
+  console.error(`Gerald exhausted MAX_ITER=${MAX_ITER}, elapsed=${Date.now() - startedAt}ms`);
   return json({ error: 'Agent did not complete within iteration limit' }, 500);
 }
 
