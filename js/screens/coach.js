@@ -13,8 +13,9 @@ async function init() {
       api('getEquipmentConfig'),
       api('getBodyMetrics', { limit: 180 }),
     ]);
-    equipmentConfig = eqR.data || {};
-    ['Home','Travel','Gym'].forEach(l => { if (!equipmentConfig[l]) equipmentConfig[l] = {...DEFAULT_CONFIG[l]}; });
+    const eqData = eqR.data || {};
+    equipmentConfig = {};
+    ['Home','Travel','Gym'].forEach(l => { equipmentConfig[l] = {...DEFAULT_CONFIG[l], ...(eqData[l] || {})}; });
     injuries = injR.data || [];
     exercises = exR.data || [];
     bodyMetrics = bmR.data || [];

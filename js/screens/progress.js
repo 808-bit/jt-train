@@ -46,8 +46,8 @@ async function renderLongevityCard() {
   const sets = (progAllSets || []).filter(s => s.date >= cutoff);
   const exById = {}; (exercises || []).forEach(e => { exById[e.id] = e; });
   const pats = new Set(), mods = new Set();
-  sets.forEach(s => { const ex = exById[s.exercise_id]; if (!ex) return; if (ex.movement_pattern && ex.movement_pattern !== 'rehab') pats.add(ex.movement_pattern); mods.add(trainingModality(ex.equipment)); });
-  const PATTERN_TOTAL = 7;                              // push pull hinge squat lunge carry core
+  sets.forEach(s => { const ex = exById[s.exercise_id]; if (!ex) return; if (ex.movement_pattern_id && ex.movement_pattern_id !== 'mp_rehab' && ex.movement_pattern_id !== 'mp_overhead_press') pats.add(ex.movement_pattern_id); mods.add(trainingModality(ex.equipment)); });
+  const PATTERN_TOTAL = 8;                              // horiz/vert push, horiz/vert pull, hinge, squat, carry, core — excludes rehab and overhead press (avoided for shoulder safety)
   const nPat = pats.size;
   const varietyCol = (nPat >= 5 && mods.size >= 2) ? 'var(--green)' : nPat >= 3 ? 'var(--amber)' : 'var(--red)';
   const varietyVal = `${nPat}/${PATTERN_TOTAL} patterns`;
@@ -486,7 +486,7 @@ async function generateCoachReview() {
 
     const totalVolume = allSets.reduce((s,e) => s + (parseInt(e.reps)||0)*(parseFloat(e.weight_kg)||1), 0);
     const byPattern = {};
-    allSets.forEach(s => { const ex = exercises.find(e=>e.id===s.exercise_id); const p=ex?.movement_pattern||'other'; byPattern[p]=(byPattern[p]||0)+1; });
+    allSets.forEach(s => { const ex = exercises.find(e=>e.id===s.exercise_id); const p=ex?.pattern_name||'other'; byPattern[p]=(byPattern[p]||0)+1; });
     const weeklyVols = {};
     allSets.forEach(s => { const d=new Date(s.date); const mon=new Date(d-((d.getDay()||7)-1)*86400000); const w=mon.toISOString().slice(0,10); weeklyVols[w]=(weeklyVols[w]||0)+(parseInt(s.reps)||0)*(parseFloat(s.weight_kg)||1); });
 
