@@ -310,19 +310,31 @@ The frontend still re-filters `parsed.exercises` against the allowed set as a fi
 safety net. Tools and validation live server-side because D1 is the source of truth;
 keep arithmetic/constraint enforcement in code, let the model reason over context.
 
-**Async job pattern (required — do not revert to a synchronous POST):** Gerald's
-multi-iteration tool loop routinely takes 30-55s. A single held-open POST that long
-gets killed by mobile Safari ("Load failed") well before the Worker finishes — the
-agent completes successfully server-side, the client just never sees the response.
-So `action: 'agent'` returns `{ job_id }` immediately: it inserts a row into
-`agent_jobs` (`id, status, result, error, created_at, updated_at`), kicks off
-`ctx.waitUntil(runGeraldAgentJob(jobId, body, env))`, and returns. `runGeraldAgent()`
-itself returns a plain `{ ok, plan, validation }` / `{ ok: false, error }` object
-(not a `Response`) so the job wrapper can write it to D1. The frontend
-(`pollAgentJob()` in coach.js) polls `?action=getAgentJob&job_id=X` every 2s (up to
-2 minutes) with short GETs instead of one long fetch. `getAgentJob` is a GET action,
-not gated by `APP_TOKEN`. Old job rows are opportunistically cleaned up
-(`created_at < now - 1 day`) each time a new job starts.
+**Async job pattern (required — do not revert to a synchronous POST that the client
+awaits for the result):** Gerald's multi-iteration tool loop routinely takes 30-55s.
+A held-open POST that long gets killed by mobile Safari ("Load failed") before the
+Worker's response arrives — the agent completes fine server-side, the client just
+never sees it.
+
+Design (learned the hard way — `ctx.waitUntil()` is NOT enough on its own):
+- **The client generates the `job_id`** (`crypto.randomUUID()`), fires the
+  `action:'agent'` POST **fire-and-forget** (`.catch(()=>{})`), and never reads its
+  body. The plan is retrieved by polling. This is why the client mustn't depend on
+  the POST response: that response doesn't come back until the ~55s loop is done.
+- **The Worker runs the loop INSIDE the live request** (`const work =
+  runGeraldAgentJob(...); ctx.waitUntil(work); await work; return`). A running request
+  gets the full duration budget; `ctx.waitUntil()` work registered *after* returning a
+  response is cancelled early (its post-response grace window is far shorter than 55s —
+  this was the actual failure of the first attempt). The extra `ctx.waitUntil(work)`
+  keeps the request alive if the phone disconnects mid-flight.
+- `runGeraldAgentJob` wraps `runGeraldAgent()` (which returns a plain
+  `{ ok, plan, validation }` / `{ ok:false, error }` object, NOT a `Response`) and
+  writes status/result/error to the `agent_jobs` table
+  (`id, status, result, error, created_at, updated_at`).
+- **The frontend `pollAgentJob()`** (coach.js) polls `?action=getAgentJob&job_id=X`
+  (a GET, not gated by `APP_TOKEN`) every 2s up to 2 min. It bails early if the job row
+  never appears after ~10s (the POST failed to land). Old rows are cleaned up
+  (`created_at < now - 1 day`) when a new job starts.
 
 ### Named session type path
 `generatePlan()` (non-Coach's Workout):

@@ -202,11 +202,20 @@ async function fetchSSOContext(limit, sessionTypeFilter) {
 async function pollAgentJob(jobId) {
   const MAX_ATTEMPTS = 60; // 60 * 2s = 2 minutes
   const statusEl = document.getElementById('gen-status');
+  let notFound = 0, seen = false;
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
     await new Promise(r => setTimeout(r, 2000));
     let res;
     try { res = await api('getAgentJob', { job_id: jobId }); }
     catch (e) { continue; } // transient network blip on a poll — just retry
+    // The server inserts the pending row within ~50ms of the POST landing. If
+    // it never appears, the POST itself failed — bail after ~10s instead of
+    // polling a phantom job for the full 2 minutes.
+    if (res && res.error === 'Job not found') {
+      if (!seen && ++notFound >= 5) throw new Error('Could not start plan generation');
+      continue;
+    }
+    seen = true;
     if (res.status === 'complete' || res.status === 'error') return res;
     if (statusEl) statusEl.textContent = `Gerald is thinking... (${(i + 1) * 2}s)`;
   }
@@ -229,8 +238,16 @@ async function generateCoachesWorkout() {
     .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
     .map(e => e.id);
 
-  const startRes = await apiPost({
+  // The client generates the job_id so it never has to wait on the POST
+  // response — Gerald's loop runs ~30-55s inside that request, far longer than
+  // mobile Safari keeps a fetch alive. We fire the POST and swallow its result
+  // (the server writes the plan to agent_jobs); the plan comes back via polling.
+  const jobId = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+    : Date.now() + '-' + Math.random().toString(36).slice(2);
+
+  apiPost({
     action: 'agent',
+    jobId,
     context: {
       location: loc,
       readiness: { sleep: preSleep, energy: preEnergy, soreness: preSoreness },
@@ -242,15 +259,9 @@ async function generateCoachesWorkout() {
       availableExerciseIds,
       userContext: getUserContext(),
     }
-  });
+  }).catch(() => {}); // fire-and-forget — result is retrieved via pollAgentJob
 
-  if (!startRes.job_id) throw new Error(startRes.error || 'Could not start plan generation');
-
-  // Gerald's tool loop routinely takes 30-55s — long enough that a single
-  // held-open fetch gets killed by mobile browsers ("Load failed") before it
-  // finishes. Poll short GETs instead so no single request has to survive
-  // the whole generation.
-  const jobResult = await pollAgentJob(startRes.job_id);
+  const jobResult = await pollAgentJob(jobId);
   if (jobResult.status === 'error') throw new Error(jobResult.error || 'Plan generation failed');
   const parsed = jobResult.result.plan;
 

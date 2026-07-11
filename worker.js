@@ -465,14 +465,21 @@ async function handlePost(request, env, ctx) {
 
   if (action === 'agent') {
     // Gerald's multi-iteration tool loop routinely takes 30-55s — long enough
-    // that mobile Safari kills the connection ("Load failed") well before it
-    // finishes, even though the Worker completes fine server-side. Return a
-    // job_id immediately; the loop runs in the background via waitUntil and
-    // the frontend polls short GETs instead of holding one long POST open.
-    const jobId = crypto.randomUUID();
-    await env.DB.prepare('INSERT INTO agent_jobs (id, status) VALUES (?, ?)').bind(jobId, 'pending').run();
-    ctx.waitUntil(runGeraldAgentJob(jobId, body, env));
+    // that mobile Safari kills the client fetch ("Load failed") before the
+    // response arrives, even though the Worker completes fine server-side.
+    //
+    // The client generates its own job_id, fires this POST fire-and-forget,
+    // and polls ?action=getAgentJob for the result. We run the loop INSIDE the
+    // live request (await) — a running request gets the full duration budget,
+    // whereas ctx.waitUntil() AFTER returning a response is killed early (its
+    // post-response grace window is far shorter than 55s). ctx.waitUntil(work)
+    // additionally keeps the request alive if the phone disconnects mid-flight.
+    const jobId = (typeof body.jobId === 'string' && body.jobId) ? body.jobId : crypto.randomUUID();
+    await env.DB.prepare('INSERT OR IGNORE INTO agent_jobs (id, status) VALUES (?, ?)').bind(jobId, 'pending').run();
     ctx.waitUntil(env.DB.prepare("DELETE FROM agent_jobs WHERE created_at < datetime('now', '-1 day')").run());
+    const work = runGeraldAgentJob(jobId, body, env);
+    ctx.waitUntil(work);
+    await work;
     return json({ job_id: jobId });
   }
 
