@@ -782,7 +782,7 @@ const GERALD_TOOLS = [
   },
   {
     name: 'get_available_exercises',
-    description: 'List exercises available today, optionally filtered by movement pattern(s). Pass every pattern you want to target in ONE call via movement_patterns — do not call this once per pattern.',
+    description: 'List exercises available today, optionally filtered by movement pattern(s), annotated with each exercise\'s own last-trained date and how many times it\'s been logged in the last 42 days — use this to avoid defaulting to the same exercise every session when a fresher, equally-valid option satisfies the same pattern gap. Pass every pattern you want to target in ONE call via movement_patterns — do not call this once per pattern.',
     input_schema: {
       type: 'object',
       properties: {
@@ -910,7 +910,30 @@ async function executeTool(toolName, toolInput, context, env) {
     if (patterns.length) { query += ` AND e.movement_pattern_id IN (${patterns.map(() => '?').join(',')})`; binds.push(...patterns); }
     query += ' ORDER BY e.matrix_level, e.display_name';
     const { results } = await env.DB.prepare(query).bind(...binds).all();
-    return { exercises: results.map(e => ({ id: e.id, name: e.display_name, pattern: e.pattern_name, pattern_id: e.pattern_id, level: e.matrix_level, equipment: e.equipment, notes: e.notes || '' })) };
+
+    // Per-exercise recency (last 42 days) so Gerald can see which specific
+    // exercises within a satisfied pattern are being repeated vs neglected —
+    // assess_training_state only tracks this at the pattern level.
+    const today = sydneyToday();
+    const cutoff42 = new Date(new Date(today) - 42 * 86400000).toISOString().slice(0, 10);
+    const { results: usage } = await env.DB.prepare(`
+      SELECT st.exercise_id, MAX(s.date) AS last_date, COUNT(DISTINCT s.id) AS session_count
+      FROM sets st JOIN sessions s ON st.session_id = s.id
+      WHERE s.date >= ? AND s.id NOT LIKE '%-H'
+      GROUP BY st.exercise_id
+    `).bind(cutoff42).all();
+    const usageMap = new Map(usage.map(u => [u.exercise_id, u]));
+
+    return { exercises: results.map(e => {
+      const u = usageMap.get(e.id);
+      return {
+        id: e.id, name: e.display_name, pattern: e.pattern_name, pattern_id: e.pattern_id,
+        level: e.matrix_level, equipment: e.equipment, notes: e.notes || '',
+        last_trained: u ? fmtD(u.last_date) : 'not in last 42 days',
+        days_ago: u ? Math.round((new Date(today) - new Date(u.last_date)) / 86400000) : null,
+        sessions_last_42d: u ? u.session_count : 0,
+      };
+    }) };
   }
 
   if (toolName === 'get_exercise_history') {
@@ -1143,6 +1166,12 @@ OUTPUT (when done, return only this — no preamble, no commentary):
 
 HARD CONSTRAINTS:
 - Only use exercise_ids from get_available_exercises — never invent one
+- VARIETY: get_available_exercises annotates each exercise with last_trained/sessions_last_42d.
+  When multiple exercises satisfy the same pattern gap at a similar level, prefer the one with
+  fewer sessions_last_42d / longer days_ago over the one you'd default to out of habit. Don't
+  rotate away from an exercise mid-progression (an exercise close to advancing per
+  check_progressions should stay) — this is a tie-breaker for equally-valid options, not a reason
+  to abandon real progress.
 - 4-6 exercises, ordered as executed (compounds and high-skill first)
 - Respect all injury restrictions
 - RIR protocol: 0=hold | 1=small step | 2=push | 3+=undertested so push significantly
