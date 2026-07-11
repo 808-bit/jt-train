@@ -199,6 +199,20 @@ async function fetchSSOContext(limit, sessionTypeFilter) {
   } catch(e) { return 'SSO context unavailable.'; }
 }
 
+async function pollAgentJob(jobId) {
+  const MAX_ATTEMPTS = 60; // 60 * 2s = 2 minutes
+  const statusEl = document.getElementById('gen-status');
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    let res;
+    try { res = await api('getAgentJob', { job_id: jobId }); }
+    catch (e) { continue; } // transient network blip on a poll — just retry
+    if (res.status === 'complete' || res.status === 'error') return res;
+    if (statusEl) statusEl.textContent = `Gerald is thinking... (${(i + 1) * 2}s)`;
+  }
+  throw new Error('Gerald is taking too long — try again');
+}
+
 async function generateCoachesWorkout() {
   preNotes = document.getElementById('pre-notes').value.trim();
   document.getElementById('gen-status').textContent = 'Gerald is thinking...';
@@ -215,7 +229,7 @@ async function generateCoachesWorkout() {
     .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
     .map(e => e.id);
 
-  const result = await apiPost({
+  const startRes = await apiPost({
     action: 'agent',
     context: {
       location: loc,
@@ -230,8 +244,15 @@ async function generateCoachesWorkout() {
     }
   });
 
-  if (!result.plan) throw new Error(result.error || 'No plan returned');
-  const parsed = result.plan;
+  if (!startRes.job_id) throw new Error(startRes.error || 'Could not start plan generation');
+
+  // Gerald's tool loop routinely takes 30-55s — long enough that a single
+  // held-open fetch gets killed by mobile browsers ("Load failed") before it
+  // finishes. Poll short GETs instead so no single request has to survive
+  // the whole generation.
+  const jobResult = await pollAgentJob(startRes.job_id);
+  if (jobResult.status === 'error') throw new Error(jobResult.error || 'Plan generation failed');
+  const parsed = jobResult.result.plan;
 
   // Safety net: strip any exercise Gerald hallucinated outside the allowed list
   const allowedIds = new Set(availableExerciseIds);

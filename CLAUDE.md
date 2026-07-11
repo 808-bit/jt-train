@@ -310,6 +310,20 @@ The frontend still re-filters `parsed.exercises` against the allowed set as a fi
 safety net. Tools and validation live server-side because D1 is the source of truth;
 keep arithmetic/constraint enforcement in code, let the model reason over context.
 
+**Async job pattern (required — do not revert to a synchronous POST):** Gerald's
+multi-iteration tool loop routinely takes 30-55s. A single held-open POST that long
+gets killed by mobile Safari ("Load failed") well before the Worker finishes — the
+agent completes successfully server-side, the client just never sees the response.
+So `action: 'agent'` returns `{ job_id }` immediately: it inserts a row into
+`agent_jobs` (`id, status, result, error, created_at, updated_at`), kicks off
+`ctx.waitUntil(runGeraldAgentJob(jobId, body, env))`, and returns. `runGeraldAgent()`
+itself returns a plain `{ ok, plan, validation }` / `{ ok: false, error }` object
+(not a `Response`) so the job wrapper can write it to D1. The frontend
+(`pollAgentJob()` in coach.js) polls `?action=getAgentJob&job_id=X` every 2s (up to
+2 minutes) with short GETs instead of one long fetch. `getAgentJob` is a GET action,
+not gated by `APP_TOKEN`. Old job rows are opportunistically cleaned up
+(`created_at < now - 1 day`) each time a new job starts.
+
 ### Named session type path
 `generatePlan()` (non-Coach's Workout):
 1. `ssoContext` — from `cachedDebriefs` if warm (client-side `formatSSOContext`), else `fetchSSOContext(6, sType)`

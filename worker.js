@@ -40,11 +40,11 @@ PRACTICAL IMPLICATION: prize proximity to failure and consistency over raw tonna
 const BW_PROGRESSION_RULE = `BODYWEIGHT PROGRESSION: pure calisthenics has no "+weight" lever — progress it by harder leverage (e.g. ring push-up → RTO → archer → one-arm), slower tempo / longer eccentric, added pause, or unilateral variation. Add external load (vest/belt, KB) only where the movement allows it. For KB and weighted work, progress by load or reps per the RIR protocol.`;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
     try {
       if (request.method === 'GET')  return await handleGet(request, env);
-      if (request.method === 'POST') return await handlePost(request, env);
+      if (request.method === 'POST') return await handlePost(request, env, ctx);
       return json({ error: 'Method not allowed' }, 405);
     } catch (e) {
       return json({ error: e.message }, 500);
@@ -55,6 +55,16 @@ export default {
 async function handleGet(request, env) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
+
+  if (action === 'getAgentJob') {
+    const jobId = searchParams.get('job_id');
+    if (!jobId) return json({ error: 'job_id required' }, 400);
+    const row = await env.DB.prepare('SELECT status, result, error FROM agent_jobs WHERE id = ?').bind(jobId).first();
+    if (!row) return json({ error: 'Job not found' }, 404);
+    let result = null;
+    if (row.result) { try { result = JSON.parse(row.result); } catch { /* leave null */ } }
+    return json({ status: row.status, result, error: row.error });
+  }
 
   if (action === 'getExercises') {
     const { results } = await env.DB.prepare(
@@ -423,7 +433,7 @@ async function companionDigest(env) {
   });
 }
 
-async function handlePost(request, env) {
+async function handlePost(request, env, ctx) {
   const body = await request.json();
   const { action } = body;
 
@@ -454,7 +464,16 @@ async function handlePost(request, env) {
   }
 
   if (action === 'agent') {
-    return await runGeraldAgent(body, env);
+    // Gerald's multi-iteration tool loop routinely takes 30-55s — long enough
+    // that mobile Safari kills the connection ("Load failed") well before it
+    // finishes, even though the Worker completes fine server-side. Return a
+    // job_id immediately; the loop runs in the background via waitUntil and
+    // the frontend polls short GETs instead of holding one long POST open.
+    const jobId = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO agent_jobs (id, status) VALUES (?, ?)').bind(jobId, 'pending').run();
+    ctx.waitUntil(runGeraldAgentJob(jobId, body, env));
+    ctx.waitUntil(env.DB.prepare("DELETE FROM agent_jobs WHERE created_at < datetime('now', '-1 day')").run());
+    return json({ job_id: jobId });
   }
 
   if (action === 'appendSession') {
@@ -1190,7 +1209,7 @@ HARD CONSTRAINTS:
     const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, output_config: { effort: 'low' }, system, tools: GERALD_TOOLS, messages });
     if (!res.ok) {
       console.error(`Gerald iter ${i} Anthropic call failed after ${Date.now() - startedAt}ms:`, res.status, JSON.stringify(res.data));
-      return json({ error: res.data }, res.status);
+      return { ok: false, error: res.data };
     }
     const data = res.data;
     console.log(`Gerald iter ${i} stop_reason=${data.stop_reason} elapsed=${Date.now() - startedAt}ms`);
@@ -1204,7 +1223,7 @@ HARD CONSTRAINTS:
       try { plan = extractPlanJson(text); }
       catch (e) {
         console.error(`Gerald iter ${i} invalid JSON after ${Date.now() - startedAt}ms:`, text.slice(0, 500));
-        return json({ error: 'Invalid JSON', raw: text }, 500);
+        return { ok: false, error: 'Invalid JSON', raw: text };
       }
 
       // Code-fix: strip hallucinated/duplicate exercise_ids (injury- and
@@ -1232,7 +1251,7 @@ HARD CONSTRAINTS:
       }
 
       plan.exercises = cleaned;
-      return json({ plan, validation: { removed, count: cleaned.length } });
+      return { ok: true, plan, validation: { removed, count: cleaned.length } };
     }
 
     if (data.stop_reason === 'tool_use') {
@@ -1245,7 +1264,7 @@ HARD CONSTRAINTS:
 
     if (data.stop_reason === 'max_tokens') {
       console.error(`Gerald hit max_tokens at iter ${i}, elapsed=${Date.now() - startedAt}ms`);
-      return json({ error: 'Gerald hit the output token limit mid-plan — try again' }, 500);
+      return { ok: false, error: 'Gerald hit the output token limit mid-plan — try again' };
     }
 
     console.error(`Gerald unexpected stop_reason=${data.stop_reason} at iter ${i}, elapsed=${Date.now() - startedAt}ms`);
@@ -1253,7 +1272,25 @@ HARD CONSTRAINTS:
   }
 
   console.error(`Gerald exhausted MAX_ITER=${MAX_ITER}, elapsed=${Date.now() - startedAt}ms`);
-  return json({ error: 'Agent did not complete within iteration limit' }, 500);
+  return { ok: false, error: 'Agent did not complete within iteration limit' };
+}
+
+async function runGeraldAgentJob(jobId, body, env) {
+  try {
+    const result = await runGeraldAgent(body, env);
+    if (result.ok) {
+      await env.DB.prepare('UPDATE agent_jobs SET status = ?, result = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .bind('complete', JSON.stringify({ plan: result.plan, validation: result.validation }), jobId).run();
+    } else {
+      const errText = typeof result.error === 'string' ? result.error : JSON.stringify(result.error);
+      await env.DB.prepare('UPDATE agent_jobs SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .bind('error', errText, jobId).run();
+    }
+  } catch (e) {
+    console.error(`Gerald job ${jobId} threw:`, e.message);
+    await env.DB.prepare('UPDATE agent_jobs SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind('error', e.message, jobId).run();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
