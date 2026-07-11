@@ -135,7 +135,6 @@ async function getCoachReply(userMsg) {
   isTyping = true;
   showTyping();
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
-  const activeShoulderInjury = injuries.some(i => i.active && /shoulder/i.test(i.body_part));
   let system;
   if (isDebriefMode && lastSSO) {
     system = `You are a post-session coach reviewing this session with James. Direct, insightful, no filler.
@@ -147,7 +146,6 @@ Next session rec: ${lastSSO.recommendation}
 Volume: ${lastSSO.total_sets} sets, ${Math.round(lastSSO.total_volume_kg)}kg
 ${lastSSO.exercises_flagged?.length ? 'Flagged: ' + lastSSO.exercises_flagged.join(', ') : ''}
 ${lastSSO.shoulder_flag ? '⚠ Shoulder flagged this session.' : ''}
-${activeShoulderInjury ? 'Active shoulder injury — no overhead, apply corkscrew cue on pushes.' : ''}
 Injuries: ${injStr}
 Full set log: ${JSON.stringify(loggedSets)}
 
@@ -156,6 +154,7 @@ Full set log: ${JSON.stringify(loggedSets)}
     const sessionCtx = buildSessionContext();
     const kitStr = buildKitString(loc);
     const availEx = filterByEquipmentOnly(exercises, loc)
+      .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
       .map(e => `${e.id} | ${e.display_name} (${e.category}, L${e.matrix_level||'?'}, ${e.equipment})`)
       .join('\n');
 
@@ -483,10 +482,9 @@ function quickMsg(msg) {
 function renderQuickChips() {
   const container = document.getElementById('quick-btns-container');
   if (!container) return;
-  const hasShoulderInjury = injuries.some(i => i.active && /shoulder/i.test(i.body_part));
   const setsLogged = loggedSets.length;
   const chips = [];
-  if (hasShoulderInjury) chips.push({ label: 'Shoulder pain', msg: 'Shoulder hurting — swap it' });
+  if (hasShoulderInjury()) chips.push({ label: 'Shoulder pain', msg: 'Shoulder hurting — swap it' });
   chips.push({ label: 'Easier', msg: 'Need an easier option' });
   if (setsLogged > 0) chips.push({ label: 'How am I doing?', msg: 'Quick progress check' });
   chips.push({ label: 'Done — debrief', msg: 'done', cls: 'debrief' });
@@ -695,6 +693,7 @@ async function sendReviewMsg() {
   reviewTyping = true;
   addReviewMsg('you', msg);
   const availableExList = filterByEquipmentOnly(exercises, loc)
+    .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
     .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', L' + (e.matrix_level||'?') + ', ' + e.equipment + ')')
     .join(', ');
   const chat = document.getElementById('review-chat');
@@ -705,7 +704,6 @@ async function sendReviewMsg() {
   chat.appendChild(typingDiv);
   chat.scrollTop = chat.scrollHeight;
   const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
-  const shoulderGuard = injuries.some(i => i.active && /shoulder/i.test(i.body_part)) ? ' Protect the right shoulder.' : '';
   const kitStr2 = buildKitString(loc);
   const histStr = buildHistStr();
   const system = `You are The Tactical Partner — adjusting a workout plan pre-session for James Thornton.
@@ -730,7 +728,7 @@ Return ONLY valid JSON — same format, no markdown, no preamble:
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
 }
-Keep what works. Only change what was asked. Weights on any new exercises must come from history, not defaults.${shoulderGuard}`;
+Keep what works. Only change what was asked. Weights on any new exercises must come from history, not defaults. Respect the active injury restrictions listed above exactly as written.`;
   try {
     const raw = await claude(system, [{ role: 'user', content: msg }], SONNET);
     const clean = raw.replace(/\`\`\`json|\`\`\`/g, '').trim();

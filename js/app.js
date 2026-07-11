@@ -14,6 +14,12 @@ function adjustSignal(key, delta) {
   window._signalTimer = setTimeout(() => autoRecommend(), 800);
 }
 let injuries = [], exercises = [], history = { sessions: [], sets: [] };
+// shoulder_safe is the only per-exercise safety flag in the DB — it should only
+// gate exercise selection when an active injury actually names the shoulder,
+// not whenever any injury (e.g. knee, back) is logged.
+function hasShoulderInjury() {
+  return injuries.some(i => (i.active === undefined || i.active) && /shoulder/i.test(i.body_part || ''));
+}
 let plan = [], chatLog = [], sessionId = '', loggedSets = [], preNotes = '', coachMemo = '';
 let bodyMetrics = [];
 let isTyping = false;

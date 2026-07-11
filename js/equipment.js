@@ -62,7 +62,7 @@ function filterExercises(exList, l, sType) {
       if (eq.includes('Parallettes (low)') && !cfg.parallettes_low) return false;
       if (eq.includes('Band') && !cfg.bands) return false;
     }
-    if (injuries.length && !isTrue(e.shoulder_safe)) return false;
+    if (hasShoulderInjury() && !isTrue(e.shoulder_safe)) return false;
     return true;
   });
 }
