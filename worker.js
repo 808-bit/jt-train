@@ -1158,7 +1158,7 @@ HARD CONSTRAINTS:
 
   const startedAt = Date.now();
   for (let i = 0; i < MAX_ITER; i++) {
-    const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, messages });
+    const res = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'enabled', budget_tokens: 1024 }, system, tools: GERALD_TOOLS, messages });
     if (!res.ok) {
       console.error(`Gerald iter ${i} Anthropic call failed after ${Date.now() - startedAt}ms:`, res.status, JSON.stringify(res.data));
       return json({ error: res.data }, res.status);
@@ -1190,7 +1190,7 @@ HARD CONSTRAINTS:
           role: 'user',
           content: `That plan only kept ${cleaned.length} valid exercise(s). Removed — ${removed.join('; ') || 'none'}. Rebuild it with 4-6 exercises using ONLY the exercise_ids that get_available_exercises returned earlier. Return just the corrected JSON, no commentary.`,
         });
-        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
+        const repair = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'enabled', budget_tokens: 1024 }, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
         if (!repair.ok) console.error('Gerald repair call failed:', repair.status, JSON.stringify(repair.data));
         if (repair.ok && repair.data.content) {
           const rtext = repair.data.content.map(b => b.text || '').join('');
