@@ -1,5 +1,14 @@
 # JT.TRAIN — Claude Code Project Context
 
+## Project Context
+
+James Thornton, Sydney AEST (UTC+11). **Solo personal-use app — no other contributors.**
+Equipment: Rings, KB (16/20/24/32kg singles), parallettes (high + low), pull-up bar, bands.
+Training focus: Lean bulk / hypertrophy, calisthenics + KB. Right shoulder impingement history.
+Goal: Build data moat for potential fine-tuning on calisthenics/KB domain.
+
+Because this is solo: commit directly to `main`, plain descriptive commit messages, no PR/review process, no CI. Don't propose branch workflows, PR templates, or approval gates unless asked.
+
 ## Stack
 
 | Layer | Detail |
@@ -372,9 +381,18 @@ History screen uses aliased vars: `--s1=--bg2`, `--b1=--border`, `--b2=--border2
 - `history` global (`{ sessions: [], sets: [] }`) is populated at init and available in `generateDebrief` — no extra fetch needed for historical comparison
 - Session screen chat input ID is `#msg-input` (not `#chat-input`)
 
-## User Context
+## Local Dev / Environment
 
-James Thornton, Sydney AEST (UTC+11). Solo personal use app.
-Equipment: Rings, KB (16/20/24/32kg singles), parallettes (high + low), pull-up bar, bands.
-Training focus: Lean bulk / hypertrophy, calisthenics + KB. Right shoulder impingement history.
-Goal: Build data moat for potential fine-tuning on calisthenics/KB domain.
+- **Frontend preview:** `python3 -m http.server 8787` from the repo root (see `.claude/launch.json`, config name `jt-train`). Serves `jt_train.html` + `js/**` as static files; API calls still hit the **live** Cloudflare Worker — there's no local mock backend.
+- **Worker:** no local `wrangler dev` workflow in use — worker changes are validated by `wrangler deploy` then `wrangler tail --format=pretty` to watch live logs. Treat worker edits as directly affecting production; there's no staging environment.
+- **Secrets:** never hardcode API keys/tokens in `worker.js` or `wrangler.toml`. Set via `wrangler secret put <NAME>`:
+  - `ANTHROPIC_API_KEY` — used by the `claude` proxy action.
+  - `COMPANION_TOKEN` — shared secret gating `?action=companionDigest`; unset means the bridge stays closed (503).
+- No `.env`/`.dev.vars` file exists — don't create one expecting it to be read automatically without also wiring it into `wrangler.toml`.
+
+## Testing / Verification
+
+- **No automated test suite.** Don't go looking for a test runner or propose adding one unless asked — verification here is syntax-check + manual browser check.
+- **Before any deploy:** run the JS syntax check (see `JS syntax check before deploy` under Critical Patterns) — catches syntax errors that `git push` won't.
+- **Frontend changes:** use the preview tools to actually load the page and click through the affected flow (idle screen, session, progress tab, etc.) — type-checking a diff is not the same as confirming the feature works. The live worker backs the preview, so real data/API behavior is exercised.
+- **Worker changes:** after `wrangler deploy`, tail logs (`wrangler tail jt-workout-worke --format=pretty`) while exercising the changed action from the running frontend to confirm it behaves as expected against real D1 data.
