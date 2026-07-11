@@ -213,6 +213,9 @@ Claude returns hyphenated IDs (`double-kb-deadlift`) — always normalise:
 const exId = (ex.exercise_id || ex.id || '').replace(/-/g, '_');
 ```
 
+### Progression chain "level" ≠ load order
+`pattern_progressions.level` encodes skill/stability complexity, not kg lifted. A later-level exercise can use less external load than the one before it (e.g. bilateral double-KB squat → single-KB unilateral → bodyweight-only pistol squat drops total load as balance/coordination demand rises). Never assume levels are monotonically heavier. Per-session weight is decided independently by the LOAD PRESCRIPTION PROTOCOL (coach.js), which reads that specific exercise's own logged history — not the chain level.
+
 ### Double KB exercises
 Store total weight in `weight_kg`, individual bells in `notes` (e.g. `"20+32kg"`).
 AI must only reference combos explicitly listed in `buildKitString(loc)` output — never invent a bell size.
