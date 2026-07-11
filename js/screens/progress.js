@@ -46,8 +46,8 @@ async function renderLongevityCard() {
   const sets = (progAllSets || []).filter(s => s.date >= cutoff);
   const exById = {}; (exercises || []).forEach(e => { exById[e.id] = e; });
   const pats = new Set(), mods = new Set();
-  sets.forEach(s => { const ex = exById[s.exercise_id]; if (!ex) return; if (ex.movement_pattern_id && ex.movement_pattern_id !== 'mp_rehab' && ex.movement_pattern_id !== 'mp_overhead_press') pats.add(ex.movement_pattern_id); mods.add(trainingModality(ex.equipment)); });
-  const PATTERN_TOTAL = 9;                              // horiz/vert push, horiz/vert pull, hinge, squat, carry, core, power/conditioning — excludes rehab and overhead press (avoided for shoulder safety)
+  sets.forEach(s => { const ex = exById[s.exercise_id]; if (!ex) return; if (ex.movement_pattern_id && ex.movement_pattern_id !== 'mp_rehab') pats.add(ex.movement_pattern_id); mods.add(trainingModality(ex.equipment)); });
+  const PATTERN_TOTAL = 9;                              // horiz/vert push, horiz/vert pull, hinge, squat, carry, core, power/conditioning — excludes rehab (mp_overhead_press merged into mp_vert_push as a flagged-avoid branch)
   const nPat = pats.size;
   const varietyCol = (nPat >= 5 && mods.size >= 2) ? 'var(--green)' : nPat >= 3 ? 'var(--amber)' : 'var(--red)';
   const varietyVal = `${nPat}/${PATTERN_TOTAL} patterns`;

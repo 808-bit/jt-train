@@ -786,7 +786,7 @@ const GERALD_TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        movement_pattern: { type: 'string', description: 'Filter by pattern_id from assess_training_state — one of "mp_horiz_push", "mp_vert_push", "mp_horiz_pull", "mp_vert_pull", "mp_posterior_hinge", "mp_anterior_squat", "mp_overhead_press", "mp_carry", "mp_core", "mp_rehab", "mp_power_conditioning". Omit for all.' }
+        movement_pattern: { type: 'string', description: 'Filter by pattern_id from assess_training_state — one of "mp_horiz_push", "mp_vert_push", "mp_horiz_pull", "mp_vert_pull", "mp_posterior_hinge", "mp_anterior_squat", "mp_carry", "mp_core", "mp_rehab", "mp_power_conditioning". Omit for all.' }
       }
     }
   },
