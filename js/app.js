@@ -21,6 +21,7 @@ function hasShoulderInjury() {
   return injuries.some(i => (i.active === undefined || i.active) && /shoulder/i.test(i.body_part || ''));
 }
 let plan = [], chatLog = [], sessionId = '', loggedSets = [], preNotes = '', coachMemo = '';
+let planArchetype = null;  // 'strength' | 'power' | 'restoration' — set from Gerald's plan, saved on session start
 let bodyMetrics = [];
 let isTyping = false;
 

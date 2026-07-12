@@ -485,11 +485,13 @@ async function handlePost(request, env, ctx) {
 
   if (action === 'appendSession') {
     const r = body.data || {};
+    const archetype = ['strength', 'power', 'restoration'].includes(r.archetype) ? r.archetype : null;
     await env.DB.prepare(`
-      INSERT INTO sessions (id, phase_id, date, session_type, location, rpe, notes, ai_plan_used, pre_sleep, pre_energy, pre_soreness, duration_min)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, phase_id, date, session_type, location, rpe, notes, ai_plan_used, pre_sleep, pre_energy, pre_soreness, duration_min, archetype)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET rpe = excluded.rpe, notes = excluded.notes,
-        duration_min = COALESCE(excluded.duration_min, sessions.duration_min)
+        duration_min = COALESCE(excluded.duration_min, sessions.duration_min),
+        archetype = COALESCE(excluded.archetype, sessions.archetype)
     `).bind(
       r.session_id || '', r.phase_id || 'lean-bulk-q2-2026',
       r.date || new Date().toISOString().slice(0, 10),
@@ -497,6 +499,7 @@ async function handlePost(request, env, ctx) {
       r.rpe_session || null, r.notes || null, r.ai_plan_used ? 1 : 0,
       r.pre_sleep || null, r.pre_energy || null, r.pre_soreness || null,
       (r.duration_min != null && !isNaN(parseFloat(r.duration_min))) ? parseFloat(r.duration_min) : null,
+      archetype,
     ).run();
     return json({ ok: true });
   }
@@ -920,7 +923,30 @@ async function executeTool(toolName, toolInput, context, env) {
       return `${fmtD(d.date)} ${d.session_type}: ${d.performance_signal}${flagged.length ? ', flagged: ' + flagged.join(', ') : ''}. ${d.recommendation}`;
     });
 
-    return { pattern_gaps: patternGaps, recent_debriefs: recentDebriefs };
+    // ── Archetype rotation ─────────────────────────────────────────────────────
+    // Count sessions (newest-first, excluding CSV imports) since the last time an
+    // archetype anchored a session. Power overdue at 3, Restoration at 10 (soft —
+    // readiness is Restoration's primary trigger). Advisory, like pattern_gaps.
+    const POWER_THRESHOLD = 3, RESTORATION_THRESHOLD = 10;
+    const archRows = await env.DB.prepare(
+      `SELECT archetype FROM sessions WHERE id NOT LIKE '%-H' ORDER BY date DESC, id DESC LIMIT 30`
+    ).all();
+    const archList = archRows.results.map(r => r.archetype || 'strength');
+    const sinceLast = (name) => {
+      const idx = archList.indexOf(name);
+      return idx === -1 ? archList.length : idx; // -1 → none in window → treat as fully overdue
+    };
+    const sessionsSincePower = sinceLast('power');
+    const sessionsSinceRestoration = sinceLast('restoration');
+    const archetypeRotation = {
+      sessions_since_power: sessionsSincePower,
+      power_overdue: sessionsSincePower >= POWER_THRESHOLD,
+      sessions_since_restoration: sessionsSinceRestoration,
+      restoration_overdue: sessionsSinceRestoration >= RESTORATION_THRESHOLD,
+      last_5_archetypes: archList.slice(0, 5),
+    };
+
+    return { pattern_gaps: patternGaps, recent_debriefs: recentDebriefs, archetype_rotation: archetypeRotation };
   }
 
   if (toolName === 'get_available_exercises') {
@@ -1173,9 +1199,21 @@ ${bwLine ? bwLine + '\n' : ''}Injuries: ${injStr}
 ${preNotes ? `Athlete note: ${preNotes}` : ''}
 ${pendingProgressions.length ? `Approved progressions: ${pendingProgressions.map(p => `${p.fromName} → ${p.toName || 'peak'}`).join(', ')}` : ''}
 
+SESSION ARCHETYPE (decide this FIRST — it sets which pattern group anchors the session and the whole session's intensity character):
+- strength — DEFAULT. Anchor the main patterns (push/pull/squat/hinge/carry/core). RIR 1-2, compounds first, proximity-to-failure hypertrophy. Use this unless a signal below says otherwise.
+- power — Anchor mp_power_conditioning (KB swings/cleans/snatches) as the first 2-3 slots. Higher reps, RIR 2-3, shorter rest, output quality over grinding to failure. This is the KB-lower-body / conditioning slot the doctrine calls non-negotiable.
+- restoration — Anchor mp_rehab (band pull-aparts, face pulls, scapular work, dead hangs). High RIR (2-3+), longer holds, low load. Shoulder-health insurance + active recovery.
+
+HOW TO CHOOSE (assess_training_state returns archetype_rotation — read it):
+- Readiness is the override. LOW readiness (⚠ above) → choose restoration regardless of rotation, UNLESS last session was already restoration (last_5_archetypes[0] === "restoration") — then run a lightened strength session instead.
+- Otherwise, if power_overdue is true → choose power. High readiness makes power especially appropriate; on moderate readiness it's still fine.
+- Otherwise, if restoration_overdue is true → choose restoration (the soft safety-net so mobility work never disappears).
+- Otherwise → strength.
+- The anchor archetype dominates the session but does NOT get exclusive access — you can still slot one opportunistic exercise from another pattern group (e.g. a rehab finisher inside a strength day) as you do normally.
+
 PROCESS (minimize round-trips — every extra turn adds real latency):
-1. assess_training_state — see what patterns are overdue
-2. get_available_exercises — pass ALL the patterns you want to target at once via movement_patterns (array), not one call per pattern
+1. assess_training_state — see what patterns are overdue AND read archetype_rotation to pick today's archetype (per the rules above)
+2. get_available_exercises — pass ALL the patterns you want to target at once via movement_patterns (array), not one call per pattern. Include the anchor archetype's pattern(s) (mp_power_conditioning for power, mp_rehab for restoration).
 3. get_multi_exercise_history — pass ALL the exercise_ids you need load data for in ONE call, not repeated get_exercise_history calls
 4. Optionally check_progressions if anything looks close to advancing
 5. Return the session plan as JSON and nothing else
@@ -1184,7 +1222,8 @@ You can call multiple tools in the same turn (e.g. assess_training_state + get_w
 
 OUTPUT (when done, return only this — no preamble, no commentary):
 {
-  "session_notes": "one sharp sentence on what you're targeting and why",
+  "archetype": "strength | power | restoration — the theme you chose above",
+  "session_notes": "one sharp sentence on what you're targeting and why (mention the archetype if it's not strength)",
   "exercises": [
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]

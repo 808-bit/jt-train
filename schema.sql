@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   rpe           INTEGER,           -- 1-10, post-session
   notes         TEXT,
   ai_plan_used  INTEGER DEFAULT 1, -- 1 = TRUE
+  archetype     TEXT,              -- 'strength' | 'power' | 'restoration' (session theme; drives rotation)
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

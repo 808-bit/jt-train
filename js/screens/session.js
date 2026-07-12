@@ -42,6 +42,7 @@ async function startSession() {
       pre_sleep: preSleep,
       pre_energy: preEnergy,
       pre_soreness: preSoreness,
+      archetype: planArchetype,
     }
   }).then(r => {
     if (!r.ok) showToast('Session not saved — check connection', 'error');

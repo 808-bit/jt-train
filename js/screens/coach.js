@@ -270,6 +270,7 @@ async function generateCoachesWorkout() {
   parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
 
   plan = parsed.exercises;
+  planArchetype = ['strength', 'power', 'restoration'].includes(parsed.archetype) ? parsed.archetype : null;
   const planIds = new Set(plan.map(e => e.exercise_id));
   pendingProgressions.forEach(p => { if (planIds.has(p.to)) appliedProgressions.add(p.from); });
   pendingProgressions = pendingProgressions.filter(p => !planIds.has(p.to));
@@ -430,6 +431,7 @@ Rules: 4-6 exercises. Base load/volume on history. Respect the active injury res
     parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
     console.log('[plan] after filter:', parsed.exercises.map(e => e.exercise_id));
     plan = parsed.exercises;
+    planArchetype = null;  // named session types aren't archetype-tracked (Gerald-only signal)
     const planIds = new Set(plan.map(e => e.exercise_id));
     pendingProgressions.forEach(p => { if (planIds.has(p.to)) appliedProgressions.add(p.from); });
     pendingProgressions = pendingProgressions.filter(p => planIds.has(p.to) ? false : true);
