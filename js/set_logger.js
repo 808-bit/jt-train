@@ -190,6 +190,7 @@ function applyCoachAdjustment(adj) {
     ? plan.findIndex(p => norm(p.exercise_id || p.id) === targetId)
     : slExIdx;
   if (idx < 0) return null;
+  if (adj.swap_to) return applySwap(idx, adj);
   const p = plan[idx];
   const labels = { weight: 'weight', reps: 'reps', sets: 'sets', rir: 'RIR', tempo: 'tempo', notes: 'note', logging_mode: 'mode', variation: 'variation' };
   const changes = [];
@@ -203,6 +204,58 @@ function applyCoachAdjustment(adj) {
   if (idx === slExIdx) renderSetLogger();   // live-update the logger UI
   updateProgress();
   return `${p.display_name}: ${changes.join(', ')}`;
+}
+
+// Mid-session exercise swap ("floor press is too wet — ring push-ups instead").
+// Sets already done stay logged under the old exercise: its target is capped at
+// what's completed so it reads COMPLETE, and the replacement is inserted after
+// it — history and the coach's [done/target] statuses stay truthful.
+function applySwap(idx, adj) {
+  const norm = id => (id || '').replace(/-/g, '_');
+  const newId = norm(adj.swap_to);
+  // Same safety net as the coach's exercise library: equipment-matched and
+  // shoulder-safe when injured. A hallucinated or unsafe id drops the block.
+  const lib = filterByEquipmentOnly(exercises, loc)
+    .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
+    .find(e => norm(e.id) === newId);
+  if (!lib) return null;
+  const old = plan[idx];
+  if (norm(old.exercise_id || old.id) === newId) return null;
+  const currentEx = plan[slExIdx];
+  const oldName = old.display_name;
+  const oldDone = exerciseProgress(old).done;
+  const swapSets = adj.sets ?? Math.max(1, Math.ceil((parseInt(old.sets) || 0) - oldDone));
+  // If the replacement is already in the plan, add the sets there instead of
+  // creating a duplicate entry — duplicate ids break per-exercise counting.
+  const existing = plan.find((e, i) => i !== idx && norm(e.exercise_id || e.id) === newId);
+  let target;
+  if (existing) {
+    existing.sets = (parseInt(existing.sets) || 0) + swapSets;
+    target = existing;
+  } else {
+    target = {
+      exercise_id: newId,
+      display_name: lib.display_name || newId.replace(/_/g, ' '),
+      sets: swapSets,
+      reps: adj.reps ?? old.reps,
+      weight: adj.weight ?? old.weight,
+      tempo: adj.tempo ?? old.tempo ?? '',
+      rir: adj.rir ?? old.rir,
+      notes: adj.notes ?? '',
+    };
+    if (adj.logging_mode) target.logging_mode = adj.logging_mode;
+    if (adj.variation) target.variation = adj.variation;
+    plan.splice(idx + 1, 0, target);
+  }
+  if (oldDone === 0) plan.splice(plan.indexOf(old), 1);
+  else old.sets = oldDone;
+  // Re-anchor the logger: indices shifted, and if the swapped lift was current,
+  // point at its replacement.
+  const follow = currentEx === old ? target : currentEx;
+  slExIdx = Math.max(0, plan.indexOf(follow));
+  renderSetLogger();
+  updateProgress();
+  return `${oldName} → ${target.display_name}${oldDone > 0 ? ` (${fmtSetCount(oldDone)} done set${oldDone === 1 ? '' : 's'} kept)` : ''}`;
 }
 
 async function logSet() {
