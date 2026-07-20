@@ -130,7 +130,10 @@ function buildSessionContext() {
     const logged = sets.map(s => {
       const side = sideOfSet(s);
       const lbl = side ? `S${Math.ceil(s.set_num / 2)}${side}` : `S${s.set_num}`;
-      return `${lbl}: ${s.reps}r @ ${s.weight_kg > 0 ? s.weight_kg + 'kg' : 'BW'} RIR${s.rir}`;
+      // Non-side notes (bell split, variation like "rings lowered") ride along so
+      // the coach can see which sets were performed with a modified setup.
+      const extra = (s.notes || '').replace(/^[LR] side( · )?/, '');
+      return `${lbl}: ${s.reps}r @ ${s.weight_kg > 0 ? s.weight_kg + 'kg' : 'BW'} RIR${s.rir}${extra ? ` (${extra})` : ''}`;
     }).join(', ');
     const lastSet = sets[sets.length - 1];
     let signal = '';
@@ -226,9 +229,10 @@ ${availEx}
 - Pain reported: swap immediately using library above, same movement pattern, shoulder-safe.
 
 ## Changing the plan / logger (structured)
-When you change the current exercise's prescription — because James asks (e.g. "make it single arm", "drop to 20kg", "do 4 sets") OR your progression call changes load/reps — append EXACTLY ONE line at the very end of your reply:
-[[ADJUST]]{"exercise_id":"<id>","weight":"24kg","reps":"6-8","sets":3,"rir":1,"logging_mode":"unilateral"}
+When you change the current exercise's prescription — because James asks (e.g. "make it single arm", "drop to 20kg", "do 4 sets") OR your progression call changes load/reps OR you prescribe a setup/leverage tweak — append EXACTLY ONE line at the very end of your reply:
+[[ADJUST]]{"exercise_id":"<id>","weight":"24kg","reps":"6-8","sets":3,"rir":1,"logging_mode":"unilateral","variation":"rings lowered"}
 - Include ONLY the fields that change. exercise_id is required (use an id from the library; for the current lift use its id).
+- variation: a short setup/leverage modifier that changes difficulty without changing the loaded weight — ring height, body angle, feet elevated, deficit, grip. REQUIRED whenever you tell James to change the setup mid-exercise ("lower the rings", "increase the angle for the last two sets") or he says he changed it — it is stamped onto every set logged from then on, so history records which variation was actually performed. Send "variation":"" to clear it when the setup returns to normal.
 - logging_mode (only when how it's logged changes): "standard" = one weight field · "unilateral" = one weight + L/R side toggle, logged one arm/leg at a time · "dual_kb" = two bells held at once, load summed.
 - A single-arm KB press/row/carry is "unilateral", NOT "dual_kb".
 - Do NOT mention the block or restate its values in your prose — the app applies it to the logger silently. Keep your spoken reply to the normal 1-3 directive sentences.

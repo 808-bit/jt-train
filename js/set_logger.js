@@ -127,12 +127,13 @@ function updateSetCounter() {
   if (!el) return;
   const done = setsPerEx[ex.exercise_id] || 0;
   const goal = ex.reps ? ` · ${ex.reps} reps @ RIR ${ex.rir ?? 2}` : '';
+  const varStr = ex.variation ? ` · ${ex.variation}` : '';
   if (slSide !== null) {
     const round = Math.floor(done / 2) + 1;
     const sideLabel = slSide === 'L' ? 'LEFT' : 'RIGHT';
-    el.textContent = `Round ${round} of ${ex.sets||4} — ${sideLabel}${goal}`;
+    el.textContent = `Round ${round} of ${ex.sets||4} — ${sideLabel}${goal}${varStr}`;
   } else {
-    el.textContent = `Set ${done + 1} of ${ex.sets||4}${goal}`;
+    el.textContent = `Set ${done + 1} of ${ex.sets||4}${goal}${varStr}`;
   }
   if (slCollapsed) updateMiniBar();
 }
@@ -190,12 +191,12 @@ function applyCoachAdjustment(adj) {
     : slExIdx;
   if (idx < 0) return null;
   const p = plan[idx];
-  const labels = { weight: 'weight', reps: 'reps', sets: 'sets', rir: 'RIR', tempo: 'tempo', notes: 'note', logging_mode: 'mode' };
+  const labels = { weight: 'weight', reps: 'reps', sets: 'sets', rir: 'RIR', tempo: 'tempo', notes: 'note', logging_mode: 'mode', variation: 'variation' };
   const changes = [];
   for (const key in labels) {
     if (adj[key] !== undefined && adj[key] !== null && String(adj[key]) !== String(p[key] ?? '')) {
       p[key] = adj[key];
-      changes.push(`${labels[key]} ${adj[key]}`);
+      changes.push(String(adj[key]) === '' ? `${labels[key]} cleared` : `${labels[key]} ${adj[key]}`);
     }
   }
   if (!changes.length) return null;
@@ -218,7 +219,14 @@ async function logSet() {
   } else {
     weightKg=slVals.weight; weightLabel=slVals.weight===0?'BW':slVals.weight+'kg';
   }
-  const setData = { session_id:sessionId, exercise_id:(ex.exercise_id||ex.id||'').replace(/-/g,'_'), set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes: (slSide ? slSide + ' side' + (setNotes ? ' · '+setNotes : '') : setNotes) };
+  // Notes carry everything the reps/weight columns can't: side, bell split, and
+  // any active variation (ring height, angle, elevation) set via [[ADJUST]].
+  // Side stays first — sideOfSet() (session.js) keys off the "L side"/"R side" prefix.
+  const noteParts = [];
+  if (slSide) noteParts.push(slSide + ' side');
+  if (setNotes) noteParts.push(setNotes);
+  if (ex.variation) noteParts.push(ex.variation);
+  const setData = { session_id:sessionId, exercise_id:(ex.exercise_id||ex.id||'').replace(/-/g,'_'), set_num:setNum, reps:slVals.reps, weight_kg:weightKg, rir:slVals.rir, tempo:ex.tempo||'', notes: noteParts.join(' · ') };
 
   const tempoMatch = (ex.tempo||'').match(/(\d+)-(\d+)-(\d+)-(\d+)/);
   if (tempoMatch) {
