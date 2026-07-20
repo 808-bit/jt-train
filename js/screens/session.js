@@ -85,6 +85,25 @@ async function sendMsg() {
   await getCoachReply(msg);
 }
 
+// Unilateral lifts log one row per side ("L side"/"R side" prefixed into notes
+// by logSet) — two sided rows make ONE set. Counting rows directly made the
+// coach see 4/3 after round 2 of a split squat and advance a round early.
+// Detecting from the notes (not the current logging_mode) keeps already-logged
+// rows correct even if the coach flips the mode mid-exercise via [[ADJUST]].
+function sideOfSet(s) {
+  const m = (s.notes || '').match(/^([LR]) side/);
+  return m ? m[1] : null;
+}
+
+function effectiveSetCount(sets) {
+  const sided = sets.filter(sideOfSet).length;
+  return sets.length - sided / 2;
+}
+
+function fmtSetCount(n) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 // Deterministic per-exercise progress. The completion status (sets done vs
 // target) is computed in code, NOT inferred by the model — the coach previously
 // advanced exercises after only 2 of 3 sets because it counted from prose.
@@ -95,9 +114,9 @@ function exerciseProgress(ex) {
   const exId = norm(ex.exercise_id || ex.id);
   const sets = loggedSets.filter(s => norm(s.exercise_id) === exId);
   const target = parseInt(ex.sets) || 0;
-  const done = sets.length;
-  const remaining = Math.max(0, target - done);
-  return { sets, target, done, remaining, complete: target > 0 && remaining === 0 };
+  const done = effectiveSetCount(sets);
+  const remaining = Math.max(0, Math.ceil(target - done));
+  return { sets, target, done, remaining, complete: target > 0 && done >= target };
 }
 
 function buildSessionContext() {
@@ -106,7 +125,13 @@ function buildSessionContext() {
     const isBW = !sets.length
       ? (parseFloat(ex.weight) === 0 || String(ex.weight).toUpperCase() === 'BW')
       : sets.every(s => !s.weight_kg || parseFloat(s.weight_kg) === 0);
-    const logged = sets.map(s => `S${s.set_num}: ${s.reps}r @ ${s.weight_kg > 0 ? s.weight_kg + 'kg' : 'BW'} RIR${s.rir}`).join(', ');
+    // Sided rows get labelled by set-within-exercise (S2L, S2R) so the model's
+    // view of set numbers matches the [done/target] count, not the raw row count.
+    const logged = sets.map(s => {
+      const side = sideOfSet(s);
+      const lbl = side ? `S${Math.ceil(s.set_num / 2)}${side}` : `S${s.set_num}`;
+      return `${lbl}: ${s.reps}r @ ${s.weight_kg > 0 ? s.weight_kg + 'kg' : 'BW'} RIR${s.rir}`;
+    }).join(', ');
     const lastSet = sets[sets.length - 1];
     let signal = '';
     if (!sets.length) {
@@ -123,10 +148,10 @@ function buildSessionContext() {
     }
     // Authoritative completion status — the coach must use THIS, not the prose.
     const status = done === 0
-      ? `[${done}/${target} sets — NOT STARTED]`
+      ? `[${fmtSetCount(done)}/${target} sets — NOT STARTED]`
       : complete
-        ? `[${done}/${target} sets — ✅ COMPLETE, ok to advance]`
-        : `[${done}/${target} sets — ⏳ ${remaining} SET${remaining === 1 ? '' : 'S'} REMAINING, do NOT advance]`;
+        ? `[${fmtSetCount(done)}/${target} sets — ✅ COMPLETE, ok to advance]`
+        : `[${fmtSetCount(done)}/${target} sets — ⏳ ${remaining} SET${remaining === 1 ? '' : 'S'} REMAINING, do NOT advance]`;
     const weightLabel = isBW ? 'BW' : ex.weight;
     return `${ex.display_name}${isBW ? ' [BW]' : ''} | prescribed: ${ex.sets}×${ex.reps} @ ${weightLabel} RIR${ex.rir} | logged: ${logged || 'none yet'} ${status} ${signal}`;
   }).join('\n');
@@ -170,7 +195,7 @@ Full set log: ${JSON.stringify(loggedSets)}
       const p = exerciseProgress(active);
       focusLine = p.done === 0
         ? `${active.display_name} — 0/${p.target} sets done. Athlete is starting this exercise.`
-        : `${active.display_name} — ${p.done}/${p.target} sets done, ${p.remaining} remaining. STAY on this exercise: prescribe the next set here. Do NOT name a different exercise until it reads ${p.target}/${p.target}.`;
+        : `${active.display_name} — ${fmtSetCount(p.done)}/${p.target} sets done, ${p.remaining} remaining. STAY on this exercise: prescribe the next set here. Do NOT name a different exercise until it reads ${p.target}/${p.target}.`;
     }
 
     system = `${GERALD_PERSONA}
@@ -182,6 +207,7 @@ Active injuries: ${injStr}
 
 ## Session state (prescribed vs actual with progression signal)
 Each line shows an authoritative [done/target sets] status, computed from logged data — TRUST IT.
+Unilateral lifts are logged one side at a time (S2L, S2R): L+R together = ONE set, and the [done/target] count already accounts for this. A .5 count means one side of the current set is still to go.
 ${sessionCtx}
 
 ## CURRENT FOCUS (computed — this is the only exercise in play right now)
@@ -257,7 +283,7 @@ async function generateDebrief() {
   const loadedSets = loggedSets.filter(s => s.weight_kg > 0);
   const bwSets = loggedSets.filter(s => !s.weight_kg || parseFloat(s.weight_kg) === 0);
   const totalVol = loadedSets.reduce((sum, s) => sum + (s.reps * s.weight_kg), 0);
-  const totalSets = loggedSets.length;
+  const totalSets = effectiveSetCount(loggedSets);
   const exCount = new Set(loggedSets.map(s => s.exercise_id)).size;
 
   // Compare to history
@@ -279,7 +305,7 @@ async function generateDebrief() {
     const anyRegressed = sets.some(s => s.reps < prescReps && s.rir <= 1);
     const exVol = sets.reduce((sum, s) => sum + (s.reps * s.weight_kg), 0);
     const tag = allProgressed ? '↑ READY TO PROGRESS' : anyRegressed ? '↓ REDUCE LOAD NEXT SESSION' : '= HOLD';
-    return `${ex.display_name}: ${sets.length} sets, vol ${Math.round(exVol)}kg·reps ${tag}`;
+    return `${ex.display_name}: ${fmtSetCount(effectiveSetCount(sets))} sets, vol ${Math.round(exVol)}kg·reps ${tag}`;
   }).join('\n');
 
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
@@ -293,7 +319,7 @@ ${MODALITY_DOCTRINE}
 ${bodyweightContext(bodyMetrics)}
 
 ${userContextBlock()}Session: ${sType} | Location: ${loc}
-Total: ${totalSets} sets across ${exCount} exercises | Loaded volume: ${Math.round(totalVol)}kg${bwSets.length ? ` + ${bwSets.length} BW sets (volume not in kg)` : ''}
+Total: ${fmtSetCount(totalSets)} sets across ${exCount} exercises | Loaded volume: ${Math.round(totalVol)}kg${bwSets.length ? ` + ${fmtSetCount(effectiveSetCount(bwSets))} BW sets (volume not in kg)` : ''}
 Active injuries: ${injStr}
 
 ## ${stimulusStr}
@@ -374,7 +400,7 @@ shoulder_flag: true only if right shoulder was loaded in a risky way`;
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--border);">
           <div style="padding:10px 12px;border-right:1px solid var(--border);text-align:center;">
-            <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1.1;">${sso.total_sets}</div>
+            <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1.1;">${fmtSetCount(sso.total_sets)}</div>
             <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-top:3px;">SETS</div>
           </div>
           <div style="padding:10px 12px;border-right:1px solid var(--border);text-align:center;">
@@ -496,14 +522,14 @@ function renderQuickChips() {
 
 function updateProgress() {
   const totalSets = plan.reduce((s, e) => s + (e.sets || 4), 0);
-  const doneSets = loggedSets.length;
+  const doneSets = effectiveSetCount(loggedSets);
   const totalVol = loggedSets.reduce((s, e) => s + (e.weight_kg * e.reps || 0), 0);
   const pct = totalSets > 0 ? Math.min(100, Math.round((doneSets / totalSets) * 100)) : 0;
   const pbar = document.getElementById('progress-bar');
   const plbl = document.getElementById('progress-label');
   const vlbl = document.getElementById('volume-label');
   if (pbar) pbar.style.width = pct + '%';
-  if (plbl) plbl.textContent = `${doneSets} / ${totalSets} sets`;
+  if (plbl) plbl.textContent = `${fmtSetCount(doneSets)} / ${totalSets} sets`;
   if (vlbl) vlbl.textContent = totalVol > 0 ? Math.round(totalVol) + ' kg' : '0 kg';
   renderQuickChips();
 }
@@ -628,7 +654,9 @@ function hideTyping() {
 
 function estimateSessionMins(planArr) {
   if (!planArr || !planArr.length) return null;
-  const totalSets = planArr.reduce((s, e) => s + (e.sets || 4), 0);
+  // Pace is minutes per logged ROW (worker getPace), and unilateral lifts log
+  // two rows per set — count rows here so the units match.
+  const totalSets = planArr.reduce((s, e) => s + (e.sets || 4) * (resolveLoggingMode(e) === 'unilateral' ? 2 : 1), 0);
   const pace = sessionPace?.minPerSet || 4.5;
   // logged_at spans first→last set, so warm-up/setup before set 1 isn't captured
   const mins = totalSets * pace + 6;

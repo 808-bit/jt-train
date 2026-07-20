@@ -6,6 +6,16 @@ function getKBWeights() {
   return (equipmentConfig[loc] || DEFAULT_CONFIG[loc])?.kb_weights || [16,20,24,32,44];
 }
 
+// How a lift is logged. Mode comes from the DB (logging_mode), but a plan entry
+// can override it so the coach can change it mid-session (applyCoachAdjustment).
+// Shared by the logger UI and all set counting — unilateral lifts log one row
+// per side, so counts everywhere must treat two sided rows as one set.
+function resolveLoggingMode(ex) {
+  const exId = (ex.exercise_id || ex.id || '').replace(/-/g, '_');
+  const exFull = (exercises || []).find(e => e.id === exId || e.id === (ex.exercise_id || ex.id || '')) || {};
+  return ex.logging_mode || exFull.logging_mode || (exFull.bilateral === 0 ? 'unilateral' : 'standard');
+}
+
 function initSetLogger() {
   slExIdx = 0; setsPerEx = {};
   setLoggerCollapsed(false);
@@ -32,7 +42,9 @@ function updateMiniBar() {
   const ex = plan[slExIdx];
   if (!el || !ex) return;
   const done = setsPerEx[ex.exercise_id] || 0;
-  el.textContent = `${ex.display_name} — Set ${done + 1} of ${ex.sets || 4}`;
+  el.textContent = slSide !== null
+    ? `${ex.display_name} — Round ${Math.floor(done / 2) + 1} of ${ex.sets || 4}`
+    : `${ex.display_name} — Set ${done + 1} of ${ex.sets || 4}`;
 }
 
 function wireChatCollapse() {
@@ -60,11 +72,7 @@ function renderSetLogger() {
   if (!ex) return;
   const sel = document.getElementById('sl-ex-select');
   if (sel) sel.innerHTML = plan.map((e,i) => `<option value="${i}" ${i===slExIdx?'selected':''}>${i+1}. ${e.display_name}</option>`).join('');
-  const exId = (ex.exercise_id || ex.id || '').replace(/-/g, '_');
-  const exFull = exercises.find(e => e.id === exId || e.id === (ex.exercise_id || ex.id || '')) || {};
-  // Mode comes from the DB (logging_mode), but a plan entry can override it so the
-  // coach can change how a lift is logged mid-session (see applyCoachAdjustment).
-  const mode = ex.logging_mode || exFull.logging_mode || (exFull.bilateral === 0 ? 'unilateral' : 'standard');
+  const mode = resolveLoggingMode(ex);
   slDualMode = (mode === 'dual_kb');
   slSide = (mode === 'unilateral') ? 'L' : null;
   if (slDualMode) {
@@ -250,10 +258,10 @@ async function logSet() {
 function endSession() {
   releaseWakeLock();
   const exDone = new Set(loggedSets.map(s=>s.exercise_id)).size;
-  const totalSets = loggedSets.length;
+  const totalSets = effectiveSetCount(loggedSets);
   const statsEl = document.getElementById('modal-stats');
   if (statsEl) statsEl.textContent = totalSets>0
-    ? `${totalSets} set${totalSets!==1?'s':''} logged across ${exDone} exercise${exDone!==1?'s':''}. Session will be saved without RPE.`
+    ? `${fmtSetCount(totalSets)} set${totalSets!==1?'s':''} logged across ${exDone} exercise${exDone!==1?'s':''}. Session will be saved without RPE.`
     : 'No sets logged yet. Discarding will remove the session record.';
   document.getElementById('end-modal').style.display='flex';
 }

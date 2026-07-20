@@ -601,7 +601,7 @@ async function loadExerciseProgress(exerciseId) {
   const ex   = exercises.find(e => e.id === exerciseId) || {};
   const isBW = sets.every(s => !s.weight_kg || parseFloat(s.weight_kg) === 0);
 
-  const totalSets  = sets.length;
+  const totalSets  = effectiveSetCount(sets);
   const sessions   = [...new Set(sets.map(s => s.date))].length;
   const bestReps   = Math.max(0, ...sets.map(s => parseInt(s.reps) || 0));
   const bestWeight = Math.max(0, ...sets.map(s => parseFloat(s.weight_kg) || 0));
@@ -650,7 +650,7 @@ async function loadExerciseProgress(exerciseId) {
         <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-top:3px;">${isBW ? 'BEST REPS' : 'BEST KG'}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1;">${totalSets}</div>
+        <div style="font-family:var(--font-display);font-size:28px;color:var(--text);line-height:1;">${fmtSetCount(totalSets)}</div>
         <div style="font-family:var(--font-ui);font-size:8px;font-weight:700;color:var(--text3);letter-spacing:0.16em;margin-top:3px;">TOTAL SETS</div>
       </div>
     </div>` +

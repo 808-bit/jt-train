@@ -625,7 +625,7 @@ async function getAnalytics(env) {
   const [sessRes, setsRes, planRes, injRes, debriefRes] = await env.DB.batch([
     env.DB.prepare(`SELECT id, date, session_type, pre_sleep, pre_energy FROM sessions ORDER BY date`),
     env.DB.prepare(`
-      SELECT s.date, st.session_id, st.exercise_id, st.reps, st.weight_kg, st.rir,
+      SELECT s.date, st.session_id, st.exercise_id, st.reps, st.weight_kg, st.rir, st.notes,
              e.display_name, e.movement_pattern
       FROM sets st
       JOIN sessions s ON st.session_id = s.id
@@ -678,10 +678,13 @@ async function getAnalytics(env) {
     .sort((a, b) => b.sharePct - a.sharePct);
 
   // ── Adherence: prescribed vs logged sets, last 10 planned sessions ──
+  // prescribed_sets counts L+R as one set for unilateral lifts, but those log
+  // one row per side ("L side"/"R side" in notes) — count sided rows as half
+  // so actual is in the same unit as prescribed.
   const actualSets = {};
   sets.forEach(s => {
     const k = s.session_id + '|' + s.exercise_id;
-    actualSets[k] = (actualSets[k] || 0) + 1;
+    actualSets[k] = (actualSets[k] || 0) + (/^[LR] side/.test(s.notes || '') ? 0.5 : 1);
   });
   const planBySession = new Map();
   plans.forEach(p => {
