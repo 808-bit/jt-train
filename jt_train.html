@@ -22,6 +22,7 @@
 <script src="js/screens/coach.js"></script>
 <script src="js/screens/session.js"></script>
 <script src="js/screens/progress.js"></script>
+<script src="js/screens/ask.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Syne:wght@400;600;700&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -452,6 +453,7 @@
     <div style="display:flex;gap:8px;">
       <button class="btn-sm" id="theme-toggle" onclick="toggleTheme()" style="font-size:9px;letter-spacing:0.18em;min-width:44px;">B</button>
       <button class="btn-sm" onclick="openWeighIn()" title="Log bodyweight">⚖</button>
+      <button class="btn-sm" onclick="openAsk()" title="Ask Gerald">💬</button>
       <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
       <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
       <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc);loadCoachBio()">⚙</button>
@@ -674,6 +676,24 @@
         <button class="quick-btn" onclick="quickMsg('Need an easier option')">Easier</button>
         <button class="quick-btn debrief" onclick="quickMsg('done')">Done — debrief</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ASK GERALD -->
+<div id="s-ask" class="screen">
+  <div class="header">
+    <div class="logo"><div class="dot live"></div><span>ASK GERALD</span></div>
+    <button class="btn-sm" onclick="goScreen('s-idle')">← Back</button>
+  </div>
+  <div class="chat-area" id="ask-chat"></div>
+  <div class="input-area" style="padding:0;">
+    <div style="padding: 10px 16px 12px;">
+      <div class="input-row" style="margin-bottom:8px;">
+        <input class="msg-input" id="ask-input" placeholder="Ask about a session, your week, a lift..." onkeydown="if(event.key==='Enter')sendAsk()"/>
+        <button class="send-btn" id="ask-send-btn" onclick="sendAsk()">→</button>
+      </div>
+      <div class="quick-btns" id="ask-chips"></div>
     </div>
   </div>
 </div>
