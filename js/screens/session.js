@@ -11,10 +11,54 @@ async function pickSessionId() {
   return date + '-A';
 }
 
+// Per-exercise load history + stall state for the exercises in today's plan.
+// The mid-workout coach's rules say "PROGRESS signal → increase weight", but it
+// used to see only the current session, so it had no idea what he lifted last
+// time for that lift. Fetched once at session start (not per message) and held
+// for the session — tools would add latency to every message mid-workout.
+let planHistoryCtx = '';
+
+async function loadPlanHistoryContext() {
+  planHistoryCtx = '';
+  try {
+    const ids = (plan || []).map(e => e.exercise_id).filter(Boolean);
+    if (!ids.length) return;
+    const [histR, progR] = await Promise.all([
+      api('getMultiExerciseHistory', { exercise_ids: ids.join(','), limit_per_exercise: 6 }),
+      api('getProgressions'),
+    ]);
+    const hist = histR.data || {};
+    const progs = (progR.data || []).filter(p => ids.includes(p.id));
+
+    const histLines = ids.map(id => {
+      const sets = hist[id] || [];
+      const name = (plan.find(e => e.exercise_id === id) || {}).display_name || id;
+      if (!sets.length) return `${name}: no previous sets logged.`;
+      const byDate = {};
+      sets.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
+      const dates = Object.entries(byDate).slice(0, 3).map(([d, ss]) =>
+        `${d}: ` + ss.map(s => `${s.reps}r@${s.kg > 0 ? s.kg + 'kg' : 'BW'}${s.rir != null ? ` RIR${s.rir}` : ''}`).join(', ')
+      );
+      return `${name} — ${dates.join(' | ')}`;
+    }).join('\n');
+
+    const stallLines = progs.filter(p => p.load_stalled || p.ready).map(p =>
+      `${p.exercise}: ${p.load_stalled ? p.load_note : `ready to advance (${p.qualifying_sessions}/${p.sessions_to_confirm} sessions met target)`}` +
+      `\n    levers${p.intensity_levers_are_generic ? ' (generic)' : ''}: ${(p.intensity_levers || []).join(' / ')}`
+    ).join('\n');
+
+    planHistoryCtx = `\n## Previous loads for today's exercises (use these to size the next set — do NOT progress blind)\n${histLines}\n`
+      + (stallLines ? `\n## Progression / stall state\n${stallLines}\n` : '');
+  } catch (e) {
+    console.error('loadPlanHistoryContext failed:', e);
+  }
+}
+
 async function startSession() {
   sessionId = await pickSessionId();
   loggedSets = [];
   chatLog = [];
+  loadPlanHistoryContext(); // fire-and-forget; ready well before the first message
   isDebriefMode = false;
   lastSSO = null;
   const logger = document.getElementById('set-logger');
@@ -215,6 +259,8 @@ ${sessionCtx}
 
 ## CURRENT FOCUS (computed — this is the only exercise in play right now)
 ${focusLine}
+${planHistoryCtx}
+${LOAD_PROTOCOL_BRIEF}
 
 ## Full exercise library (equipment-matched, use for substitutions)
 ${availEx}

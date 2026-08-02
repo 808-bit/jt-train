@@ -292,6 +292,37 @@ async function handleGet(request, env) {
     return json({ data: results });
   }
 
+  // Same stall/progression numbers the check_progressions tool returns, exposed
+  // as a GET so the mid-workout coach can inject them without a tool loop —
+  // latency matters when James is standing between sets.
+  if (action === 'getProgressions') {
+    return json({ data: await computeProgressions(env) });
+  }
+
+  // Recent sets for several exercises at once, for the same mid-workout inject.
+  if (action === 'getMultiExerciseHistory') {
+    const ids = (searchParams.get('exercise_ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!ids.length) return json({ data: {} });
+    const perEx = Math.min(parseInt(searchParams.get('limit_per_exercise')) || 6, 20);
+    const placeholders = ids.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(`
+      SELECT * FROM (
+        SELECT st.exercise_id, s.date, st.set_num, st.reps, st.weight_kg, st.rir, st.notes,
+               ROW_NUMBER() OVER (PARTITION BY st.exercise_id ORDER BY s.date DESC, st.set_num ASC) AS rn
+        FROM sets st JOIN sessions s ON st.session_id = s.id
+        WHERE st.exercise_id IN (${placeholders}) AND s.id NOT LIKE '%-H'
+      ) WHERE rn <= ?
+      ORDER BY exercise_id, rn
+    `).bind(...ids, perEx).all();
+    const out = {};
+    for (const r of results) {
+      (out[r.exercise_id] = out[r.exercise_id] || []).push({
+        date: fmtD(r.date), set: r.set_num, reps: r.reps, kg: r.weight_kg, rir: r.rir, notes: r.notes,
+      });
+    }
+    return json({ data: out });
+  }
+
   if (action === 'getBenchmarks') {
     const exerciseId = searchParams.get('exercise_id');
     const query = exerciseId
@@ -463,10 +494,14 @@ async function handlePost(request, env, ctx) {
   // Anthropic-backed actions burn API credits — require the app token.
   // Other POST actions (set logging etc.) stay open so a lost token can't
   // block a workout mid-session.
-  if (action === 'agent' || action === 'claude') {
+  if (action === 'agent' || action === 'claude' || action === 'askAgent') {
     if (!env.APP_TOKEN || request.headers.get('X-App-Token') !== env.APP_TOKEN) {
       return json({ error: 'Unauthorized' }, 401);
     }
+  }
+
+  if (action === 'askAgent') {
+    return json(await runAskAgent(body, env));
   }
 
   if (action === 'claude') {
@@ -989,6 +1024,131 @@ function kbPurchaseOptions(owned, kbPairs) {
   return options;
 }
 
+// Progression/stall analysis over progression_rules. Extracted from the
+// check_progressions tool so the mid-workout coach can consume the same numbers
+// through a plain GET — the two paths must never drift into disagreeing about
+// whether a lift is stalled.
+async function computeProgressions(env) {
+  // Window by SESSION, not by set. sessions_to_confirm counts sessions, so a
+  // 5-set window (~1.7 sessions of a 3x8 lift) can never evaluate it honestly
+  // — it used to count qualifying SETS against a SESSION threshold, so three
+  // good sets in one session read as "confirmed twice" and marked the lift
+  // ready off a single day's work.
+  const PROG_SESSION_WINDOW = 6;
+  const { results: rows } = await env.DB.prepare(`
+      SELECT * FROM (
+        SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
+               pr.next_exercise_id, pr.intensity_levers, pr.notes AS rule_notes,
+               e.display_name, e.modality, e.equipment,
+               s.date, st.set_num, st.reps, st.weight_kg, st.rir,
+               DENSE_RANK() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC) AS session_rn
+        FROM progression_rules pr
+        JOIN exercises e ON pr.exercise_id = e.id
+        JOIN sets st ON st.exercise_id = pr.exercise_id
+        JOIN sessions s ON st.session_id = s.id
+        WHERE s.id NOT LIKE '%-H'
+      ) WHERE session_rn <= ${PROG_SESSION_WINDOW}
+      ORDER BY exercise_id, session_rn, set_num
+    `).all();
+
+    const byExercise = new Map();
+    for (const r of rows) {
+      if (!byExercise.has(r.exercise_id)) byExercise.set(r.exercise_id, []);
+      byExercise.get(r.exercise_id).push(r);
+    }
+
+    const status = [];
+    for (const recent of byExercise.values()) {
+      const rule = recent[0];
+      // rep_target is 'SETSxREPS' ('3x10') / 'SETSxHOLDs' ('3x20s'). Both halves
+      // matter: the part after 'x' is the per-set target, the part before is how
+      // many sets have to hit it for the session to count.
+      const parts = String(rule.rep_target).split('x');
+      const targetReps = parseInt(parts[parts.length - 1]);
+      const targetSets = parts.length > 1 ? (parseInt(parts[0]) || 1) : 1;
+
+      // Group the window's sets into sessions (one per date).
+      const sessions = new Map();
+      for (const s of recent) {
+        if (!sessions.has(s.date)) sessions.set(s.date, []);
+        sessions.get(s.date).push(s);
+      }
+
+      const sessionRows = [...sessions.entries()].map(([date, sets]) => {
+        const good = sets.filter(s => s.reps >= targetReps && (s.rir ?? 99) <= rule.rir_target).length;
+        const weights = sets.map(s => s.weight_kg).filter(w => w != null);
+        return {
+          date: fmtD(date),
+          sets: sets.map(s => `${s.reps}r ${s.weight_kg ?? 'bw'}kg RIR${s.rir ?? '?'}`).join(' | '),
+          top_weight_kg: weights.length ? Math.max(...weights) : null,
+          qualifying_sets: good,
+          qualifies: good >= targetSets,
+        };
+      });
+
+      const qualifyingRows = sessionRows.filter(s => s.qualifies);
+      const qualifyingSessions = qualifyingRows.length;
+      // Consecutive run from the most recent session, reported for judgement but
+      // NOT used to gate `ready`: a failed probe at a heavier load breaks the
+      // streak, which would punish exactly the session where he tried to move up.
+      let consecutive = 0;
+      for (const s of sessionRows) { if (s.qualifies) consecutive++; else break; }
+
+      const ruleLevers = parseJSONArray(rule.intensity_levers);
+      const leversAreGeneric = ruleLevers.length === 0;
+      const levers = leversAreGeneric
+        ? defaultLevers(rule.modality, rule.rep_target, rule.equipment)
+        : ruleLevers;
+      const ready = qualifyingSessions >= rule.sessions_to_confirm;
+
+      // A lift that keeps clearing its target at an unchanged load is stalled on
+      // the LOAD axis, whatever the exercise-advance rule says. Compare only the
+      // sessions that MET the target — comparing every session's top weight lets
+      // a one-off heavy probe (a 48kg single that failed) hide a standing stall.
+      const qTops = qualifyingRows.map(s => s.top_weight_kg).filter(w => w != null);
+      const stalledAtKg = (qTops.length >= 2 && qTops.every(w => w === qTops[0])) ? qTops[0] : null;
+
+      // Has he actually tried riding reps up at the stalled load, or has every
+      // session stopped right at the fixed target? rep_target has no ceiling in
+      // this schema, so ~1.5x target is used as "reps genuinely plateaued" —
+      // below that, the honest advice is push reps before touching load.
+      const repsAtStallWeight = stalledAtKg != null
+        ? recent.filter(s => (s.weight_kg ?? 0) === stalledAtKg).map(s => s.reps)
+        : [];
+      const maxRepsAtStall = repsAtStallWeight.length ? Math.max(...repsAtStallWeight) : targetReps;
+      const repsCeiling = Math.ceil(targetReps * 1.5);
+      const repsPlateaued = maxRepsAtStall >= repsCeiling;
+
+      status.push({
+        exercise: rule.display_name,
+        id: rule.exercise_id,
+        target: `${rule.rep_target} @ RIR ≤${rule.rir_target}, confirmed over ${rule.sessions_to_confirm} session(s)`,
+        sessions_examined: sessionRows.length,
+        qualifying_sessions: qualifyingSessions,
+        consecutive_qualifying_sessions: consecutive,
+        sessions_to_confirm: rule.sessions_to_confirm,
+        ready,
+        next: rule.next_exercise_id || 'peak',
+        intensity_levers: levers,
+        intensity_levers_are_generic: leversAreGeneric,
+        rule_notes: rule.rule_notes || '',
+        recent_sessions: sessionRows,
+        load_stalled: stalledAtKg != null,
+        // A bodyweight lift logs weight_kg 0, so "stalled at 0kg / add load" would
+        // be nonsense advice — for those the levers are leverage, tempo and pause.
+        load_note: stalledAtKg == null ? ''
+          : stalledAtKg > 0
+            ? (repsPlateaued
+                ? `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg, and reps have already climbed to ${maxRepsAtStall} (target ${targetReps}) — genuinely plateaued. A load or lever change is warranted now (see intensity_levers); a heavier double-KB combo is often a bigger imbalance, not a clean step — check get_equipment before picking one.`
+                : `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg, but reps have never exceeded ${maxRepsAtStall} (target ${targetReps}) — he hasn't actually tried pushing reps at this load yet. REPS FIRST: push past ${targetReps} reps at ${stalledAtKg}kg today before considering more load. Do not re-prescribe ${stalledAtKg}kg for the exact same rep count again.`)
+            : (repsPlateaued
+                ? `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight, and reps have already climbed to ${maxRepsAtStall} (target ${targetReps}) — genuinely plateaued. This is a bodyweight lift with no "+kg" lever: reach for harder leverage, slower eccentric, added pause, or a unilateral variation now (see intensity_levers).`
+                : `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight, but reps have never exceeded ${maxRepsAtStall} (target ${targetReps}) — he hasn't actually tried pushing reps yet. Push past ${targetReps} reps today before reaching for a harder variation. Do not re-prescribe the same variation and rep count again.`),
+      });
+    }
+  return status;
+}
+
 async function executeTool(toolName, toolInput, context, env) {
   const { availableExerciseIds = [], injuries = [] } = context;
 
@@ -1114,125 +1274,9 @@ async function executeTool(toolName, toolInput, context, env) {
   }
 
   if (toolName === 'check_progressions') {
-    // Window by SESSION, not by set. sessions_to_confirm counts sessions, so a
-    // 5-set window (~1.7 sessions of a 3x8 lift) can never evaluate it honestly
-    // — it used to count qualifying SETS against a SESSION threshold, so three
-    // good sets in one session read as "confirmed twice" and marked the lift
-    // ready off a single day's work.
-    const PROG_SESSION_WINDOW = 6;
-    const { results: rows } = await env.DB.prepare(`
-      SELECT * FROM (
-        SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
-               pr.next_exercise_id, pr.intensity_levers, pr.notes AS rule_notes,
-               e.display_name, e.modality, e.equipment,
-               s.date, st.set_num, st.reps, st.weight_kg, st.rir,
-               DENSE_RANK() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC) AS session_rn
-        FROM progression_rules pr
-        JOIN exercises e ON pr.exercise_id = e.id
-        JOIN sets st ON st.exercise_id = pr.exercise_id
-        JOIN sessions s ON st.session_id = s.id
-        WHERE s.id NOT LIKE '%-H'
-      ) WHERE session_rn <= ${PROG_SESSION_WINDOW}
-      ORDER BY exercise_id, session_rn, set_num
-    `).all();
-
-    const byExercise = new Map();
-    for (const r of rows) {
-      if (!byExercise.has(r.exercise_id)) byExercise.set(r.exercise_id, []);
-      byExercise.get(r.exercise_id).push(r);
-    }
-
-    const status = [];
-    for (const recent of byExercise.values()) {
-      const rule = recent[0];
-      // rep_target is 'SETSxREPS' ('3x10') / 'SETSxHOLDs' ('3x20s'). Both halves
-      // matter: the part after 'x' is the per-set target, the part before is how
-      // many sets have to hit it for the session to count.
-      const parts = String(rule.rep_target).split('x');
-      const targetReps = parseInt(parts[parts.length - 1]);
-      const targetSets = parts.length > 1 ? (parseInt(parts[0]) || 1) : 1;
-
-      // Group the window's sets into sessions (one per date).
-      const sessions = new Map();
-      for (const s of recent) {
-        if (!sessions.has(s.date)) sessions.set(s.date, []);
-        sessions.get(s.date).push(s);
-      }
-
-      const sessionRows = [...sessions.entries()].map(([date, sets]) => {
-        const good = sets.filter(s => s.reps >= targetReps && (s.rir ?? 99) <= rule.rir_target).length;
-        const weights = sets.map(s => s.weight_kg).filter(w => w != null);
-        return {
-          date: fmtD(date),
-          sets: sets.map(s => `${s.reps}r ${s.weight_kg ?? 'bw'}kg RIR${s.rir ?? '?'}`).join(' | '),
-          top_weight_kg: weights.length ? Math.max(...weights) : null,
-          qualifying_sets: good,
-          qualifies: good >= targetSets,
-        };
-      });
-
-      const qualifyingRows = sessionRows.filter(s => s.qualifies);
-      const qualifyingSessions = qualifyingRows.length;
-      // Consecutive run from the most recent session, reported for judgement but
-      // NOT used to gate `ready`: a failed probe at a heavier load breaks the
-      // streak, which would punish exactly the session where he tried to move up.
-      let consecutive = 0;
-      for (const s of sessionRows) { if (s.qualifies) consecutive++; else break; }
-
-      const ruleLevers = parseJSONArray(rule.intensity_levers);
-      const leversAreGeneric = ruleLevers.length === 0;
-      const levers = leversAreGeneric
-        ? defaultLevers(rule.modality, rule.rep_target, rule.equipment)
-        : ruleLevers;
-      const ready = qualifyingSessions >= rule.sessions_to_confirm;
-
-      // A lift that keeps clearing its target at an unchanged load is stalled on
-      // the LOAD axis, whatever the exercise-advance rule says. Compare only the
-      // sessions that MET the target — comparing every session's top weight lets
-      // a one-off heavy probe (a 48kg single that failed) hide a standing stall.
-      const qTops = qualifyingRows.map(s => s.top_weight_kg).filter(w => w != null);
-      const stalledAtKg = (qTops.length >= 2 && qTops.every(w => w === qTops[0])) ? qTops[0] : null;
-
-      // Has he actually tried riding reps up at the stalled load, or has every
-      // session stopped right at the fixed target? rep_target has no ceiling in
-      // this schema, so ~1.5x target is used as "reps genuinely plateaued" —
-      // below that, the honest advice is push reps before touching load.
-      const repsAtStallWeight = stalledAtKg != null
-        ? recent.filter(s => (s.weight_kg ?? 0) === stalledAtKg).map(s => s.reps)
-        : [];
-      const maxRepsAtStall = repsAtStallWeight.length ? Math.max(...repsAtStallWeight) : targetReps;
-      const repsCeiling = Math.ceil(targetReps * 1.5);
-      const repsPlateaued = maxRepsAtStall >= repsCeiling;
-
-      status.push({
-        exercise: rule.display_name,
-        id: rule.exercise_id,
-        target: `${rule.rep_target} @ RIR ≤${rule.rir_target}, confirmed over ${rule.sessions_to_confirm} session(s)`,
-        sessions_examined: sessionRows.length,
-        qualifying_sessions: qualifyingSessions,
-        consecutive_qualifying_sessions: consecutive,
-        sessions_to_confirm: rule.sessions_to_confirm,
-        ready,
-        next: rule.next_exercise_id || 'peak',
-        intensity_levers: levers,
-        intensity_levers_are_generic: leversAreGeneric,
-        rule_notes: rule.rule_notes || '',
-        recent_sessions: sessionRows,
-        load_stalled: stalledAtKg != null,
-        // A bodyweight lift logs weight_kg 0, so "stalled at 0kg / add load" would
-        // be nonsense advice — for those the levers are leverage, tempo and pause.
-        load_note: stalledAtKg == null ? ''
-          : stalledAtKg > 0
-            ? (repsPlateaued
-                ? `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg, and reps have already climbed to ${maxRepsAtStall} (target ${targetReps}) — genuinely plateaued. A load or lever change is warranted now (see intensity_levers); a heavier double-KB combo is often a bigger imbalance, not a clean step — check get_equipment before picking one.`
-                : `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg, but reps have never exceeded ${maxRepsAtStall} (target ${targetReps}) — he hasn't actually tried pushing reps at this load yet. REPS FIRST: push past ${targetReps} reps at ${stalledAtKg}kg today before considering more load. Do not re-prescribe ${stalledAtKg}kg for the exact same rep count again.`)
-            : (repsPlateaued
-                ? `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight, and reps have already climbed to ${maxRepsAtStall} (target ${targetReps}) — genuinely plateaued. This is a bodyweight lift with no "+kg" lever: reach for harder leverage, slower eccentric, added pause, or a unilateral variation now (see intensity_levers).`
-                : `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight, but reps have never exceeded ${maxRepsAtStall} (target ${targetReps}) — he hasn't actually tried pushing reps yet. Push past ${targetReps} reps today before reaching for a harder variation. Do not re-prescribe the same variation and rep count again.`),
-      });
-    }
-    return { progressions: status };
+    return { progressions: await computeProgressions(env) };
   }
+
 
   if (toolName === 'get_weekly_load') {
     const today = sydneyToday();
@@ -1416,6 +1460,58 @@ async function callAnthropic(env, payload) {
     body: JSON.stringify(payload),
   });
   return { ok: res.ok, status: res.status, data: await res.json() };
+}
+
+// Ask Gerald's tool loop. Same D1 tools the plan agent uses, but it answers in
+// prose instead of returning a plan, and runs on a much tighter iteration budget
+// — this is an interactive chat, so the 30-55s the plan agent takes would be
+// unacceptable here. MAX_ITER 3 allows: one round of tool calls, optionally a
+// second follow-up round, then the answer.
+//
+// Before this existed, Ask Gerald reasoned over a fixed 4-session snapshot with
+// no progression rules, no per-exercise load history and no injuries — so a
+// question like "why is my front squat stuck?" was literally unanswerable when
+// the stall spanned four months.
+const ASK_MAX_ITER = 3;
+
+async function runAskAgent(body, env) {
+  const { system, messages, context = {} } = body;
+  const startedAt = Date.now();
+  const convo = Array.isArray(messages) ? [...messages] : [];
+
+  for (let i = 0; i < ASK_MAX_ITER; i++) {
+    const isLast = i === ASK_MAX_ITER - 1;
+    const res = await callAnthropic(env, {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      system,
+      tools: GERALD_TOOLS,
+      // On the final iteration forbid further tool calls so the loop always ends
+      // with prose rather than an unanswered tool_use the user never sees.
+      ...(isLast ? { tool_choice: { type: 'none' } } : {}),
+      messages: convo,
+    });
+    if (!res.ok) {
+      console.error(`Ask iter ${i} failed after ${Date.now() - startedAt}ms:`, res.status, JSON.stringify(res.data));
+      return { error: res.data };
+    }
+    const data = res.data;
+    console.log(`Ask iter ${i} stop_reason=${data.stop_reason} elapsed=${Date.now() - startedAt}ms`);
+    convo.push({ role: 'assistant', content: data.content });
+
+    if (data.stop_reason === 'tool_use') {
+      const calls = data.content.filter(b => b.type === 'tool_use');
+      const results = await Promise.all(calls.map(b => executeTool(b.name, b.input, context, env)));
+      convo.push({
+        role: 'user',
+        content: calls.map((b, n) => ({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(results[n]) })),
+      });
+      continue;
+    }
+
+    return { text: data.content.map(b => b.text || '').join('').trim() };
+  }
+  return { text: '', error: 'Ask agent exhausted its iteration budget' };
 }
 
 async function runGeraldAgent(body, env) {

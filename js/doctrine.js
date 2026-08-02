@@ -24,6 +24,12 @@ PRACTICAL IMPLICATION: prize proximity to failure and consistency over raw tonna
 // How to progress work that has no load increment.
 const BW_PROGRESSION_RULE = `BODYWEIGHT PROGRESSION: pure calisthenics has no "+weight" lever — progress it by harder leverage (e.g. ring push-up → RTO → archer → one-arm), slower tempo / longer eccentric, added pause, or unilateral variation. Add external load (vest/belt, KB) only where the movement allows it. For KB and weighted work, progress by load or reps per the RIR protocol.`;
 
+// Short client-side companion to the worker's LOAD_PROTOCOL. The full protocol
+// lives server-side where the plan agent runs; this is the condensed version for
+// the advisory chat paths, so Gerald's between-session and mid-workout advice
+// can't contradict what the plan agent prescribes.
+const LOAD_PROTOCOL_BRIEF = `REPS BEFORE LOAD: rep_target ("3x8") is a FLOOR, not a ceiling — there is no stored rep range to fill before adding load, so riding reps up past target at the current load IS the progression and it is the default move whenever RIR allows. Step the load only once reps have climbed for 2+ sessions and either plateaued at RIR ≤1 or reached roughly 1.5x the target reps. For double-KB work a heavier combo is often a bigger IMBALANCE rather than a clean step (e.g. 20+24=44kg at ±4kg vs 20+32=52kg at ±12kg) — on a racked lift that is a harder movement, not a heavier one, and reps will collapse. Never advise a jump that skips this.`;
+
 // Classify an exercise's modality from its equipment tag. KB is the only
 // "loaded" implement in James's stack; everything else (Rings/BW/Parallettes/
 // Bands) is calisthenics.

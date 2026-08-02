@@ -106,22 +106,56 @@ async function getAskReply() {
   showAskTyping();
   try {
     const ctx = await (askCtxPromise || (askCtxPromise = buildAskContext()));
+    const injStr = (typeof injuries !== 'undefined' && injuries.length)
+      ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ')
+      : 'None active';
     const system = `${GERALD_PERSONA}
 ${userContextBlock()}
-You are answering James's ad-hoc questions BETWEEN sessions — not mid-workout, there is no plan to prescribe here. He might want feedback on a session, his weekly training load, how a specific lift is trending, how the lean bulk is going, or equipment guidance: what the next weight on a lift should be and which kettlebell to buy next. Ground every answer in the data below. For next-weight / purchase questions, reason from the KB LADDER and his recent loads — recommend buying a bell only to bridge a genuine gap, and flag it clearly as a purchase, never as kit he already owns. If the data doesn't cover what he asked, say so plainly rather than inventing numbers.
+You are answering James's ad-hoc questions BETWEEN sessions — not mid-workout, there is no plan to prescribe here. He might want feedback on a session, his weekly training load, how a specific lift is trending, how the lean bulk is going, or equipment guidance: what the next weight on a lift should be and which kettlebell to buy next.
+
+${LOAD_PROTOCOL_BRIEF}
+
+ACTIVE INJURIES: ${injStr}
+
+YOU HAVE TOOLS — USE THEM. The snapshot below is only a starting point: it covers the last few sessions and nothing further back. Whenever the question reaches past it — how a lift is trending over months, why something has stalled, what's ready to progress, what the kit supports — call the tools instead of guessing or saying you lack data:
+- check_progressions — what's met its target, what has STALLED at an unchanged load (load_stalled/load_note), and the intensity_levers for each lift. Use this for any "why am I stuck / what's next" question.
+- get_exercise_history / get_multi_exercise_history — the real load and RIR history for specific lifts, far beyond the snapshot's few sessions.
+- assess_training_state — pattern gaps and what's been neglected.
+- get_weekly_load — hard sets per movement pattern this week vs last.
+- get_equipment — owned bells, the single-bell ladder and the double-KB balanced ladder, for next-weight and purchase questions.
+- get_body_metrics — bodyweight trend for lean-bulk questions.
+Prefer ONE turn with several tools batched together over several sequential turns — this is a live chat and every extra round-trip is felt. You have a hard budget of ${3} model turns, so gather what you need in the first one.
+
+Ground every answer in real figures. If the tools genuinely don't cover something, say so plainly rather than inventing numbers. For purchase advice, recommend a bell only to bridge a genuine gap, and flag it clearly as a purchase, never as kit he already owns.
 
 ${ctx}
 
-Answer in 2-5 sentences. Lead with the number or the insight, not preamble. Use real figures from the data. No motivation-poster talk.`;
+Answer in 2-5 sentences. Lead with the number or the insight, not preamble. No motivation-poster talk.`;
 
     // Build the transcript, dropping any leading assistant turn (the greeting)
     // so the messages array starts with a user turn as the API requires.
     const msgs = askLog.map(m => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }));
     while (msgs.length && msgs[0].role !== 'user') msgs.shift();
 
-    const reply = await claude(system, msgs, SONNET);
+    // Agentic path: the worker runs a short tool loop against D1 and returns prose.
+    const res = await apiPost({
+      action: 'askAgent',
+      system,
+      messages: msgs,
+      context: {
+        location: typeof loc !== 'undefined' ? loc : 'Home',
+        injuries: typeof injuries !== 'undefined' ? injuries : [],
+        // get_available_exercises is constrained to this list, so without it that
+        // tool returns nothing.
+        availableExerciseIds: (typeof exercises !== 'undefined' && typeof filterByEquipmentOnly === 'function')
+          ? filterByEquipmentOnly(exercises, typeof loc !== 'undefined' ? loc : 'Home').map(e => e.id)
+          : [],
+      },
+    });
+    if (res && res.error) throw new Error(typeof res.error === 'string' ? res.error : JSON.stringify(res.error));
+    const reply = (res && res.text) || '';
     hideAskTyping();
-    addAskMsg('coach', (reply || '').trim() || "Didn't catch that — ask again?");
+    addAskMsg('coach', reply.trim() || "Didn't catch that — ask again?");
   } catch (e) {
     hideAskTyping();
     addAskMsg('coach', 'Something broke pulling your data — ' + (e && e.message ? e.message : e) + '. Try again in a moment.');
