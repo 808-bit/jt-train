@@ -66,15 +66,20 @@
 
   /* ── Header ──────────────────────────────────────────────────────────────── */
   .header {
-    padding: 13px 20px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
     position: sticky; top: 0; background: rgba(8,8,8,0.92);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 10;
   }
-  .logo { display: flex; align-items: center; gap: 9px; }
-  .logo span { font-family: var(--font-ui); font-size: 13px; font-weight: 700; letter-spacing: 0.12em; color: var(--text); }
-  .badge { font-family: var(--font); font-size: 9px; color: var(--text3); letter-spacing: 0.16em; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border2); transition: all 0.4s; }
+  .logo { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+  .logo span { font-family: var(--font-ui); font-size: 13px; font-weight: 700; letter-spacing: 0.12em; color: var(--text); white-space: nowrap; }
+  /* .logo span would otherwise win on specificity and render the badge at title size */
+  .badge, .logo span.badge {
+    font-family: var(--font); font-size: 9px; font-weight: 400;
+    color: var(--text2); letter-spacing: 0.16em;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border2); transition: all 0.4s; flex-shrink: 0; }
   .dot.live { background: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,0.15), 0 0 10px rgba(34,197,94,0.4); }
   .btn-sm {
     font-family: var(--font-ui); font-size: 11px; font-weight: 600;
@@ -84,6 +89,23 @@
     min-height: 44px; display: inline-flex; align-items: center;
   }
   .btn-sm:hover { color: var(--text); border-color: var(--border2); }
+  /* Header icon nav — square 44px targets, sized to fit a 375px viewport */
+  .nav-btns { display: flex; gap: 5px; flex-shrink: 0; }
+  .nav-btn {
+    width: 42px; height: 44px; flex: 0 0 42px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text2); background: none;
+    border: 1px solid var(--border2); border-radius: 8px;
+    cursor: pointer; transition: all 0.15s; -webkit-tap-highlight-color: transparent;
+  }
+  .nav-btn svg { width: 18px; height: 18px; display: block; }
+  .nav-btn:hover { color: var(--text); }
+  .nav-btn:active { color: var(--text); background: var(--bg2); }
+  @media (max-width: 359px) {
+    .nav-btns { gap: 4px; }
+    .nav-btn { width: 40px; flex-basis: 40px; }
+    .badge { display: none; }
+  }
 
   /* ── Idle screen ─────────────────────────────────────────────────────────── */
   .idle-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 28px 24px; }
@@ -450,14 +472,20 @@
       <span>JT.TRAIN</span>
       <span class="badge" id="badge">connecting...</span>
     </div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn-sm" id="theme-toggle" onclick="toggleTheme()" style="font-size:9px;letter-spacing:0.18em;min-width:44px;">B</button>
-      <button class="btn-sm" onclick="openWeighIn()" title="Log bodyweight">⚖</button>
-      <button class="btn-sm" onclick="openAsk()" title="Ask Gerald">💬</button>
-      <button class="btn-sm" onclick="initHistory();goScreen('s-history')">⊞</button>
-      <button class="btn-sm" onclick="initProgress();goScreen('s-progress')">↗</button>
-      <button class="btn-sm" onclick="goScreen('s-equipment');selectEquipLoc(loc);loadCoachBio()">⚙</button>
-    </div>
+    <nav class="nav-btns">
+      <button class="nav-btn" onclick="openAsk()" title="Ask Gerald" aria-label="Ask Gerald">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.4-.6L3 21l1.8-5.1A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4Z"/></svg>
+      </button>
+      <button class="nav-btn" onclick="initHistory();goScreen('s-history')" title="History" aria-label="History">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+      </button>
+      <button class="nav-btn" onclick="initProgress();goScreen('s-progress')" title="Progress" aria-label="Progress">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20V4M3 20h18M7 15l4-5 3.5 3L21 7"/></svg>
+      </button>
+      <button class="nav-btn" onclick="goScreen('s-equipment');selectEquipLoc(loc);loadCoachBio()" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14M5 16h14"/><circle cx="9" cy="8" r="2.4"/><circle cx="15" cy="16" r="2.4"/></svg>
+      </button>
+    </nav>
   </div>
   <div class="idle-body">
     <div class="idle-inner">

@@ -103,7 +103,12 @@ function renderBodyweightCard() {
   if (!el) return;
   const rows = (bodyMetrics || []).filter(m => m.weight_kg != null);
   if (!rows.length) {
-    el.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:8px;font-family:var(--font);font-size:12px;color:var(--text2);">No weigh-ins yet — tap ⚖ on the home screen to start tracking bodyweight.</div>`;
+    el.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:8px;">
+        <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;margin-bottom:8px;">BODYWEIGHT</div>
+        <div style="font-family:var(--font);font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;">No weigh-ins yet — log one to start tracking the trend.</div>
+        <button type="button" onclick="openWeighIn()" style="font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--green);background:none;border:1px solid var(--border2);border-radius:8px;padding:0 14px;min-height:40px;cursor:pointer;letter-spacing:0.06em;">+ Log weigh-in</button>
+      </div>`;
     return;
   }
   const asc = [...rows].reverse();               // rows arrive DESC; chart wants ASC
@@ -118,7 +123,7 @@ function renderBodyweightCard() {
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
         <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.18em;">BODYWEIGHT</div>
-        <button type="button" onclick="openWeighIn()" style="font-family:var(--font-ui);font-size:9px;color:var(--green);background:none;border:none;cursor:pointer;letter-spacing:0.06em;padding:0;">+ Log</button>
+        <button type="button" onclick="openWeighIn()" style="font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--green);background:none;border:1px solid var(--border2);border-radius:6px;cursor:pointer;letter-spacing:0.06em;padding:6px 10px;">+ Weigh-in</button>
       </div>
       <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
         <span style="font-family:var(--font-display);font-size:26px;color:var(--text);line-height:1;">${latest.weight_kg}<span style="font-size:13px;color:var(--text3);"> kg</span></span>

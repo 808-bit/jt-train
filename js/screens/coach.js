@@ -26,7 +26,7 @@ async function init() {
     }
 
     document.getElementById('dot').classList.add('live');
-    document.getElementById('badge').textContent = '● LIVE';
+    document.getElementById('badge').textContent = 'LIVE';  // the .dot already shows the status colour
     document.getElementById('status').textContent = exercises.length + ' exercises loaded';
     api('getPace').then(r => { sessionPace = r; }).catch(() => {});
     await loadIdleHistory();

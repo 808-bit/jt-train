@@ -32,7 +32,7 @@ async function loadBodyMetrics() {
 
 function openWeighIn() {
   const latest = (bodyMetrics || []).find(m => m.weight_kg != null);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA');  // never toISOString — UTC date is wrong for AEST
   const inp = 'width:100%;margin-top:6px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font-display);font-size:20px;text-align:center;';
   const lbl = 'flex:1;font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.14em;';
   const ov = document.createElement('div');
@@ -60,7 +60,9 @@ async function saveWeighIn() {
   const bfRaw = document.getElementById('wi-bf').value;
   const bf = bfRaw === '' ? null : parseFloat(bfRaw);
   try {
-    const r = await apiPost({ action: 'logBodyMetric', data: { weight_kg: w, bodyfat_pct: bf } });
+    // Send the AEST date explicitly — the worker otherwise defaults to the UTC
+    // date, which is the previous day for any weigh-in before 11am local.
+    const r = await apiPost({ action: 'logBodyMetric', data: { date: new Date().toLocaleDateString('en-CA'), weight_kg: w, bodyfat_pct: bf } });
     if (r.error) throw new Error(typeof r.error === 'string' ? r.error : JSON.stringify(r.error));
     await loadBodyMetrics();
     document.getElementById('weighin-overlay')?.remove();
@@ -178,20 +180,9 @@ function goScreen(id) {
   }
 }
 
-function toggleTheme() {
-  const isB = document.documentElement.dataset.theme === 'b';
-  document.documentElement.dataset.theme = isB ? '' : 'b';
-  localStorage.setItem('jt-theme', isB ? 'a' : 'b');
-  document.getElementById('theme-toggle').textContent = isB ? 'A' : 'B';
-}
-(function() {
-  const stored = localStorage.getItem('jt-theme');
-  if (stored === 'a') {
-    document.documentElement.dataset.theme = '';
-    const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = 'A';
-  }
-})();
+// Theme B (Performance Blue) is the only theme — set via <html data-theme="b">.
+// The A/B toggle and its stored preference were removed with the header cleanup.
+localStorage.removeItem('jt-theme');
 
 function showToast(msg, type, duration) {
   const t = document.createElement('div');
