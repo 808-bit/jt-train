@@ -923,6 +923,20 @@ function parseJSONArray(raw) {
   }
 }
 
+// Most progression_rules rows have no intensity_levers recorded, which left a
+// stalled lift flagged as stalled with nothing sanctioned to reach for. Derive a
+// generic set from what the DB does know (modality + whether the target is a
+// timed hold), ordered reps-first to match LOAD_PROTOCOL. Flagged as generic in
+// the tool result so exercise-specific levers, where they exist, clearly win.
+function defaultLevers(modality, repTarget, equipment) {
+  const isHold = /s$/.test(String(repTarget || '').split('x').pop() || '');
+  if (isHold) return ['Longer hold', 'Stricter position', 'Multiple holds with short rest', 'Harder leverage'];
+  const loaded = modality === 'kettlebell' || modality === 'hybrid' || /KB|Barbell|Dumbbell/i.test(equipment || '');
+  return loaded
+    ? ['Add reps at current load', 'Slower eccentric (3-4s)', 'Pause at the hard position', 'Heavier bell once reps plateau']
+    : ['Add reps', 'Slower eccentric (3-4s)', 'Pause at the hard position', 'Harder leverage or unilateral variation'];
+}
+
 // Standard kettlebell sizes step by 4kg. Shared by get_equipment's single-bell
 // ladder and the double-KB combo ladder below.
 const KB_RUNGS = [8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48];
@@ -1110,7 +1124,7 @@ async function executeTool(toolName, toolInput, context, env) {
       SELECT * FROM (
         SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
                pr.next_exercise_id, pr.intensity_levers, pr.notes AS rule_notes,
-               e.display_name,
+               e.display_name, e.modality, e.equipment,
                s.date, st.set_num, st.reps, st.weight_kg, st.rir,
                DENSE_RANK() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC) AS session_rn
         FROM progression_rules pr
@@ -1165,7 +1179,11 @@ async function executeTool(toolName, toolInput, context, env) {
       let consecutive = 0;
       for (const s of sessionRows) { if (s.qualifies) consecutive++; else break; }
 
-      const levers = parseJSONArray(rule.intensity_levers);
+      const ruleLevers = parseJSONArray(rule.intensity_levers);
+      const leversAreGeneric = ruleLevers.length === 0;
+      const levers = leversAreGeneric
+        ? defaultLevers(rule.modality, rule.rep_target, rule.equipment)
+        : ruleLevers;
       const ready = qualifyingSessions >= rule.sessions_to_confirm;
 
       // A lift that keeps clearing its target at an unchanged load is stalled on
@@ -1197,6 +1215,7 @@ async function executeTool(toolName, toolInput, context, env) {
         ready,
         next: rule.next_exercise_id || 'peak',
         intensity_levers: levers,
+        intensity_levers_are_generic: leversAreGeneric,
         rule_notes: rule.rule_notes || '',
         recent_sessions: sessionRows,
         load_stalled: stalledAtKg != null,

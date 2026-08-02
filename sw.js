@@ -1,4 +1,4 @@
-const CACHE = 'jt-train-v33';
+const CACHE = 'jt-train-v34';
 const STATIC = [
   '/jt-train/jt_train.html',
   '/jt-train/manifest.json',

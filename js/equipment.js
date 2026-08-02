@@ -135,6 +135,19 @@ function buildEquipmentBrief(l) {
   return s;
 }
 
+// Parallette height gate. The old inline checks tested for 'Parallettes (high)'
+// and 'Parallettes (low)' but the exercises table only ever stores the bare
+// string 'Parallettes', so both branches were unreachable and every parallette
+// movement passed regardless of which pair is owned — the filter contradicted
+// buildKitString()'s own "low only — do NOT prescribe parallette dips or L-sit"
+// note. Tagging is minimum-requirement: '(high)' needs the tall pair (you must
+// clear the floor), anything else tagged 'Parallettes' works on either height.
+function parallettesOk(eq, cfg) {
+  if (!eq.includes('Parallettes')) return true;
+  if (eq.includes('Parallettes (high)')) return !!cfg.parallettes_high;
+  return !!(cfg.parallettes_high || cfg.parallettes_low);
+}
+
 function filterExercises(exList, l, sType) {
   const cfg = equipmentConfig[l] || DEFAULT_CONFIG[l] || {};
   return exList.filter(e => {
@@ -152,9 +165,7 @@ function filterExercises(exList, l, sType) {
     } else if (l === 'Home') {
       if (!isTrue(e.home_available)) return false;
       if (eq.includes('Rings') && !cfg.rings) return false;
-      if (eq.includes('Parallettes') && !cfg.parallettes_high && !cfg.parallettes_low) return false;
-      if (eq.includes('Parallettes (high)') && !cfg.parallettes_high) return false;
-      if (eq.includes('Parallettes (low)') && !cfg.parallettes_low) return false;
+      if (!parallettesOk(eq, cfg)) return false;
       if (eq.includes('Band') && !cfg.bands) return false;
     }
     if (hasShoulderInjury() && !isTrue(e.shoulder_safe)) return false;
@@ -175,9 +186,7 @@ function filterByEquipmentOnly(exList, l) {
     if (l === 'Home') {
       if (!isTrue(e.home_available)) return false;
       if (eq.includes('Rings') && !cfg.rings) return false;
-      if (eq.includes('Parallettes') && !cfg.parallettes_high && !cfg.parallettes_low) return false;
-      if (eq.includes('Parallettes (high)') && !cfg.parallettes_high) return false;
-      if (eq.includes('Parallettes (low)') && !cfg.parallettes_low) return false;
+      if (!parallettesOk(eq, cfg)) return false;
       if (eq.includes('Band') && !cfg.bands) return false;
     }
     // Gym: all exercises pass as long as equipment exists (barbell/DB/cable checked implicitly via kit string)
