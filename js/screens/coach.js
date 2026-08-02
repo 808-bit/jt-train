@@ -87,14 +87,15 @@ ${debriefSummary}
 READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
 LOCATION: ${loc}
 INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
-KIT: ${buildKitString(loc)}
+KIT: ${buildEquipmentBrief(loc)}
 ${bodyweightContext(bodyMetrics)}
 
 Write a session card. Fields:
 - headline: 4-6 words. The session in a punchy phrase. Not a list of exercises.
 - brief: 1-2 sentences. What patterns need work and why, based on the debrief data. Reference specifics — e.g. "Ring rows hit progression threshold last session" or "Hinge has been absent three sessions running."
-- cues: 3-4 specific coaching points. Draw from debrief recommendations and readiness. Each cue is one focused instruction — technique, sequencing, load, rest. 10-15 words each. CRITICAL: any KB weights or double KB combinations mentioned must come exactly from the KIT list above — never invent a bell size.
+- cues: 3-4 specific coaching points. Draw from debrief recommendations and readiness. Each cue is one focused instruction — technique, sequencing, load, rest. 10-15 words each. CRITICAL: any KB weight or double KB combination you prescribe as owned kit must come exactly from the KIT list above — never invent an owned bell size (a bell to BUY is different — see equipment_note).
 - reason: 1 sentence. Why today's dose matches today's readiness.
+- equipment_note: OPTIONAL. Include ONLY when a KB lift is at or near its progression threshold and the next owned bell is a big jump. One sentence: name the next-weight move (jump to the next owned bell, or a rep/tempo bridge on the current one) and, if it genuinely helps, which bell to buy to close the gap — flagged clearly as a purchase, not as owned kit. Otherwise return "".
 
 Return ONLY valid JSON, no markdown:
 {
@@ -102,7 +103,8 @@ Return ONLY valid JSON, no markdown:
   "headline": "...",
   "brief": "...",
   "cues": ["...", "...", "...", "..."],
-  "reason": "..."
+  "reason": "...",
+  "equipment_note": ""
 }`;
 
     const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], SONNET);
@@ -122,6 +124,12 @@ Return ONLY valid JSON, no markdown:
       `<div style="display:flex;gap:8px;align-items:flex-start;font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.4;"><span style="color:var(--green);flex-shrink:0;">→</span><span>${c}</span></div>`
     ).join('');
     document.getElementById('rec-reason').textContent = rec.reason ? '─  ' + rec.reason : '';
+    const eqEl = document.getElementById('rec-equip');
+    if (eqEl) {
+      const note = (rec.equipment_note || '').trim();
+      eqEl.textContent = note ? '🔩  ' + note : '';
+      eqEl.style.display = note ? 'block' : 'none';
+    }
 
     renderCoachChips();
 

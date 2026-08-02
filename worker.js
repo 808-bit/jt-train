@@ -39,6 +39,27 @@ PRACTICAL IMPLICATION: prize proximity to failure and consistency over raw tonna
 
 const BW_PROGRESSION_RULE = `BODYWEIGHT PROGRESSION: pure calisthenics has no "+weight" lever — progress it by harder leverage (e.g. ring push-up → RTO → archer → one-arm), slower tempo / longer eccentric, added pause, or unilateral variation. Add external load (vest/belt, KB) only where the movement allows it. For KB and weighted work, progress by load or reps per the RIR protocol.`;
 
+// The agentic Coach's Workout path used to ship with no load-progression rule at
+// all — its only guidance was the one-line RIR protocol, which says what an RIR
+// value means but never says to compare against last session's load and move it.
+// Result: double_kb_front_squat sat at 8 reps @ 44kg from Apr-Aug 2026, clearing
+// its 3x8 target at RIR 1 five sessions running while the load never budged.
+const LOAD_PROTOCOL = `LOAD PRESCRIPTION PROTOCOL — follow this strictly when setting reps and weight.
+
+You are given each exercise's logged history (get_multi_exercise_history). For EVERY loaded exercise you prescribe, first read the last session's weight and RIR, then decide the step:
+
+1. RIR 0 last session → at true limit. Hold load, same or slightly fewer reps.
+2. RIR 1 last session → at target intensity. Small step: +1-2 reps if below the rep-range ceiling, or +load if already at the ceiling.
+3. RIR 2 last session → room to push. Reps toward the top of the range, or +load if already there.
+4. RIR 3+ last session → undertested, NOT limited. Do not treat the logged rep count as a ceiling. Estimated capacity = logged reps + RIR; prescribe from there at RIR 1-2.
+5. No history → start conservative (RIR 2-3), but do not default to the lowest plausible reps.
+
+THE STALL RULE (this is the one that gets missed): if an exercise has MET its rep target at the SAME load for two or more sessions, prescribing that same load again is a mistake. Something must change — load, reps, tempo, pause, or leverage. check_progressions reports this directly as load_stalled / load_note; when you see it, act on it in the plan you return. Repeating a cleared prescription unchanged is the single worst failure mode here.
+
+check_progressions also returns intensity_levers for each ruled exercise — the sanctioned ways to make THAT lift harder without changing the movement. Advancing to next_exercise_id is only one option, and usually the last one: exhaust the intensity levers on the current exercise before swapping it out, and never swap away from a lift purely because its target was met.
+
+Never prescribe a load that isn't buildable from the owned kit. For double-KB work call get_equipment and step along its balanced ladder — a combo with a bigger total but a much bigger imbalance is a harder movement, not a heavier one, and it will fail on reps.`;
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -866,6 +887,11 @@ const GERALD_TOOLS = [
         limit: { type: 'number', description: 'Number of recent entries to return. Default 8.' }
       }
     }
+  },
+  {
+    name: 'get_equipment',
+    description: 'Read the equipment inventory for today\'s location straight from the DB: owned kettlebell weights, whether matching pairs exist, other kit, and a KB LADDER analysis — internal gaps (a jump to the next owned bell that skips a rung) and the next rung above the top bell. Use this when sizing loads near a progression threshold or when advising on next-weight jumps and which bell to buy next. Recommend a purchase ONLY to bridge a genuine gap, and label it as a purchase, never as owned kit.',
+    input_schema: { type: 'object', properties: {} }
   }
 ];
 
@@ -879,6 +905,72 @@ function fmtD(dateStr) {
   if (!dateStr) return '';
   const [, m, d] = dateStr.slice(0, 10).split('-').map(Number);
   return `${d} ${'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[m - 1]}`;
+}
+
+// progression_rules.intensity_levers is a JSON array stored as TEXT, but older
+// rows hold a bare comma-separated string. Tolerate both; never throw into the
+// tool loop over a malformed cell.
+function parseJSONArray(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v : [String(v)];
+  } catch {
+    return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+  }
+}
+
+// Standard kettlebell sizes step by 4kg. Shared by get_equipment's single-bell
+// ladder and the double-KB combo ladder below.
+const KB_RUNGS = [8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48];
+
+// Double-KB load ladder. When only singles are owned, a "heavier" double-KB set
+// is a different PAIR, and the pairs available are not evenly spaced — nor are
+// they interchangeable. Racking 20+32 is not 20+24 plus 8kg: the 12kg imbalance
+// changes the movement. Total load alone therefore can't drive progression, so
+// every combo carries its imbalance and a balanced/unbalanced verdict.
+const KB_BALANCED_MAX_IMBALANCE = 4;
+
+function kbComboLadder(owned, kbPairs) {
+  const combos = [];
+  if (kbPairs) {
+    // Matching pairs: the clean ladder is 2× each owned bell.
+    for (const w of owned) combos.push({ bells: `${w}+${w}`, total_kg: w * 2, imbalance_kg: 0 });
+  }
+  for (let i = 0; i < owned.length; i++) {
+    for (let j = i + 1; j < owned.length; j++) {
+      combos.push({ bells: `${owned[i]}+${owned[j]}`, total_kg: owned[i] + owned[j], imbalance_kg: owned[j] - owned[i] });
+    }
+  }
+  combos.forEach(c => { c.balanced = c.imbalance_kg <= KB_BALANCED_MAX_IMBALANCE; });
+  combos.sort((a, b) => a.total_kg - b.total_kg || a.imbalance_kg - b.imbalance_kg);
+  return combos;
+}
+
+// Which unowned bell would most improve the balanced double-KB ladder, and what
+// it unlocks. This is the analysis that catches a stall the single-bell ladder
+// misses entirely: owning 16/20/24/32 gives balanced doubles at only 36kg and
+// 44kg, so a lift that has outgrown 44kg has nowhere balanced to go.
+function kbPurchaseOptions(owned, kbPairs) {
+  const current = kbComboLadder(owned, kbPairs).filter(c => c.balanced).map(c => c.total_kg);
+  const currentSet = new Set(current);
+  const options = [];
+  for (const cand of KB_RUNGS) {
+    if (owned.includes(cand)) continue;
+    const after = kbComboLadder([...owned, cand].sort((a, b) => a - b), kbPairs).filter(c => c.balanced);
+    const unlocks = after.filter(c => !currentSet.has(c.total_kg));
+    if (unlocks.length) {
+      options.push({
+        buy_kg: cand,
+        unlocks_balanced_totals: unlocks.map(c => `${c.bells}=${c.total_kg}kg (±${c.imbalance_kg}kg)`),
+        balanced_ladder_after_kg: after.map(c => c.total_kg),
+      });
+    }
+  }
+  // Best first: most new balanced rungs, then lightest/cheapest bell.
+  options.sort((a, b) => b.unlocks_balanced_totals.length - a.unlocks_balanced_totals.length || a.buy_kg - b.buy_kg);
+  return options;
 }
 
 async function executeTool(toolName, toolInput, context, env) {
@@ -1006,21 +1098,26 @@ async function executeTool(toolName, toolInput, context, env) {
   }
 
   if (toolName === 'check_progressions') {
-    // One windowed query: 5 most recent sets per ruled exercise (rules with
-    // no recorded sets drop out via the inner join, matching old behaviour).
+    // Window by SESSION, not by set. sessions_to_confirm counts sessions, so a
+    // 5-set window (~1.7 sessions of a 3x8 lift) can never evaluate it honestly
+    // — it used to count qualifying SETS against a SESSION threshold, so three
+    // good sets in one session read as "confirmed twice" and marked the lift
+    // ready off a single day's work.
+    const PROG_SESSION_WINDOW = 6;
     const { results: rows } = await env.DB.prepare(`
       SELECT * FROM (
         SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
-               pr.next_exercise_id, e.display_name,
-               s.date, st.reps, st.weight_kg, st.rir,
-               ROW_NUMBER() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC, st.set_num DESC) AS rn
+               pr.next_exercise_id, pr.intensity_levers, pr.notes AS rule_notes,
+               e.display_name,
+               s.date, st.set_num, st.reps, st.weight_kg, st.rir,
+               DENSE_RANK() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC) AS session_rn
         FROM progression_rules pr
         JOIN exercises e ON pr.exercise_id = e.id
         JOIN sets st ON st.exercise_id = pr.exercise_id
         JOIN sessions s ON st.session_id = s.id
         WHERE s.id NOT LIKE '%-H'
-      ) WHERE rn <= 5
-      ORDER BY exercise_id, rn
+      ) WHERE session_rn <= ${PROG_SESSION_WINDOW}
+      ORDER BY exercise_id, session_rn, set_num
     `).all();
 
     const byExercise = new Map();
@@ -1028,22 +1125,74 @@ async function executeTool(toolName, toolInput, context, env) {
       if (!byExercise.has(r.exercise_id)) byExercise.set(r.exercise_id, []);
       byExercise.get(r.exercise_id).push(r);
     }
+
     const status = [];
     for (const recent of byExercise.values()) {
       const rule = recent[0];
-      // rep_target is 'SETSxREPS' ('3x10') / 'SETSxHOLDs' ('3x20s') — the per-set
-      // target is the part after the 'x'. Comparing s.reps against the raw string
-      // coerces to NaN and never qualifies, so parse it first.
-      const targetReps = parseInt(String(rule.rep_target).split('x').pop());
-      const qualifying = recent.filter(s => s.reps >= targetReps && (s.rir ?? 99) <= rule.rir_target).length;
+      // rep_target is 'SETSxREPS' ('3x10') / 'SETSxHOLDs' ('3x20s'). Both halves
+      // matter: the part after 'x' is the per-set target, the part before is how
+      // many sets have to hit it for the session to count.
+      const parts = String(rule.rep_target).split('x');
+      const targetReps = parseInt(parts[parts.length - 1]);
+      const targetSets = parts.length > 1 ? (parseInt(parts[0]) || 1) : 1;
+
+      // Group the window's sets into sessions (one per date).
+      const sessions = new Map();
+      for (const s of recent) {
+        if (!sessions.has(s.date)) sessions.set(s.date, []);
+        sessions.get(s.date).push(s);
+      }
+
+      const sessionRows = [...sessions.entries()].map(([date, sets]) => {
+        const good = sets.filter(s => s.reps >= targetReps && (s.rir ?? 99) <= rule.rir_target).length;
+        const weights = sets.map(s => s.weight_kg).filter(w => w != null);
+        return {
+          date: fmtD(date),
+          sets: sets.map(s => `${s.reps}r ${s.weight_kg ?? 'bw'}kg RIR${s.rir ?? '?'}`).join(' | '),
+          top_weight_kg: weights.length ? Math.max(...weights) : null,
+          qualifying_sets: good,
+          qualifies: good >= targetSets,
+        };
+      });
+
+      const qualifyingRows = sessionRows.filter(s => s.qualifies);
+      const qualifyingSessions = qualifyingRows.length;
+      // Consecutive run from the most recent session, reported for judgement but
+      // NOT used to gate `ready`: a failed probe at a heavier load breaks the
+      // streak, which would punish exactly the session where he tried to move up.
+      let consecutive = 0;
+      for (const s of sessionRows) { if (s.qualifies) consecutive++; else break; }
+
+      const levers = parseJSONArray(rule.intensity_levers);
+      const ready = qualifyingSessions >= rule.sessions_to_confirm;
+
+      // A lift that keeps clearing its target at an unchanged load is stalled on
+      // the LOAD axis, whatever the exercise-advance rule says. Compare only the
+      // sessions that MET the target — comparing every session's top weight lets
+      // a one-off heavy probe (a 48kg single that failed) hide a standing stall.
+      const qTops = qualifyingRows.map(s => s.top_weight_kg).filter(w => w != null);
+      const stalledAtKg = (qTops.length >= 2 && qTops.every(w => w === qTops[0])) ? qTops[0] : null;
+
       status.push({
         exercise: rule.display_name,
         id: rule.exercise_id,
-        target: `${rule.rep_target} reps @ RIR ≤${rule.rir_target} × ${rule.sessions_to_confirm}`,
-        qualifying_sessions: qualifying,
-        ready: qualifying >= rule.sessions_to_confirm,
+        target: `${rule.rep_target} @ RIR ≤${rule.rir_target}, confirmed over ${rule.sessions_to_confirm} session(s)`,
+        sessions_examined: sessionRows.length,
+        qualifying_sessions: qualifyingSessions,
+        consecutive_qualifying_sessions: consecutive,
+        sessions_to_confirm: rule.sessions_to_confirm,
+        ready,
         next: rule.next_exercise_id || 'peak',
-        recent: recent.slice(0, 3).map(s => `${s.reps}r ${s.weight_kg}kg RIR${s.rir ?? '?'}`).join(' | '),
+        intensity_levers: levers,
+        rule_notes: rule.rule_notes || '',
+        recent_sessions: sessionRows,
+        load_stalled: stalledAtKg != null,
+        // A bodyweight lift logs weight_kg 0, so "stalled at 0kg / add load" would
+        // be nonsense advice — for those the levers are leverage, tempo and pause.
+        load_note: stalledAtKg == null ? ''
+          : stalledAtKg > 0
+            ? `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg. This exercise's prescription must change today — more load, more reps, slower tempo, added pause, or a harder variation (see intensity_levers). Do not re-prescribe ${stalledAtKg}kg for the same reps.`
+            : `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight. This is a bodyweight lift — there is no "+kg" lever. Change it today via harder leverage, slower eccentric, added pause, or a unilateral variation (see intensity_levers). Do not re-prescribe the same variation and reps.`,
       });
     }
     return { progressions: status };
@@ -1137,6 +1286,64 @@ async function executeTool(toolName, toolInput, context, env) {
     };
   }
 
+  if (toolName === 'get_equipment') {
+    const location = context.location || 'Home';
+    const row = await env.DB.prepare(
+      'SELECT config FROM location_config WHERE location = ?'
+    ).bind(location).first();
+    let cfg = {};
+    if (row && row.config) { try { cfg = JSON.parse(row.config); } catch { cfg = {}; } }
+
+    // Standard bells step by 4kg. Find internal gaps (owned bells that skip a
+    // rung, so the jump to the next owned bell is oversized) and the next rung
+    // above the top — the raw material for next-weight and purchase advice.
+    const owned = [...new Set(cfg.kb_weights || [])].sort((a, b) => a - b);
+    const kbPairs = !!cfg.kb_pairs;
+    const gaps = [];
+    for (let i = 0; i < owned.length - 1; i++) {
+      const lo = owned[i], hi = owned[i + 1];
+      const missing = KB_RUNGS.filter(r => r > lo && r < hi);
+      if (missing.length) gaps.push({ from: lo, to: hi, jump_kg: hi - lo, jump_pct: Math.round((hi - lo) / lo * 100), skipped: missing });
+    }
+    const nextUp = owned.length ? (KB_RUNGS.find(r => r > owned[owned.length - 1]) || null) : KB_RUNGS[0];
+
+    const combos = kbComboLadder(owned, kbPairs);
+    const balanced = combos.filter(c => c.balanced);
+    const balancedTop = balanced.length ? balanced[balanced.length - 1] : null;
+
+    return {
+      location,
+      kb_weights_kg: owned,
+      kb_pairs: kbPairs,
+      other_equipment: {
+        rings: !!cfg.rings, pull_up_bar: !!cfg.pull_up_bar,
+        parallettes_high: !!cfg.parallettes_high, parallettes_low: !!cfg.parallettes_low,
+        bands: !!cfg.bands, barbell: !!cfg.barbell, dumbbells: !!cfg.dumbbells, cable_machine: !!cfg.cable_machine,
+      },
+      kb_ladder: {
+        standard_rungs_kg: KB_RUNGS,
+        internal_gaps: gaps,
+        next_rung_above_top_kg: nextUp,
+      },
+      double_kb_ladder: {
+        mode: kbPairs
+          ? 'Matching pairs available — the balanced ladder is 2x each owned bell.'
+          : 'Singles only — every double-KB set is asymmetric. Imbalance is part of the prescription, not a rounding error.',
+        balanced_means: `imbalance ≤ ${KB_BALANCED_MAX_IMBALANCE}kg between the two bells`,
+        all_combos: combos.map(c => `${c.bells}=${c.total_kg}kg (±${c.imbalance_kg}kg${c.balanced ? ', balanced' : ''})`),
+        balanced_ladder_kg: balanced.map(c => c.total_kg),
+        balanced_ceiling_kg: balancedTop ? balancedTop.total_kg : null,
+        purchase_options: kbPurchaseOptions(owned, kbPairs).slice(0, 3),
+      },
+      guidance: [
+        'Prescribed loads must use only kb_weights_kg above.',
+        'For DOUBLE-KB lifts, step load along balanced_ladder_kg. Do NOT treat two combos with the same total as equivalent, and do NOT step to a combo whose imbalance is much larger than the current one just because the total is higher — on a racked lift (front squat, clean, press) that is a harder movement, not a heavier one, and reps will collapse.',
+        'If a double-KB lift has met its target at balanced_ceiling_kg, the balanced ladder is out of road. Progress it with reps, tempo, pause or a unilateral variation instead — and that is when a purchase suggestion from purchase_options is genuinely warranted.',
+        'Label any bell to buy as a purchase suggestion, never as owned kit.',
+      ].join(' '),
+    };
+  }
+
   return { error: `Unknown tool: ${toolName}` };
 }
 
@@ -1194,6 +1401,8 @@ async function runGeraldAgent(body, env) {
 ${MODALITY_DOCTRINE}
 
 ${BW_PROGRESSION_RULE}
+
+${LOAD_PROTOCOL}
 ${userContext ? `\nATHLETE CONTEXT (always factor this in):\n${userContext}\n` : ''}${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
 TODAY:
 Location: ${location} | Kit: ${kit}
@@ -1218,8 +1427,9 @@ PROCESS (minimize round-trips — every extra turn adds real latency):
 1. assess_training_state — see what patterns are overdue AND read archetype_rotation to pick today's archetype (per the rules above)
 2. get_available_exercises — pass ALL the patterns you want to target at once via movement_patterns (array), not one call per pattern. Include the anchor archetype's pattern(s) (mp_power_conditioning for power, mp_rehab for restoration).
 3. get_multi_exercise_history — pass ALL the exercise_ids you need load data for in ONE call, not repeated get_exercise_history calls
-4. Optionally check_progressions if anything looks close to advancing
-5. Return the session plan as JSON and nothing else
+4. check_progressions — ALWAYS call this (batch it with step 2 or 3, it takes no arguments). It is how you find out which lifts have met their target, which have stalled at an unchanged load (load_stalled / load_note), and what intensity_levers each one has. You cannot size loads honestly without it.
+5. get_equipment when any double-KB lift is in the plan, or a KB lift is at/near its threshold — it returns owned bells, the single-bell ladder (internal gaps + next rung) and the double-KB balanced ladder, so you can pick a real next combo instead of an oversized or lopsided one
+6. Return the session plan as JSON and nothing else
 
 You can call multiple tools in the same turn (e.g. assess_training_state + get_weekly_load together, or get_available_exercises + check_progressions together) — do this whenever the calls don't depend on each other's results, instead of spacing them across separate turns.
 
@@ -1227,6 +1437,7 @@ OUTPUT (when done, return only this — no preamble, no commentary):
 {
   "archetype": "strength | power | restoration — the theme you chose above",
   "session_notes": "one sharp sentence on what you're targeting and why (mention the archetype if it's not strength)",
+  "equipment_note": "OPTIONAL — one sentence, only when a KB lift is ready to progress but the next owned bell is a big jump (≥8kg or ≥25% per get_equipment). Name the next-weight move (jump to the next owned bell, or a rep/tempo bridge on the current one) and, if it genuinely helps, which bell to buy to bridge the gap — flagged as a purchase, never as owned kit. Omit or leave \"\" otherwise.",
   "exercises": [
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
   ]
@@ -1243,7 +1454,9 @@ HARD CONSTRAINTS:
 - 4-6 exercises, ordered as executed (compounds and high-skill first)
 - Respect all injury restrictions
 - RIR protocol: 0=hold | 1=small step | 2=push | 3+=undertested so push significantly
+- LOAD MUST MOVE: never re-prescribe a load an exercise already cleared its rep target at. If check_progressions flags load_stalled, that exercise's prescription must change this session — heavier, more reps, slower tempo, added pause, or a harder variation. Say which lever you used in its notes field.
 - Apply any approved progressions (use new exercise, not old)
+- equipment_note is ADVISORY only — every exercise's weight field must use a bell that's actually owned (kit / get_equipment). A bell you suggest buying never appears as a prescribed weight.
 - SESSION LENGTH: 45 min hard cap (~3 min/set including rest = 15 sets max).
   Scale sets to exercise count: 4 exercises → 3–4 sets each, 5–6 exercises → 2–3 sets each.
   Never prescribe 4 sets across 5+ exercises.`;

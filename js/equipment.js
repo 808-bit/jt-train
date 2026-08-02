@@ -40,6 +40,101 @@ function buildKitString(l) {
   return parts.join(', ') || 'Bodyweight only';
 }
 
+// KB progression ladder analysis. Standard bells step by 4kg (ALL_KB); this
+// finds the INTERNAL gaps — consecutive owned bells that skip a rung, so the
+// jump to the next owned bell is oversized — plus the next rung above the top.
+// Drives next-weight and purchase advice; advisory only, never widens what is
+// actually owned.
+function kbLadderAnalysis(kbWeights) {
+  const owned = [...new Set(kbWeights || [])].sort((a, b) => a - b);
+  if (!owned.length) return { owned: [], gaps: [], nextUp: ALL_KB[0], heaviest: null, lightest: null };
+  const lightest = owned[0], heaviest = owned[owned.length - 1];
+  const gaps = [];
+  for (let i = 0; i < owned.length - 1; i++) {
+    const lo = owned[i], hi = owned[i + 1];
+    const missing = ALL_KB.filter(r => r > lo && r < hi);
+    if (missing.length) gaps.push({ from: lo, to: hi, missing, jumpKg: hi - lo, jumpPct: Math.round((hi - lo) / lo * 100) });
+  }
+  const nextUp = ALL_KB.find(r => r > heaviest) || null;
+  return { owned, lightest, heaviest, gaps, nextUp };
+}
+
+// Double-KB load ladder. With singles only, a "heavier" double-KB set means a
+// different PAIR — and pairs are neither evenly spaced nor interchangeable.
+// Racking 20+32 is not 20+24 plus 8kg: the 12kg imbalance makes it a different
+// movement. So every combo carries its imbalance and a balanced verdict, and
+// progression steps along the BALANCED ladder rather than raw total load.
+const KB_BALANCED_MAX_IMBALANCE = 4;
+
+function kbComboLadder(owned, kbPairs) {
+  const combos = [];
+  if (kbPairs) {
+    for (const w of owned) combos.push({ bells: `${w}+${w}`, total: w * 2, imbalance: 0 });
+  }
+  for (let i = 0; i < owned.length; i++) {
+    for (let j = i + 1; j < owned.length; j++) {
+      combos.push({ bells: `${owned[i]}+${owned[j]}`, total: owned[i] + owned[j], imbalance: owned[j] - owned[i] });
+    }
+  }
+  combos.forEach(c => { c.balanced = c.imbalance <= KB_BALANCED_MAX_IMBALANCE; });
+  combos.sort((a, b) => a.total - b.total || a.imbalance - b.imbalance);
+  return combos;
+}
+
+// Which unowned bell would most improve the BALANCED double-KB ladder. This is
+// the analysis the single-bell ladder misses: owning 16/20/24/32 yields balanced
+// doubles at only 36kg and 44kg, so a double-KB lift that has outgrown 44kg has
+// nowhere balanced left to go regardless of the single-bell gaps.
+function kbPurchaseOptions(owned, kbPairs) {
+  const currentSet = new Set(kbComboLadder(owned, kbPairs).filter(c => c.balanced).map(c => c.total));
+  const options = [];
+  for (const cand of ALL_KB) {
+    if (owned.includes(cand)) continue;
+    const after = kbComboLadder([...owned, cand].sort((a, b) => a - b), kbPairs).filter(c => c.balanced);
+    const unlocks = after.filter(c => !currentSet.has(c.total));
+    if (unlocks.length) options.push({ buy: cand, unlocks, after: after.map(c => c.total) });
+  }
+  options.sort((a, b) => b.unlocks.length - a.unlocks.length || a.buy - b.buy);
+  return options;
+}
+
+// Equipment brief for the ADVISORY coach paths (daily card, Ask Gerald): the
+// kit string plus the KB ladder so the coach can advise on next-weight jumps
+// and which bell to buy next. buildKitString() stays the hard constraint the
+// workout generator uses for exercise selection — this is the softer,
+// purchase-aware layer on top of it.
+function buildEquipmentBrief(l) {
+  let s = buildKitString(l);
+  const cfg = equipmentConfig[l] || DEFAULT_CONFIG[l] || {};
+  const la = kbLadderAnalysis(cfg.kb_weights);
+  if (!la.owned.length) return s;
+  s += `\n\nKB LADDER (standard bells step by 4kg: ${ALL_KB.join('/')}kg). Owned at ${l}: ${la.owned.join('/')}kg (${la.lightest}–${la.heaviest}kg).`;
+  if (la.gaps.length) {
+    s += ' Internal gaps — the jump to the next owned bell is oversized here: '
+      + la.gaps.map(g => `${g.from}→${g.to}kg is +${g.jumpKg}kg (+${g.jumpPct}%), skipping ${g.missing.join('/')}kg`).join('; ') + '.';
+  }
+  if (la.nextUp) s += ` Next rung above the top: ${la.nextUp}kg (not owned).`;
+
+  const combos = kbComboLadder(la.owned, !!cfg.kb_pairs);
+  const balanced = combos.filter(c => c.balanced);
+  s += `\n\nDOUBLE KB LADDER (${cfg.kb_pairs ? 'matching pairs available' : 'singles only — every double-KB set is asymmetric'}). `
+    + `All combos: ${combos.map(c => `${c.bells}=${c.total}kg (±${c.imbalance}kg)`).join(', ')}. `
+    + `"Balanced" = the two bells differ by ≤${KB_BALANCED_MAX_IMBALANCE}kg. `
+    + (balanced.length
+        ? `Balanced ladder: ${balanced.map(c => `${c.bells}=${c.total}kg`).join(' → ')}. Ceiling ${balanced[balanced.length - 1].total}kg.`
+        : 'No balanced combos exist with these bells.');
+  s += ' A combo with a bigger total but a much bigger imbalance is a HARDER MOVEMENT, not a heavier one — on a racked lift (front squat, clean, press) reps will collapse. Step along the balanced ladder; once it runs out, progress with reps, tempo, pause or a unilateral variation.';
+
+  const opts = kbPurchaseOptions(la.owned, !!cfg.kb_pairs);
+  if (opts.length) {
+    const best = opts[0];
+    s += ` Best bell to buy for double-KB progression: ${best.buy}kg — unlocks ${best.unlocks.map(c => `${c.bells}=${c.total}kg (±${c.imbalance}kg)`).join(', ')}, extending the balanced ladder to ${best.after.join('/')}kg.`;
+  }
+
+  s += '\nPURCHASE / NEXT-WEIGHT GUIDANCE: when a KB lift is ready to progress but the next owned bell is a big jump (≥8kg or ≥25%), you may recommend buying the missing intermediate bell AND/OR prescribe a rep/tempo bridge on the current bell to close the gap. Always frame a bell to buy explicitly as a purchase suggestion — never imply it is already owned.';
+  return s;
+}
+
 function filterExercises(exList, l, sType) {
   const cfg = equipmentConfig[l] || DEFAULT_CONFIG[l] || {};
   return exList.filter(e => {

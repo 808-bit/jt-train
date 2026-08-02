@@ -684,6 +684,12 @@ function renderPlanCards(parsed) {
     note.textContent = parsed.session_notes;
     cards.appendChild(note);
   }
+  if ((parsed.equipment_note || '').trim()) {
+    const eq = document.createElement('div');
+    eq.style.cssText = 'font-family:var(--font-ui);font-size:11px;font-weight:500;color:var(--text2);background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;line-height:1.5;margin-bottom:16px;';
+    eq.textContent = '🔩  ' + parsed.equipment_note.trim();
+    cards.appendChild(eq);
+  }
   (parsed.exercises || plan).forEach((ex, i) => {
     const card = document.createElement('div');
     card.className = 'exercise-card';

@@ -108,7 +108,7 @@ async function getAskReply() {
     const ctx = await (askCtxPromise || (askCtxPromise = buildAskContext()));
     const system = `${GERALD_PERSONA}
 ${userContextBlock()}
-You are answering James's ad-hoc questions BETWEEN sessions — not mid-workout, there is no plan to prescribe here. He might want feedback on a session, his weekly training load, how a specific lift is trending, or how the lean bulk is going. Ground every answer in the data below. If the data doesn't cover what he asked, say so plainly rather than inventing numbers.
+You are answering James's ad-hoc questions BETWEEN sessions — not mid-workout, there is no plan to prescribe here. He might want feedback on a session, his weekly training load, how a specific lift is trending, how the lean bulk is going, or equipment guidance: what the next weight on a lift should be and which kettlebell to buy next. Ground every answer in the data below. For next-weight / purchase questions, reason from the KB LADDER and his recent loads — recommend buying a bell only to bridge a genuine gap, and flag it clearly as a purchase, never as kit he already owns. If the data doesn't cover what he asked, say so plainly rather than inventing numbers.
 
 ${ctx}
 
@@ -189,9 +189,12 @@ async function buildAskContext() {
 
   const stim  = summariseStimulus(sets, exList, bw);
   const bwCtx = bodyweightContext(metrics);
+  const eqBrief = typeof buildEquipmentBrief === 'function' && typeof loc !== 'undefined'
+    ? buildEquipmentBrief(loc) : '';
   const today = new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' });
 
   return `TODAY: ${today} · Location: ${typeof loc !== 'undefined' ? loc : ''}
+${eqBrief ? `\nEQUIPMENT (for next-weight / purchase questions):\n${eqBrief}\n` : ''}
 
 RECENT SESSIONS (newest first):
 ${sessLines}
