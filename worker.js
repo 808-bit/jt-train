@@ -49,16 +49,18 @@ const LOAD_PROTOCOL = `LOAD PRESCRIPTION PROTOCOL — follow this strictly when 
 You are given each exercise's logged history (get_multi_exercise_history). For EVERY loaded exercise you prescribe, first read the last session's weight and RIR, then decide the step:
 
 1. RIR 0 last session → at true limit. Hold load, same or slightly fewer reps.
-2. RIR 1 last session → at target intensity. Small step: +1-2 reps if below the rep-range ceiling, or +load if already at the ceiling.
-3. RIR 2 last session → room to push. Reps toward the top of the range, or +load if already there.
+2. RIR 1 last session → at target intensity. Small step: +1-2 reps.
+3. RIR 2 last session → room to push. More reps still.
 4. RIR 3+ last session → undertested, NOT limited. Do not treat the logged rep count as a ceiling. Estimated capacity = logged reps + RIR; prescribe from there at RIR 1-2.
 5. No history → start conservative (RIR 2-3), but do not default to the lowest plausible reps.
 
-THE STALL RULE (this is the one that gets missed): if an exercise has MET its rep target at the SAME load for two or more sessions, prescribing that same load again is a mistake. Something must change — load, reps, tempo, pause, or leverage. check_progressions reports this directly as load_stalled / load_note; when you see it, act on it in the plan you return. Repeating a cleared prescription unchanged is the single worst failure mode here.
+REPS BEFORE LOAD (read this before touching a weight number): rep_target in this DB ("3x8" etc) is a FLOOR, not a ceiling — there is no stored rep range to "reach the top of" before adding load, so riding reps up past target at the current load IS the progression, and it's the default move whenever RIR allows it. Only step the load once reps have climbed for 2+ sessions and either plateaued (stopped increasing at RIR ≤1) or reached a point where more reps would tip the set into a different (endurance) stimulus — roughly 1.5x the rule's target reps. A load step is the LAST resort per exercise, not the first.
 
-check_progressions also returns intensity_levers for each ruled exercise — the sanctioned ways to make THAT lift harder without changing the movement. Advancing to next_exercise_id is only one option, and usually the last one: exhaust the intensity levers on the current exercise before swapping it out, and never swap away from a lift purely because its target was met.
+THE STALL RULE (this is the one that gets missed): if an exercise has MET its rep target at the SAME load for two or more sessions, prescribing that same load again is a mistake. But "something must change" means reps/tempo/pause/leverage FIRST — reach for a load change only once those are exhausted per REPS BEFORE LOAD above. check_progressions reports the stall directly as load_stalled / load_note; when you see it, act on it in the plan you return, reps first. Repeating a cleared prescription completely unchanged is the single worst failure mode here — jumping straight to a heavier load without trying reps first is the second worst.
 
-Never prescribe a load that isn't buildable from the owned kit. For double-KB work call get_equipment and step along its balanced ladder — a combo with a bigger total but a much bigger imbalance is a harder movement, not a heavier one, and it will fail on reps.`;
+check_progressions also returns intensity_levers for each ruled exercise — the sanctioned ways to make THAT lift harder without changing the movement. Where the DB lists both a rep-based lever and a load-based one ("Heavier bells"), the rep-based lever comes first per REPS BEFORE LOAD above, regardless of the order listed. Advancing to next_exercise_id is only one option, and the last one: exhaust the intensity levers on the current exercise before swapping it out, and never swap away from a lift purely because its target was met.
+
+Never prescribe a load that isn't buildable from the owned kit. For double-KB work, when a load step is genuinely warranted, call get_equipment and step along its balanced ladder — a combo with a bigger total but a much bigger imbalance is a harder movement, not a heavier one, and it will fail on reps. This is exactly why reps come first: the next combo up is rarely an even step.`;
 
 export default {
   async fetch(request, env, ctx) {
@@ -1173,6 +1175,17 @@ async function executeTool(toolName, toolInput, context, env) {
       const qTops = qualifyingRows.map(s => s.top_weight_kg).filter(w => w != null);
       const stalledAtKg = (qTops.length >= 2 && qTops.every(w => w === qTops[0])) ? qTops[0] : null;
 
+      // Has he actually tried riding reps up at the stalled load, or has every
+      // session stopped right at the fixed target? rep_target has no ceiling in
+      // this schema, so ~1.5x target is used as "reps genuinely plateaued" —
+      // below that, the honest advice is push reps before touching load.
+      const repsAtStallWeight = stalledAtKg != null
+        ? recent.filter(s => (s.weight_kg ?? 0) === stalledAtKg).map(s => s.reps)
+        : [];
+      const maxRepsAtStall = repsAtStallWeight.length ? Math.max(...repsAtStallWeight) : targetReps;
+      const repsCeiling = Math.ceil(targetReps * 1.5);
+      const repsPlateaued = maxRepsAtStall >= repsCeiling;
+
       status.push({
         exercise: rule.display_name,
         id: rule.exercise_id,
@@ -1191,8 +1204,12 @@ async function executeTool(toolName, toolInput, context, env) {
         // be nonsense advice — for those the levers are leverage, tempo and pause.
         load_note: stalledAtKg == null ? ''
           : stalledAtKg > 0
-            ? `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg. This exercise's prescription must change today — more load, more reps, slower tempo, added pause, or a harder variation (see intensity_levers). Do not re-prescribe ${stalledAtKg}kg for the same reps.`
-            : `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight. This is a bodyweight lift — there is no "+kg" lever. Change it today via harder leverage, slower eccentric, added pause, or a unilateral variation (see intensity_levers). Do not re-prescribe the same variation and reps.`,
+            ? (repsPlateaued
+                ? `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg, and reps have already climbed to ${maxRepsAtStall} (target ${targetReps}) — genuinely plateaued. A load or lever change is warranted now (see intensity_levers); a heavier double-KB combo is often a bigger imbalance, not a clean step — check get_equipment before picking one.`
+                : `STALLED: target met in ${qTops.length} session(s) at an unchanged ${stalledAtKg}kg, but reps have never exceeded ${maxRepsAtStall} (target ${targetReps}) — he hasn't actually tried pushing reps at this load yet. REPS FIRST: push past ${targetReps} reps at ${stalledAtKg}kg today before considering more load. Do not re-prescribe ${stalledAtKg}kg for the exact same rep count again.`)
+            : (repsPlateaued
+                ? `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight, and reps have already climbed to ${maxRepsAtStall} (target ${targetReps}) — genuinely plateaued. This is a bodyweight lift with no "+kg" lever: reach for harder leverage, slower eccentric, added pause, or a unilateral variation now (see intensity_levers).`
+                : `STALLED: target met in ${qTops.length} session(s) at unchanged bodyweight, but reps have never exceeded ${maxRepsAtStall} (target ${targetReps}) — he hasn't actually tried pushing reps yet. Push past ${targetReps} reps today before reaching for a harder variation. Do not re-prescribe the same variation and rep count again.`),
       });
     }
     return { progressions: status };
