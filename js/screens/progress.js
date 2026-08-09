@@ -788,7 +788,7 @@ async function loadHome() {
     sessionsHit: p.qualifying_sessions,
     needed: p.sessions_to_confirm,
     pct: Math.min(100, Math.round((p.qualifying_sessions / (p.sessions_to_confirm || 2)) * 100)),
-    next: p.at_peak ? '' : p.next,
+    next: (p.at_peak ?? (p.next === 'peak')) ? '' : p.next,
     nextReq: p.next_requires,
     ready: p.ready,
     // Fallbacks keep this screen correct against a worker that hasn't been
