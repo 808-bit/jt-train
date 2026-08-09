@@ -720,12 +720,12 @@ async function loadHome() {
   const [debriefRes, allSetsRes, progTreeRes, sessionsRes] = await Promise.all([
     api('getRecentDebriefs', { limit: 10 }),
     api('getAllProgressionData', { limit: 2000 }),
-    api('getProgressionTree'),
+    api('getProgressions'),
     api('getSessions', { limit: 50 })
   ]);
   const debriefs  = debriefRes.data  || [];
   const allSets   = allSetsRes.data  || [];
-  const progRules = progTreeRes.data || [];
+  const progs     = progTreeRes.data || [];
   const sessions  = sessionsRes.sessions || [];
 
   const getWeekKey = dateStr => {
@@ -777,24 +777,28 @@ async function loadHome() {
     .map(([id]) => exercises.find(e => e.id === id)?.display_name || id)
     .slice(0, 6);
 
-  const progScores = [];
-  for (const rule of progRules) {
-    const exSets = allSets.filter(s => s.exercise_id === rule.exercise_id);
-    if (!exSets.length) continue;
-    const targetReps = parseInt((rule.rep_target||'').match(/\d+$/)?.[0]) || 0;
-    const targetSets = parseInt((rule.rep_target||'').match(/^(\d+)x/)?.[1]) || 3;
-    const bySess = {};
-    exSets.forEach(s => { bySess[s.date] = bySess[s.date] || []; bySess[s.date].push(s); });
-    const sessionsHit = Object.values(bySess).filter(sets => {
-      const qualSets = sets.filter(s => (parseInt(s.reps)||0) >= targetReps);
-      return qualSets.length >= targetSets;
-    }).length;
-    const needed = rule.sessions_to_confirm || 2;
-    const pct = Math.min(100, Math.round((sessionsHit / needed) * 100));
-    const ex = exercises.find(e => e.id === rule.exercise_id);
-    if (!ex) continue;
-    progScores.push({ id: rule.exercise_id, name: ex.display_name, sessionsHit, needed, pct, next: rule.next_exercise_id, nextReq: rule.next_requires, ready: sessionsHit >= needed });
-  }
+  // Readiness comes from the worker's computeProgressions (?action=getProgressions)
+  // — the same numbers Gerald and the mid-workout coach see. This used to be a
+  // third, local reimplementation that ignored RIR entirely and scored over all
+  // time rather than a recent window, so this screen, the Companion and the
+  // agent each reported a different set of ready lifts. Map, don't recompute.
+  const progScores = progs.map(p => ({
+    id: p.id,
+    name: p.exercise,
+    sessionsHit: p.qualifying_sessions,
+    needed: p.sessions_to_confirm,
+    pct: Math.min(100, Math.round((p.qualifying_sessions / (p.sessions_to_confirm || 2)) * 100)),
+    next: p.at_peak ? '' : p.next,
+    nextReq: p.next_requires,
+    ready: p.ready,
+    // Fallbacks keep this screen correct against a worker that hasn't been
+    // deployed with the target_met/at_peak/superseded fields yet — without them
+    // an undefined target_met would empty the ACCOMPLISHED tier entirely.
+    targetMet: p.target_met ?? p.ready,
+    atPeak: p.at_peak ?? (p.next === 'peak'),
+    superseded: p.superseded ?? false,
+    advanceNote: p.advance_note || '',
+  }));
   progScores.sort((a,b) => b.pct - a.pct);
 
   const weekVols = {};
@@ -804,9 +808,13 @@ async function loadHome() {
 
   const outcomeColour = { progressed:'var(--green)', maintained:'var(--text2)', declined:'var(--amber)', incomplete:'var(--text3)' };
 
-  const accomplished = progScores.filter(p => p.ready);
-  const thisClose    = progScores.filter(p => !p.ready && p.pct >= 50);
-  const building     = progScores.filter(p => !p.ready && p.pct > 0 && p.pct < 50);
+  // ACCOMPLISHED shows what he's actually cleared, including lifts at the top of
+  // their chain (a real achievement with nowhere to advance — no Apply button).
+  // Lifts he has already progressed off (`superseded`) drop off the screen
+  // entirely: offering to advance a swap he made months ago is the noise.
+  const accomplished = progScores.filter(p => p.targetMet && !p.superseded);
+  const thisClose    = progScores.filter(p => !p.targetMet && p.pct >= 50);
+  const building     = progScores.filter(p => !p.targetMet && p.pct > 0 && p.pct < 50);
 
   const fourWeeksAgo = new Date(); fourWeeksAgo.setDate(fourWeeksAgo.getDate()-28);
   const recentSessions = sessions.filter(s => new Date(s.date) >= fourWeeksAgo).length;
@@ -844,14 +852,15 @@ async function loadHome() {
             <div style="display:flex;align-items:center;gap:8px;">
               <div style="font-family:var(--font);font-size:10px;color:var(--text2);">${p.sessionsHit}/${p.needed}</div>
               ${p.eta && tier !== 'accomplished' ? `<div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);background:var(--bg3);padding:2px 6px;border-radius:4px;">${p.eta}</div>` : ''}
-              ${tier === 'accomplished' ? `<button id="apply-prog-${p.id}" onclick="event.stopPropagation();applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?p.next.replace(/_/g,' '):''}')"
+              ${tier === 'accomplished' && p.ready ? `<button id="apply-prog-${p.id}" onclick="event.stopPropagation();applyProgression('${p.id}','${p.next||''}','${p.name}','${p.next?p.next.replace(/_/g,' '):''}')"
                 style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${btnColor};background:none;border:1px solid ${btnBorder};border-radius:5px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;">
                 ${btnLabel}
               </button>` : ''}
             </div>
           </div>
           ${tier !== 'building' ? `<div style="height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-bottom:4px;"><div style="height:100%;background:${c.barColour};width:${Math.min(100,p.pct)}%;border-radius:2px;box-shadow:0 0 4px ${c.borderColour};"></div></div>` : ''}
-          ${tier === 'accomplished' && p.next ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);">→ ${p.next.replace(/_/g,' ')}${p.nextReq?' (needs '+p.nextReq+')':''}</div>` : ''}
+          ${tier === 'accomplished' && p.ready && p.next ? `<div style="font-family:var(--font);font-size:10px;color:var(--text2);">→ ${p.next.replace(/_/g,' ')}${p.nextReq?' (needs '+p.nextReq+')':''}</div>` : ''}
+          ${tier === 'accomplished' && p.atPeak ? `<div style="font-family:var(--font);font-size:10px;color:var(--text3);">🏁 top of this chain — progress it with levers, not a swap</div>` : ''}
           ${tier === 'thisClose' ? `<div style="font-family:var(--font);font-size:10px;color:var(--amber);">One more session at target → advance</div>` : ''}
         </div>`;
       }).join('')}

@@ -42,8 +42,12 @@ async function loadPlanHistoryContext() {
       return `${name} — ${dates.join(' | ')}`;
     }).join('\n');
 
+    // `ready` is advance-able right now; `target_met` alone may just mean he's
+    // already swapped to the next lift (superseded) or is at the top of the
+    // chain (at_peak) — advance_note says which, so don't render "ready to
+    // advance" off target_met.
     const stallLines = progs.filter(p => p.load_stalled || p.ready).map(p =>
-      `${p.exercise}: ${p.load_stalled ? p.load_note : `ready to advance (${p.qualifying_sessions}/${p.sessions_to_confirm} sessions met target)`}` +
+      `${p.exercise}: ${p.load_stalled ? p.load_note : `ready to advance to ${p.next} (${p.qualifying_sessions}/${p.sessions_to_confirm} sessions met target)`}` +
       `\n    levers${p.intensity_levers_are_generic ? ' (generic)' : ''}: ${(p.intensity_levers || []).join(' / ')}`
     ).join('\n');
 

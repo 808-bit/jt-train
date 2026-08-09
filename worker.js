@@ -442,6 +442,10 @@ async function companionDigest(env) {
     consecutive_qualifying_sessions: p.consecutive_qualifying_sessions,
     sessions_to_confirm: p.sessions_to_confirm,
     ready: p.ready,
+    target_met: p.target_met,
+    at_peak: p.at_peak,
+    superseded: p.superseded,
+    advance_note: p.advance_note,
     next: p.next,
     load_stalled: p.load_stalled,
     load_note: p.load_note,
@@ -1019,10 +1023,12 @@ async function computeProgressions(env) {
   // good sets in one session read as "confirmed twice" and marked the lift
   // ready off a single day's work.
   const PROG_SESSION_WINDOW = 6;
-  const { results: rows } = await env.DB.prepare(`
+  const [{ results: rows }, { results: lastRows }] = await Promise.all([
+    env.DB.prepare(`
       SELECT * FROM (
         SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
-               pr.next_exercise_id, pr.intensity_levers, pr.notes AS rule_notes,
+               pr.next_exercise_id, pr.next_exercise_alt, pr.next_requires,
+               pr.intensity_levers, pr.notes AS rule_notes,
                e.display_name, e.modality, e.equipment,
                s.date, st.set_num, st.reps, st.weight_kg, st.rir,
                DENSE_RANK() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC) AS session_rn
@@ -1033,7 +1039,18 @@ async function computeProgressions(env) {
         WHERE s.id NOT LIKE '%-H'
       ) WHERE session_rn <= ${PROG_SESSION_WINDOW}
       ORDER BY exercise_id, session_rn, set_num
-    `).all();
+    `).all(),
+    // Last time EVERY exercise was trained — used to detect progressions that
+    // have already happened (see `superseded` below). Not restricted to ruled
+    // exercises: a next_exercise_id need not have a progression rule of its own.
+    env.DB.prepare(`
+      SELECT st.exercise_id, MAX(s.date) AS last_date
+      FROM sets st JOIN sessions s ON st.session_id = s.id
+      WHERE s.id NOT LIKE '%-H'
+      GROUP BY st.exercise_id
+    `).all(),
+  ]);
+  const lastTrained = new Map(lastRows.map(r => [r.exercise_id, r.last_date]));
 
     const byExercise = new Map();
     for (const r of rows) {
@@ -1083,7 +1100,40 @@ async function computeProgressions(env) {
       const levers = leversAreGeneric
         ? defaultLevers(rule.modality, rule.rep_target, rule.equipment)
         : ruleLevers;
-      const ready = qualifyingSessions >= rule.sessions_to_confirm;
+
+      // `target_met` is the raw achievement: this lift cleared its standard.
+      // It is NOT the same as "advance it" — once true it stays true forever,
+      // which is how lifts he progressed off months ago kept being offered.
+      // Two things disqualify a met target from being an advance candidate:
+      //
+      //  at_peak    — the rule has no next_exercise_id. Top of the chain, so
+      //               there is nothing to advance TO. Still a real achievement.
+      //  superseded — the next exercise (or its sanctioned alternative) has been
+      //               trained MORE RECENTLY than this one, i.e. he already made
+      //               the swap himself. Strictly-newer, not >=, so a transition
+      //               session where both were trained doesn't count as moving on.
+      //
+      // `ready` now means what every consumer already renders it as: ready to
+      // advance, right now, to a real next exercise.
+      const targetMet = qualifyingSessions >= rule.sessions_to_confirm;
+      const atPeak = !rule.next_exercise_id;
+      // Raw ISO date of the most recent session — `sessions` is insertion-ordered
+      // by session_rn, so the first key is the newest. sessionRows[].date is
+      // already run through fmtD and can't be compared.
+      const ownLast = [...sessions.keys()][0];
+      const nextLast = [rule.next_exercise_id, rule.next_exercise_alt]
+        .filter(Boolean)
+        .map(id => lastTrained.get(id))
+        .filter(Boolean)
+        .sort()
+        .pop();
+      const superseded = !atPeak && !!nextLast && !!ownLast && nextLast > ownLast;
+      const ready = targetMet && !atPeak && !superseded;
+
+      const advanceNote = !targetMet ? ''
+        : atPeak ? `At the top of its chain — no next exercise exists. Keep progressing it with intensity_levers; do not look for a swap.`
+        : superseded ? `Already progressed: ${rule.next_exercise_id} was last trained ${fmtD(nextLast)} vs ${fmtD(ownLast)} for this lift. The swap has happened — do not offer it again.`
+        : `Ready to advance to ${rule.next_exercise_id}${rule.next_requires ? ` (needs ${rule.next_requires})` : ''}.`;
 
       // A lift that keeps clearing its target at an unchanged load is stalled on
       // the LOAD axis, whatever the exercise-advance rule says. Compare only the
@@ -1112,7 +1162,12 @@ async function computeProgressions(env) {
         consecutive_qualifying_sessions: consecutive,
         sessions_to_confirm: rule.sessions_to_confirm,
         ready,
+        target_met: targetMet,
+        at_peak: atPeak,
+        superseded,
+        advance_note: advanceNote,
         next: rule.next_exercise_id || 'peak',
+        next_requires: rule.next_requires || '',
         intensity_levers: levers,
         intensity_levers_are_generic: leversAreGeneric,
         rule_notes: rule.rule_notes || '',
@@ -1543,7 +1598,7 @@ PROCESS (minimize round-trips — every extra turn adds real latency):
 1. assess_training_state — see what patterns are overdue AND read archetype_rotation to pick today's archetype (per the rules above)
 2. get_available_exercises — pass ALL the patterns you want to target at once via movement_patterns (array), not one call per pattern. Include the anchor archetype's pattern(s) (mp_power_conditioning for power, mp_rehab for restoration).
 3. get_multi_exercise_history — pass ALL the exercise_ids you need load data for in ONE call, not repeated get_exercise_history calls
-4. check_progressions — ALWAYS call this (batch it with step 2 or 3, it takes no arguments). It is how you find out which lifts have met their target, which have stalled at an unchanged load (load_stalled / load_note), and what intensity_levers each one has. You cannot size loads honestly without it.
+4. check_progressions — ALWAYS call this (batch it with step 2 or 3, it takes no arguments). It is how you find out which lifts have met their target, which have stalled at an unchanged load (load_stalled / load_note), and what intensity_levers each one has. You cannot size loads honestly without it. Read its readiness fields precisely — they are not interchangeable: target_met means the lift cleared its standard (an achievement, permanent, NOT an instruction to swap it); at_peak means there is no next exercise to advance to; superseded means he has ALREADY moved on to the next exercise himself and the swap is done. ready is the only one that means "advanceable right now" — it is target_met minus those two. Never propose advancing a lift where ready is false, whatever target_met says; advance_note spells out which case applies.
 5. get_equipment when any double-KB lift is in the plan, or a KB lift is at/near its threshold — it returns owned bells, the single-bell ladder (internal gaps + next rung) and the double-KB balanced ladder, so you can pick a real next combo instead of an oversized or lopsided one
 6. Return the session plan as JSON and nothing else
 
