@@ -424,44 +424,28 @@ async function companionDigest(env) {
     ) s
   `).first().catch(() => null));
 
-  // ── Progression readiness (same logic as the check_progressions tool) ──
-  const progRows = (await env.DB.prepare(`
-    SELECT * FROM (
-      SELECT pr.exercise_id, pr.rep_target, pr.rir_target, pr.sessions_to_confirm,
-             pr.next_exercise_id, e.display_name,
-             s.date, st.reps, st.weight_kg, st.rir,
-             ROW_NUMBER() OVER (PARTITION BY pr.exercise_id ORDER BY s.date DESC, st.set_num DESC) AS rn
-      FROM progression_rules pr
-      JOIN exercises e ON pr.exercise_id = e.id
-      JOIN sets st ON st.exercise_id = pr.exercise_id
-      JOIN sessions s ON st.session_id = s.id
-      WHERE s.id NOT LIKE '%-H'
-    ) WHERE rn <= 5
-    ORDER BY exercise_id, rn
-  `).all()).results;
-  const byExercise = new Map();
-  for (const r of progRows) {
-    if (!byExercise.has(r.exercise_id)) byExercise.set(r.exercise_id, []);
-    byExercise.get(r.exercise_id).push(r);
-  }
-  const progression = [];
-  for (const recent of byExercise.values()) {
-    const rule = recent[0];
-    // rep_target is 'SETSxREPS' ('3x10') or 'SETSxHOLDs' ('3x20s') — the per-set
-    // target reps/seconds is the part after the 'x'. (The check_progressions tool
-    // compares against the raw string, which coerces to NaN and never qualifies —
-    // parse it properly here so readiness is real.)
-    const targetReps = parseInt(String(rule.rep_target).split("x").pop());
-    const qualifying = recent.filter((s) => s.reps >= targetReps && (s.rir ?? 99) <= rule.rir_target).length;
-    progression.push({
-      exercise: rule.display_name,
-      target: `${rule.rep_target} @ RIR ≤${rule.rir_target} × ${rule.sessions_to_confirm}`,
-      qualifying_sessions: qualifying,
-      sessions_to_confirm: rule.sessions_to_confirm,
-      ready: qualifying >= rule.sessions_to_confirm,
-      next: rule.next_exercise_id || 'peak',
-    });
-  }
+  // ── Progression readiness ──
+  // Delegated to computeProgressions() — the same function behind the
+  // check_progressions tool and ?action=getProgressions. This used to be a
+  // bespoke query here, and it drifted: it windowed by the last 5 SETS and
+  // counted qualifying SETS against sessions_to_confirm, so three good sets in
+  // one session read as "confirmed twice" and the Companion reported lifts as
+  // ready off a single day's work (8 ready vs the app's 5). Never reimplement
+  // readiness here — the two surfaces must not disagree about the same lift.
+  // recent_sessions/intensity_levers are dropped to keep the digest compact.
+  const progression = (await computeProgressions(env)).map((p) => ({
+    exercise: p.exercise,
+    id: p.id,
+    target: p.target,
+    sessions_examined: p.sessions_examined,
+    qualifying_sessions: p.qualifying_sessions,
+    consecutive_qualifying_sessions: p.consecutive_qualifying_sessions,
+    sessions_to_confirm: p.sessions_to_confirm,
+    ready: p.ready,
+    next: p.next,
+    load_stalled: p.load_stalled,
+    load_note: p.load_note,
+  }));
   // Ready first, then closest to ready.
   progression.sort((a, b) => (b.ready - a.ready) || (b.qualifying_sessions - a.qualifying_sessions));
 
