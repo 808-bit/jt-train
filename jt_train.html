@@ -108,8 +108,8 @@
   }
 
   /* ── Idle screen ─────────────────────────────────────────────────────────── */
-  .idle-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 28px 24px; }
-  .idle-inner { width: 100%; max-width: 420px; }
+  .idle-body { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 28px 24px; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
+  .idle-inner { width: 100%; max-width: 420px; margin: auto 0; }
   .section { margin-bottom: 28px; }
   .lbl {
     font-family: var(--font-ui); font-size: 9px; font-weight: 700;
@@ -454,7 +454,7 @@
   .toast-warn { border-color: rgba(245,158,11,0.35); color: var(--amber); }
 
   /* ── Overscroll containment ──────────────────────────────────────────────── */
-  .chat-area, .review-body, .prog-body, .eq-body { overscroll-behavior: contain; }
+  .chat-area, .review-body, .prog-body, .eq-body, .idle-body { overscroll-behavior: contain; }
 
   /* ── Loading skeleton ────────────────────────────────────────────────────── */
   @keyframes skelPulse { 0%,100%{opacity:0.4} 50%{opacity:0.9} }
