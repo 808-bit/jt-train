@@ -218,24 +218,7 @@ async function handleGet(request, env) {
   }
 
   if (action === 'getPace') {
-    // Minutes-per-set from recent sessions with real timestamps.
-    // Backfilled imports have identical logged_at on every set (0-min span),
-    // so the BETWEEN filter drops them along with abandoned sessions.
-    const { results } = await env.DB.prepare(`
-      SELECT COUNT(*) AS n,
-             (julianday(MAX(logged_at)) - julianday(MIN(logged_at))) * 1440.0 AS mins
-      FROM sets
-      GROUP BY session_id
-      HAVING COUNT(*) >= 5 AND mins BETWEEN 15 AND 150
-      ORDER BY MAX(logged_at) DESC
-      LIMIT 10
-    `).all();
-    const totSets = results.reduce((s, r) => s + r.n, 0);
-    const totMins = results.reduce((s, r) => s + r.mins, 0);
-    return json({
-      minPerSet: totSets ? Math.round((totMins / totSets) * 100) / 100 : null,
-      sessions: results.length,
-    });
+    return json(await getPaceData(env));
   }
 
   if (action === 'getSessions') {
@@ -1283,7 +1266,7 @@ async function executeTool(toolName, toolInput, context, env) {
     const patterns = movement_patterns && movement_patterns.length ? movement_patterns : (movement_pattern ? [movement_pattern] : []);
     const placeholders = availableExerciseIds.map(() => '?').join(',');
     let query = `
-      SELECT e.id, e.display_name, e.movement_pattern_id AS pattern_id, mp.name AS pattern_name, e.matrix_level, e.equipment, e.notes
+      SELECT e.id, e.display_name, e.movement_pattern_id AS pattern_id, mp.name AS pattern_name, e.matrix_level, e.equipment, e.notes, e.bilateral, e.logging_mode
       FROM exercises e LEFT JOIN movement_patterns mp ON e.movement_pattern_id = mp.id
       WHERE e.id IN (${placeholders})`;
     const binds = [...availableExerciseIds];
@@ -1309,6 +1292,8 @@ async function executeTool(toolName, toolInput, context, env) {
       return {
         id: e.id, name: e.display_name, pattern: e.pattern_name, pattern_id: e.pattern_id,
         level: e.matrix_level, equipment: e.equipment, notes: e.notes || '',
+        ...((e.logging_mode || (e.bilateral === 0 ? 'unilateral' : 'standard')) === 'unilateral'
+          ? { unilateral: true, time_cost: '2 set-slots per set (one per side)' } : {}),
         last_trained: u ? fmtD(u.last_date) : 'not in last 42 days',
         days_ago: u ? Math.round((new Date(today) - new Date(u.last_date)) / 86400000) : null,
         sessions_last_42d: u ? u.session_count : 0,
@@ -1492,6 +1477,55 @@ function extractPlanJson(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
+// Minutes per logged ROW from recent sessions with real timestamps.
+// Backfilled imports have identical logged_at on every set (0-min span),
+// so the BETWEEN filter drops them along with abandoned sessions.
+// Shared by the getPace action (frontend estimate) and Gerald's time budget.
+async function getPaceData(env) {
+  const { results } = await env.DB.prepare(`
+    SELECT COUNT(*) AS n,
+           (julianday(MAX(logged_at)) - julianday(MIN(logged_at))) * 1440.0 AS mins
+    FROM sets
+    GROUP BY session_id
+    HAVING COUNT(*) >= 5 AND mins BETWEEN 15 AND 150
+    ORDER BY MAX(logged_at) DESC
+    LIMIT 10
+  `).all();
+  const totSets = results.reduce((s, r) => s + r.n, 0);
+  const totMins = results.reduce((s, r) => s + r.mins, 0);
+  return {
+    minPerSet: totSets ? Math.round((totMins / totSets) * 100) / 100 : null,
+    sessions: results.length,
+  };
+}
+
+// Session-time estimate — mirrors estimateSessionMins (js/screens/session.js).
+// Pace is per logged row and unilateral lifts log one row per side, so each
+// unilateral set costs 2 rows. +6 min covers setup before set 1.
+const SESSION_CAP_MINS = 45;     // what Gerald is told to plan to
+const SESSION_TRIM_MINS = 50;    // what code enforces with a trim call
+const SESSION_SETUP_MINS = 6;
+const DEFAULT_MIN_PER_ROW = 4.5;
+
+async function getUnilateralIds(env, ids) {
+  if (!ids || !ids.length) return new Set();
+  const { results } = await env.DB.prepare(
+    `SELECT id, bilateral, logging_mode FROM exercises WHERE id IN (${ids.map(() => '?').join(',')})`
+  ).bind(...ids).all();
+  return new Set(results
+    .filter(e => (e.logging_mode || (e.bilateral === 0 ? 'unilateral' : 'standard')) === 'unilateral')
+    .map(e => e.id));
+}
+
+function planRows(exs, unilateralIds) {
+  return (exs || []).reduce((s, e) => s + (parseInt(e.sets) || 4) * (unilateralIds.has(e.exercise_id) ? 2 : 1), 0);
+}
+
+function estimatePlanMins(exs, unilateralIds, minPerRow) {
+  const mins = planRows(exs, unilateralIds) * minPerRow + SESSION_SETUP_MINS;
+  return Math.round(mins / 5) * 5;
+}
+
 // VALIDATE (code-fix): strip exercises that aren't in the allowed list or are
 // duplicated. Returns the cleaned exercise array plus a list of what was removed
 // and why — so the agent can repair if too much was stripped.
@@ -1590,6 +1624,12 @@ async function runGeraldAgent(body, env) {
   const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '' } = context;
   const MAX_ITER = 8;
 
+  // Time budget in logged rows at James's real pace (unilateral set = 2 rows).
+  const pace = await getPaceData(env).catch(() => ({ minPerSet: null, sessions: 0 }));
+  const minPerRow = pace.minPerSet || DEFAULT_MIN_PER_ROW;
+  const rowBudget = Math.floor((SESSION_CAP_MINS - SESSION_SETUP_MINS) / minPerRow);
+  const paceSrc = pace.minPerSet ? `his measured pace over the last ${pace.sessions} sessions` : 'a default estimate (no pace data yet)';
+
   const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
   const bwRow = await env.DB.prepare('SELECT date, weight_kg, bodyfat_pct FROM body_metrics ORDER BY date DESC LIMIT 1').first();
   const bwLine = bwRow ? `Bodyweight: ${bwRow.weight_kg} kg${bwRow.bodyfat_pct != null ? ` (${bwRow.bodyfat_pct}% bf)` : ''} as of ${bwRow.date} — use it for effective load on calisthenics.` : '';
@@ -1667,9 +1707,13 @@ HARD CONSTRAINTS:
 - LOAD MUST MOVE: never re-prescribe a load an exercise already cleared its rep target at. If check_progressions flags load_stalled, that exercise's prescription must change this session — heavier, more reps, slower tempo, added pause, or a harder variation. Say which lever you used in its notes field.
 - Apply any approved progressions (use new exercise, not old)
 - equipment_note is ADVISORY only — every exercise's weight field must use a bell that's actually owned (kit / get_equipment). A bell you suggest buying never appears as a prescribed weight.
-- SESSION LENGTH: 45 min hard cap (~3 min/set including rest = 15 sets max).
-  Scale sets to exercise count: 4 exercises → 3–4 sets each, 5–6 exercises → 2–3 sets each.
-  Never prescribe 4 sets across 5+ exercises.`;
+- SESSION LENGTH: ${SESSION_CAP_MINS} min hard cap. James averages ${minPerRow} min per set-slot including rest
+  (${paceSrc}), plus ~${SESSION_SETUP_MINS} min setup — so the whole session gets ${rowBudget} SET-SLOTS max.
+  A bilateral set = 1 slot. A UNILATERAL set (get_available_exercises marks these unilateral: true —
+  single-arm snatch, floor press, etc.) is done and logged one side at a time = 2 slots.
+  e.g. "4 sets" of single-arm KB snatch costs 8 slots, not 4. Sum slots across the plan before you return it;
+  if over ${rowBudget}, cut sets (or drop the lowest-priority exercise) — don't squeeze rest.
+  Prefer 2-3 sets per exercise; with unilateral lifts in the plan, 4 exercises is usually the most that fits.`;
 
   const messages = [{
     role: 'user',
@@ -1723,7 +1767,40 @@ HARD CONSTRAINTS:
       }
 
       plan.exercises = cleaned;
-      return { ok: true, plan, validation: { removed, count: cleaned.length } };
+
+      // Time check: the prompt budgets slots, but verify in code (same
+      // estimate the frontend shows) and make ONE trim call if it's over.
+      const unilateralIds = await getUnilateralIds(env, cleaned.map(e => e.exercise_id));
+      let estMins = estimatePlanMins(cleaned, unilateralIds, minPerRow);
+      let trimmedFrom = null;
+      if (estMins > SESSION_TRIM_MINS) {
+        const costs = cleaned.map(e => {
+          const per = unilateralIds.has(e.exercise_id) ? 2 : 1;
+          return `${e.exercise_id} ${parseInt(e.sets) || 4} sets × ${per} = ${(parseInt(e.sets) || 4) * per} slots`;
+        }).join('; ');
+        messages.push({
+          role: 'user',
+          content: `That plan is ~${estMins} min at James's pace — over the ${SESSION_CAP_MINS} min cap. Slot cost: ${costs}. Total ${planRows(cleaned, unilateralIds)} slots, budget ${rowBudget}. Trim it to ${rowBudget} slots or fewer: cut sets first (keep the anchor lifts), drop the lowest-priority exercise only if needed. Keep loads and exercise_ids as they are, and update card/session_notes so they still match. Return just the corrected JSON, no commentary.`,
+        });
+        const trim = await callAnthropic(env, { model: 'claude-opus-4-8', max_tokens: 8000, thinking: { type: 'adaptive' }, output_config: { effort: 'low' }, system, tools: GERALD_TOOLS, tool_choice: { type: 'none' }, messages });
+        if (!trim.ok) console.error('Gerald trim call failed:', trim.status, JSON.stringify(trim.data));
+        if (trim.ok && trim.data.content) {
+          const ttext = trim.data.content.map(b => b.text || '').join('');
+          try {
+            const tplan = extractPlanJson(ttext);
+            const fixed = codefixPlan(tplan, context.availableExerciseIds);
+            const tUni = await getUnilateralIds(env, fixed.cleaned.map(e => e.exercise_id));
+            const tMins = estimatePlanMins(fixed.cleaned, tUni, minPerRow);
+            if (fixed.cleaned.length >= 3 && tMins < estMins) {
+              trimmedFrom = estMins;
+              plan = tplan; plan.exercises = fixed.cleaned; removed = fixed.removed; estMins = tMins;
+            }
+          } catch (e) { /* keep the untrimmed plan */ }
+        }
+        console.log(`Gerald time check: ${trimmedFrom ? `trimmed ${trimmedFrom}→${estMins}` : `trim failed, still ${estMins}`} min (budget ${rowBudget} slots @ ${minPerRow})`);
+      }
+
+      return { ok: true, plan, validation: { removed, count: plan.exercises.length, est_mins: estMins, trimmed_from: trimmedFrom } };
     }
 
     if (data.stop_reason === 'tool_use') {
