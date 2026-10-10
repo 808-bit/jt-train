@@ -43,6 +43,29 @@ wrangler d1 execute jt-train-db --file=path/to/migration.sql --remote
 wrangler tail jt-workout-worke --format=pretty
 ```
 
+### Staging
+
+| | Prod | Staging |
+|---|---|---|
+| Worker | `jt-workout-worke` | `jt-workout-worke-staging` |
+| D1 | `jt-train-db` | `jt-train-db-staging` (snapshot of prod) |
+| Frontend | GitHub Pages | local preview (`localhost:8787`) |
+
+`js/api.js` picks the worker by hostname: localhost → staging, anything else → prod. `?env=prod` / `?env=staging` overrides. An amber STAGING badge shows top-right when not on prod. Staging has its own `APP_TOKEN` (stored client-side as `appToken_staging`).
+
+```bash
+# Deploy worker to staging first, test, then deploy prod
+wrangler deploy --env staging
+wrangler tail jt-workout-worke-staging --format=pretty
+
+# Migrations: run on staging first
+wrangler d1 execute jt-train-db-staging --file=path/to/migration.sql --remote
+
+# Refresh staging data from prod
+wrangler d1 export jt-train-db --remote --output=/tmp/prod.sql
+wrangler d1 execute jt-train-db-staging --file=/tmp/prod.sql --remote   # wipe tables first if non-empty
+```
+
 **⚠ When you change any cached JS/HTML, bump the service-worker cache** (`sw.js`: `const CACHE = 'jt-train-vN'` → `vN+1`). The SW cache-firsts the `js/**` files listed in its `STATIC` array, so installed PWAs keep serving the OLD code after a push until the cache version changes. Forgetting this makes a correct push look like it "didn't work."
 
 ## File Structure
@@ -412,11 +435,12 @@ History screen uses aliased vars: `--s1=--bg2`, `--b1=--border`, `--b2=--border2
 
 ## Local Dev / Environment
 
-- **Frontend preview:** `python3 -m http.server 8787` from the repo root (see `.claude/launch.json`, config name `jt-train`). Serves `jt_train.html` + `js/**` as static files; API calls still hit the **live** Cloudflare Worker — there's no local mock backend.
-- **Worker:** no local `wrangler dev` workflow in use — worker changes are validated by `wrangler deploy` then `wrangler tail --format=pretty` to watch live logs. Treat worker edits as directly affecting production; there's no staging environment.
+- **Frontend preview:** `python3 -m http.server 8787` from the repo root (see `.claude/launch.json`, config name `jt-train`). Serves `jt_train.html` + `js/**` as static files; API calls hit the **staging** worker + staging D1 (see Staging above). Use `?env=prod` only when you deliberately need live data.
+- **Worker:** no local `wrangler dev` workflow in use — deploy to staging (`wrangler deploy --env staging`), exercise it from the local preview, tail staging logs, then `wrangler deploy` to prod.
 - **Secrets:** never hardcode API keys/tokens in `worker.js` or `wrangler.toml`. Set via `wrangler secret put <NAME>`:
   - `ANTHROPIC_API_KEY` — used by the `claude` proxy action.
   - `COMPANION_TOKEN` — shared secret gating `?action=companionDigest`; unset means the bridge stays closed (503).
+  - Staging needs its own: `wrangler secret put ANTHROPIC_API_KEY --env staging` and `wrangler secret put APP_TOKEN --env staging`. No `COMPANION_TOKEN` on staging (Companion is being decommissioned).
 - No `.env`/`.dev.vars` file exists — don't create one expecting it to be read automatically without also wiring it into `wrangler.toml`.
 
 ## Testing / Verification

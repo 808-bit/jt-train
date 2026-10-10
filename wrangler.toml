@@ -7,6 +7,15 @@ binding      = "DB"
 database_name = "jt-train-db"
 database_id  = "bc3254ce-c147-4bbd-a452-acecb770e9f0"  # output from: wrangler d1 create jt-train-db
 
+# Staging: wrangler deploy --env staging  (bindings aren't inherited, so DB is redefined)
+[env.staging]
+name = "jt-workout-worke-staging"
+
+[[env.staging.d1_databases]]
+binding       = "DB"
+database_name = "jt-train-db-staging"
+database_id   = "e96f3632-fc17-426e-87d0-a19746d08d88"  # output from: wrangler d1 create jt-train-db-staging
+
 # Secrets (set via: wrangler secret put ANTHROPIC_API_KEY)
 # ANTHROPIC_API_KEY — do NOT put real keys in this file
 # COMPANION_TOKEN   — shared secret gating the read-only ?action=companionDigest
