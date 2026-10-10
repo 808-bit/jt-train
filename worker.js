@@ -504,7 +504,11 @@ async function handlePost(request, env, ctx) {
       body: JSON.stringify({ model, max_tokens, system, messages }),
     });
     const data = await response.json();
-    if (!response.ok) return json({ error: data }, response.status);
+    // 502, not Anthropic's status — a bad API key (401) must not look like a rejected app token
+    if (!response.ok) {
+      console.error('Anthropic call failed:', response.status, JSON.stringify(data?.error || data));
+      return json({ error: data, upstream_status: response.status }, 502);
+    }
     const text = data.content?.map(b => b.text || '').join('') || '';
     return json({ text });
   }

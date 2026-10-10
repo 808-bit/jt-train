@@ -440,6 +440,7 @@ History screen uses aliased vars: `--s1=--bg2`, `--b1=--border`, `--b2=--border2
 - **Secrets:** never hardcode API keys/tokens in `worker.js` or `wrangler.toml`. Set via `wrangler secret put <NAME>`:
   - `ANTHROPIC_API_KEY` — used by the `claude` proxy action.
   - `COMPANION_TOKEN` — shared secret gating `?action=companionDigest`; unset means the bridge stays closed (503).
+  - Set secrets from the clipboard, not by pasting into wrangler's prompt (bracketed-paste can corrupt the value): `printf %s "$(pbpaste)" | wrangler secret put NAME [--env staging]`.
   - Staging needs its own: `wrangler secret put ANTHROPIC_API_KEY --env staging` and `wrangler secret put APP_TOKEN --env staging`. No `COMPANION_TOKEN` on staging (Companion is being decommissioned).
 - No `.env`/`.dev.vars` file exists — don't create one expecting it to be read automatically without also wiring it into `wrangler.toml`.
 

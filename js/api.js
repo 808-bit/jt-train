@@ -52,13 +52,15 @@ async function apiPost(body, retried = false) {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) headers['X-App-Token'] = token;
   const r = await fetch(W, { method: 'POST', headers, body: JSON.stringify(body) });
-  if (r.status === 401 && !retried && !tokenRejected) {
+  // Only the worker's own app-token check counts — older workers pass Anthropic's 401 through too
+  const appTokenRejected = r.status === 401 && (await r.clone().json().catch(() => ({}))).error === 'Unauthorized';
+  if (appTokenRejected && !retried && !tokenRejected) {
     // Another request may have just stored a fresh token — retry with it before prompting
     const fresh = localStorage.getItem(TOKEN_KEY);
     if (fresh && fresh !== token) return apiPost(body, true);
     if (token) localStorage.removeItem(TOKEN_KEY);
     if (await askForToken(!!token)) return apiPost(body, true);
-  } else if (r.status === 401 && retried && !tokenRejected) {
+  } else if (appTokenRejected && retried && !tokenRejected) {
     tokenRejected = true;
     localStorage.removeItem(TOKEN_KEY);
     alert('Token rejected by the ' + ENV + ' worker — it doesn\'t match APP_TOKEN. Reload to try again.');
@@ -69,5 +71,6 @@ async function apiPost(body, retried = false) {
 async function claude(system, messages, model) {
   model = model || HAIKU;
   const r = await apiPost({ action: 'claude', system, messages, model });
+  if (r.error) console.error('Claude call failed (' + ENV + '):', r.upstream_status || '', r.error);
   return r.text || '';
 }
