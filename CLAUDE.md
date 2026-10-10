@@ -296,19 +296,21 @@ Gym:    { rings:false, pull_up_bar:true, parallettes_high:false, parallettes_low
 ## Idle Screen Flow
 
 1. **COACH card** auto-loads with Sonnet recommendation (`autoRecommend`) — re-triggers on location change or signal change (800ms debounce)
-2. **Quick-action chips** under coach card: "Sounds good — let's go →" (green), "Push it harder", "Dial it back" — all call `generatePlan()`
-3. **Override ↓** reveals override panel containing:
+2. **Background build:** as soon as the card lands (Coach's Workout only), `startPrebuild()` fires Gerald's agent job with the card as his `brief`. A status line under the chips shows "building…" → "✓ Session built". Any card refresh (signal/location change) discards it and starts a new one.
+3. **Quick-action chips** under coach card: "Sounds good — let's go →" (green) opens the prebuilt plan; "Push it harder" / "Dial it back" run a quick `adjustPlan()` edit on the prebuilt plan (not a second agent run). All go through `generatePlan(chipNote)`. If no valid prebuild (card failed, readiness/location/progressions changed since), it builds on demand with the brief.
+4. **Override ↓** reveals override panel containing:
    - LOCATION pills
    - READINESS signals (Sleep/Energy/Soreness)
    - SESSION TYPE pills ("Coach's Workout" is default/selected)
    - Generate button (visible for named session types)
-4. Tapping any chip or the Generate button calls `generatePlan()`
+5. Tapping any chip or the Generate button calls `generatePlan()`
 
 **No standalone Generate button on the main idle screen — chips are the primary CTA.**
 
 ## autoRecommend Data
 
-- Fetches: `getSessions` (limit 10) + `getRecentDebriefs` (limit 20)
+- Fetches: `getSessions` (limit 10) + `getRecentDebriefs` (limit 20) + `getTrainingState` (same pattern gaps / archetype rotation as Gerald's `assess_training_state`, plus `suggested` archetype from `pickArchetype()` in worker.js — the rotation + readiness rules in code) + memo
+- Commits to an `archetype`; the card is stored as `coachCard` and becomes Gerald's brief
 - Model: Sonnet
 - Caches raw debriefs in `cachedDebriefs` for reuse by `generatePlan`
 - Does NOT set `sType` — coach recommendation is advisory only
@@ -362,6 +364,9 @@ Design (learned the hard way — `ctx.waitUntil()` is NOT enough on its own):
   (a GET, not gated by `APP_TOKEN`) every 2s up to 2 min. It bails early if the job row
   never appears after ~10s (the POST failed to land). Old rows are cleaned up
   (`created_at < now - 1 day`) when a new job starts.
+
+### One intent thread: card → plan → live coach → debrief
+`planIntent` (app.js) holds the card's headline/brief/cues, the archetype, and the plan's `session_notes`. `intentBlock()` renders it into the review-adjust (`adjustPlan`), mid-workout coach, debrief-chat and debrief prompts, so no stage re-derives the day. The debrief judges the session against its archetype (a restoration/power day isn't "declined" for low tonnage), sees the mid-session chat (swaps/pain), and its `recommendation` is written as the hand-off the next card reads. All stages use `GERALD_PERSONA`.
 
 ### Named session type path
 `generatePlan()` (non-Coach's Workout):

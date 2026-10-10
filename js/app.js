@@ -22,6 +22,24 @@ function hasShoulderInjury() {
 }
 let plan = [], chatLog = [], sessionId = '', loggedSets = [], preNotes = '', coachMemo = '';
 let planArchetype = null;  // 'strength' | 'power' | 'restoration' — set from Gerald's plan, saved on session start
+// The one thread that runs card → plan → live coach → debrief: what today was
+// meant to be. Set from the coach card, extended by the plan, read by every
+// later prompt so no stage rebuilds the day's intent from scratch.
+let planIntent = { headline: '', brief: '', cues: [], archetype: null, session_notes: '' };
+const ARCHETYPE_SIGNATURE = {
+  strength: 'STRENGTH day — compounds close to failure (RIR 1-2). Success = hard sets near failure and load/reps moving.',
+  power: 'POWER day — explosive KB work (swings/cleans/snatches) at RIR 2-3 with short rest. Success = crisp, fast reps; grinding to failure is a miss, not a win.',
+  restoration: 'RESTORATION day — rehab/mobility, low load, high RIR (3+), long holds. Success = controlled, pain-free work done; low tonnage is the goal, never a decline.',
+};
+function intentBlock() {
+  const a = planIntent.archetype;
+  const lines = [];
+  if (a) lines.push(ARCHETYPE_SIGNATURE[a]);
+  if (planIntent.headline) lines.push(`Your brief: "${planIntent.headline}"${planIntent.brief ? ' — ' + planIntent.brief : ''}`);
+  if (planIntent.cues && planIntent.cues.length) lines.push('Cues you gave: ' + planIntent.cues.join(' | '));
+  if (planIntent.session_notes) lines.push('Plan intent: ' + planIntent.session_notes);
+  return lines.length ? `## Today's intent (you set this before the session — hold James to it)\n${lines.join('\n')}\n` : '';
+}
 let bodyMetrics = [];
 let isTyping = false;
 

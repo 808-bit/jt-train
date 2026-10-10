@@ -54,19 +54,57 @@ let recommendedType = null;
 let coachBrief = null;
 let cachedDebriefs = null;
 let sessionPace = null;
+let coachCard = null;   // the accepted card: { archetype, headline, brief, cues, reason } — Gerald's brief
+let cardGen = 0;        // bumps on every card refresh; stale cards/prebuilds compare against it
+// Gerald builds the Coach's Workout in the background as soon as the card lands,
+// so "let's go" opens the plan the card described instead of starting a fresh
+// handoff. { gen, key, allowed, promise } — promise resolves to the raw plan.
+let prebuild = null;
+
+function prebuildKey() {
+  return JSON.stringify([loc, preSleep, preEnergy, preSoreness, pendingProgressions.map(p => p.from + '>' + p.to)]);
+}
+
+function setBuildStatus(state) {
+  const el = document.getElementById('rec-build');
+  if (!el) return;
+  el.style.display = state ? 'block' : 'none';
+  el.textContent = state === 'building' ? "Gerald's building this session…"
+    : state === 'ready' ? '✓ Session built — ready when you are' : '';
+  el.style.color = state === 'ready' ? 'var(--green)' : 'var(--text2)';
+}
+
+function trainingStateBlock(state) {
+  if (!state || !state.archetype_rotation) return '';
+  const rot = state.archetype_rotation;
+  const gaps = (state.pattern_gaps || []).slice(0, 8).map(g => `${g.pattern} ${g.days_ago}d`).join(', ');
+  return `TRAINING STATE (computed from the logs — the same data your planning tools read):
+Days since each pattern was trained: ${gaps || 'no data'}
+Archetype rotation: last 5 = ${rot.last_5_archetypes.join(', ') || 'none'} · ${rot.sessions_since_power} sessions since power · ${rot.sessions_since_restoration} since restoration
+TODAY'S ARCHETYPE (computed by the rotation + readiness rules): ${state.suggested.archetype} — ${state.suggested.why}
+`;
+}
 
 async function autoRecommend() {
+  const gen = ++cardGen;
+  prebuild = null;
+  setBuildStatus('');
   document.getElementById('rec-loading').style.display = 'block';
   document.getElementById('rec-content').style.display = 'none';
 
   try {
-    const [sessRes, debriefRes] = await Promise.all([
+    const [sessRes, debriefRes, state, memoRes] = await Promise.all([
       api('getSessions', { limit: 10 }),
-      api('getRecentDebriefs', { limit: 20 })
+      api('getRecentDebriefs', { limit: 20 }),
+      api('getTrainingState', { sleep: preSleep, energy: preEnergy }).catch(() => null),
+      apiPost({ action: 'getMemo' }).catch(() => ({ memo: null })),
     ]);
+    if (gen !== cardGen) return;  // a newer refresh (signal/location change) owns the card now
     const recentSessions = sessRes.sessions || [];
     const debriefs       = debriefRes.data   || [];
     cachedDebriefs = debriefs;
+    coachMemo = memoRes.memo || '';
+    const suggested = state && state.suggested ? state.suggested.archetype : null;
 
     const sessionSummary = recentSessions.map(s =>
       `${fmtDate(s.date)}: ${s.session_type} @ ${s.location}`
@@ -77,7 +115,8 @@ async function autoRecommend() {
     ).join('\n') || 'No debrief data';
 
     const system = `${GERALD_PERSONA}
-${userContextBlock()}
+${userContextBlock()}${coachMemo ? `\nYOUR RUNNING NOTES (your memory of James — read first):\n${coachMemo}\n` : ''}
+${trainingStateBlock(state)}
 RECENT SESSIONS (last 10):
 ${sessionSummary}
 
@@ -90,7 +129,9 @@ INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).j
 KIT: ${buildEquipmentBrief(loc)}
 ${bodyweightContext(bodyMetrics)}
 
-Write a session card. Fields:
+Write a session card. This is YOUR brief for the session you will build next — the plan is generated straight from it, so commit to something you'll deliver.
+${suggested ? `Use TODAY'S ARCHETYPE (${suggested}) unless the notes or debriefs make it clearly wrong (e.g. shoulder flagged before a power day) — if you change it, the reason field says why.\n` : ''}Fields:
+- archetype: "strength" | "power" | "restoration".
 - headline: 4-6 words. The session in a punchy phrase. Not a list of exercises.
 - brief: 1-2 sentences. What patterns need work and why, based on the debrief data. Reference specifics — e.g. "Ring rows hit progression threshold last session" or "Hinge has been absent three sessions running."
 - cues: 3-4 specific coaching points. Draw from debrief recommendations and readiness. Each cue is one focused instruction — technique, sequencing, load, rest. 10-15 words each. CRITICAL: any KB weight or double KB combination you prescribe as owned kit must come exactly from the KIT list above — never invent an owned bell size (a bell to BUY is different — see equipment_note).
@@ -100,6 +141,7 @@ Write a session card. Fields:
 Return ONLY valid JSON, no markdown:
 {
   "session_type": "Full Body A",
+  "archetype": "${suggested || 'strength'}",
   "headline": "...",
   "brief": "...",
   "cues": ["...", "...", "...", "..."],
@@ -112,8 +154,16 @@ Return ONLY valid JSON, no markdown:
     const jsonEnd   = raw.lastIndexOf('}');
     const rec = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
 
+    if (gen !== cardGen) return;
     recommendedType = rec.session_type;
     coachBrief = rec.brief;
+    coachCard = {
+      archetype: ['strength', 'power', 'restoration'].includes(rec.archetype) ? rec.archetype : (suggested || 'strength'),
+      headline: rec.headline || '',
+      brief: rec.brief || '',
+      cues: rec.cues || [],
+      reason: rec.reason || '',
+    };
 
     document.getElementById('rec-loading').style.display = 'none';
     document.getElementById('rec-content').style.display = 'block';
@@ -132,8 +182,10 @@ Return ONLY valid JSON, no markdown:
     }
 
     renderCoachChips();
+    if (sType === "Coach's Workout") startPrebuild(gen);
 
   } catch(e) {
+    if (gen !== cardGen) return;
     document.getElementById('rec-loading').innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);">Could not load — <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:10px;color:var(--text2);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">retry</button></div>';
     console.log('Recommendation failed:', e);
   }
@@ -161,17 +213,64 @@ function renderCoachChips() {
   });
 }
 
+const CHIP_ADJUST = {
+  push: 'High readiness today — push it harder: more load or reps where the history allows, keep the same exercises.',
+  dial: 'Feeling it a bit — dial it back: trim volume, raise RIR, keep the same exercises and quality.',
+};
+
 function quickCoachAction(action) {
-  const notes = document.getElementById('pre-notes');
-  if (action === 'go') {
-    generatePlan();
-  } else if (action === 'push') {
-    if (notes) notes.value = 'High readiness today — push the load.';
-    generatePlan();
-  } else if (action === 'dial') {
-    if (notes) notes.value = 'Feeling it a bit — dial back the volume, keep quality.';
-    generatePlan();
-  }
+  generatePlan(CHIP_ADJUST[action] || '');
+}
+
+// The context Gerald's agent works from. `brief` is the coach card James accepted.
+function agentContext(notes) {
+  // Equipment + injury filter runs on the frontend where the logic already lives.
+  // We pass the resulting IDs to the worker so the agent's tool is constrained.
+  // shoulder_safe is the only per-exercise safety flag — apply it only when a
+  // shoulder injury is active; other injuries reach Gerald via the prompt's
+  // restrictions text, not this hard filter.
+  const availableExerciseIds = filterByEquipmentOnly(exercises, loc)
+    .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
+    .map(e => e.id);
+  return {
+    location: loc,
+    readiness: { sleep: preSleep, energy: preEnergy, soreness: preSoreness },
+    injuries: injuries.map(i => ({ body_part: i.body_part, restrictions: i.restrictions })),
+    kit: buildKitString(loc),
+    memo: coachMemo,
+    pendingProgressions,
+    preNotes: notes,
+    availableExerciseIds,
+    userContext: getUserContext(),
+    brief: coachCard,
+  };
+}
+
+// The client generates the job_id so it never has to wait on the POST
+// response — Gerald's loop runs ~30-55s inside that request, far longer than
+// mobile Safari keeps a fetch alive. We fire the POST and swallow its result
+// (the server writes the plan to agent_jobs); the plan comes back via polling.
+function startAgentJob(context) {
+  const jobId = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+    : Date.now() + '-' + Math.random().toString(36).slice(2);
+  apiPost({ action: 'agent', jobId, context }).catch(() => {}); // fire-and-forget
+  return pollAgentJob(jobId).then(r => {
+    if (r.status === 'error') throw new Error(r.error || 'Plan generation failed');
+    return r.result.plan;
+  });
+}
+
+function startPrebuild(gen) {
+  const context = agentContext('');
+  const promise = startAgentJob(context);
+  const pb = { gen, key: prebuildKey(), allowed: context.availableExerciseIds, promise };
+  prebuild = pb;
+  setBuildStatus('building');
+  promise.then(() => { if (prebuild === pb) setBuildStatus('ready'); })
+    .catch(e => {
+      console.log('Prebuild failed — will build on demand:', e);
+      if (prebuild === pb) { prebuild = null; setBuildStatus(''); }
+    });
 }
 
 function toggleOverride() {
@@ -225,78 +324,92 @@ async function pollAgentJob(jobId) {
     }
     seen = true;
     if (res.status === 'complete' || res.status === 'error') return res;
-    if (statusEl) statusEl.textContent = `Gerald is thinking... (${(i + 1) * 2}s)`;
+    if (statusEl && document.getElementById('s-generating').classList.contains('on')) {
+      statusEl.textContent = `Gerald is building your session... (${(i + 1) * 2}s)`;
+    }
   }
   throw new Error('Gerald is taking too long — try again');
 }
 
-async function generateCoachesWorkout() {
-  preNotes = document.getElementById('pre-notes').value.trim();
-  document.getElementById('gen-status').textContent = 'Gerald is thinking...';
+async function generateCoachesWorkout(chipNote) {
+  const typed = document.getElementById('pre-notes').value.trim();
+  preNotes = [chipNote, typed].filter(Boolean).join(' ');
+  const statusEl = document.getElementById('gen-status');
 
-  const memoRes = await apiPost({ action: 'getMemo' }).catch(() => ({ memo: null }));
-  coachMemo = memoRes.memo || '';
+  // Warm path: the plan Gerald built from the card while James was reading it.
+  let parsed = null, allowed = null, fromPrebuild = false;
+  const pb = prebuild && prebuild.gen === cardGen && prebuild.key === prebuildKey() ? prebuild : null;
+  if (pb) {
+    statusEl.textContent = 'Gerald is finishing your session...';
+    try {
+      parsed = JSON.parse(JSON.stringify(await pb.promise));  // clone — review edits mustn't mutate the cached plan
+      allowed = pb.allowed;
+      fromPrebuild = true;
+    } catch (e) { parsed = null; }
+  }
 
-  // Equipment + injury filter runs on the frontend where the logic already lives.
-  // We pass the resulting IDs to the worker so the agent's tool is constrained.
-  // shoulder_safe is the only per-exercise safety flag — apply it only when a
-  // shoulder injury is active; other injuries reach Gerald via the prompt's
-  // restrictions text, not this hard filter.
-  const availableExerciseIds = filterByEquipmentOnly(exercises, loc)
-    .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
-    .map(e => e.id);
-
-  // The client generates the job_id so it never has to wait on the POST
-  // response — Gerald's loop runs ~30-55s inside that request, far longer than
-  // mobile Safari keeps a fetch alive. We fire the POST and swallow its result
-  // (the server writes the plan to agent_jobs); the plan comes back via polling.
-  const jobId = (crypto && crypto.randomUUID) ? crypto.randomUUID()
-    : Date.now() + '-' + Math.random().toString(36).slice(2);
-
-  apiPost({
-    action: 'agent',
-    jobId,
-    context: {
-      location: loc,
-      readiness: { sleep: preSleep, energy: preEnergy, soreness: preSoreness },
-      injuries: injuries.map(i => ({ body_part: i.body_part, restrictions: i.restrictions })),
-      kit: buildKitString(loc),
-      memo: coachMemo,
-      pendingProgressions,
-      preNotes,
-      availableExerciseIds,
-      userContext: getUserContext(),
+  // Cold path: no card yet, readiness/location changed, or the prebuild failed.
+  if (!parsed) {
+    statusEl.textContent = 'Gerald is building your session...';
+    if (!coachMemo) {
+      const memoRes = await apiPost({ action: 'getMemo' }).catch(() => ({ memo: null }));
+      coachMemo = memoRes.memo || '';
     }
-  }).catch(() => {}); // fire-and-forget — result is retrieved via pollAgentJob
-
-  const jobResult = await pollAgentJob(jobId);
-  if (jobResult.status === 'error') throw new Error(jobResult.error || 'Plan generation failed');
-  const parsed = jobResult.result.plan;
+    const context = agentContext(preNotes);
+    parsed = await startAgentJob(context);
+    allowed = context.availableExerciseIds;
+  }
 
   // Safety net: strip any exercise Gerald hallucinated outside the allowed list
-  const allowedIds = new Set(availableExerciseIds);
+  const allowedIds = new Set(allowed);
   parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
 
+  planArchetype = ['strength', 'power', 'restoration'].includes(parsed.archetype) ? parsed.archetype
+    : (coachCard && coachCard.archetype) || null;
+  planIntent = {
+    headline: coachCard?.headline || '', brief: coachCard?.brief || '', cues: coachCard?.cues || [],
+    archetype: planArchetype, session_notes: parsed.session_notes || '',
+  };
+
+  // Push/Dial (or a note typed after the build started) adjusts the built plan
+  // in place — a quick surgical edit, not a second 30-55s agent run.
+  let adjustReply = '';
+  if (fromPrebuild && preNotes) {
+    statusEl.textContent = chipNote === CHIP_ADJUST.push ? 'Pushing it harder...'
+      : chipNote === CHIP_ADJUST.dial ? 'Dialling it back...' : 'Working in your note...';
+    try {
+      const adj = await adjustPlan(preNotes, parsed);
+      parsed = { ...parsed, ...adj.plan };
+      adjustReply = adj.reply;
+    } catch (e) {
+      console.log('Adjustment failed — showing the built plan:', e);
+      adjustReply = "Couldn't apply that tweak — this is the plan as briefed. Ask below to change it.";
+    }
+  }
+
   plan = parsed.exercises;
-  planArchetype = ['strength', 'power', 'restoration'].includes(parsed.archetype) ? parsed.archetype : null;
+  planIntent.session_notes = parsed.session_notes || planIntent.session_notes;
   const planIds = new Set(plan.map(e => e.exercise_id));
   pendingProgressions.forEach(p => { if (planIds.has(p.to)) appliedProgressions.add(p.from); });
   pendingProgressions = pendingProgressions.filter(p => !planIds.has(p.to));
   localStorage.setItem('pendingProgressions', JSON.stringify(pendingProgressions));
   localStorage.setItem('appliedProgressions', JSON.stringify([...appliedProgressions]));
 
-  document.getElementById('review-title').textContent = "Coach's Workout";
-  document.getElementById('review-sub').textContent = loc + ' · ' + new Date().toLocaleDateString('en-AU');
+  document.getElementById('review-title').textContent = planIntent.headline || "Coach's Workout";
+  document.getElementById('review-sub').textContent = [
+    "Coach's Workout", loc, new Date().toLocaleDateString('en-AU'), planArchetype ? planArchetype.toUpperCase() : '',
+  ].filter(Boolean).join(' · ');
   document.getElementById('review-chat').innerHTML = '';
   renderPlanCards(parsed);
+  if (adjustReply) addReviewMsg('coach', adjustReply);
   goScreen('s-review');
 }
 
-async function generatePlan() {
+async function generatePlan(chipNote = '') {
   goScreen('s-generating');
   if (sType === "Coach's Workout") {
     try {
-      await generateCoachesWorkout();
+      await generateCoachesWorkout(chipNote);
     } catch (e) {
       goScreen('s-idle');
       document.getElementById('status').textContent = 'Error: ' + e.message;
@@ -427,7 +540,7 @@ Rules: 4-6 exercises. Base load/volume on history. Respect the active injury res
 
   try {
     document.getElementById('gen-status').textContent = 'Building your plan...';
-    preNotes = document.getElementById('pre-notes').value.trim();
+    preNotes = [chipNote, document.getElementById('pre-notes').value.trim()].filter(Boolean).join(' ');
     const userMsg = 'Generate my ' + sType + ' workout. Location: ' + loc +
       (preNotes ? '\n\nPre-session notes from athlete: ' + preNotes : '');
     const raw = await claude(system, [{ role: 'user', content: userMsg }], SONNET);
@@ -440,6 +553,7 @@ Rules: 4-6 exercises. Base load/volume on history. Respect the active injury res
     console.log('[plan] after filter:', parsed.exercises.map(e => e.exercise_id));
     plan = parsed.exercises;
     planArchetype = null;  // named session types aren't archetype-tracked (Gerald-only signal)
+    planIntent = { headline: '', brief: coachBrief || '', cues: [], archetype: null, session_notes: parsed.session_notes || '' };
     const planIds = new Set(plan.map(e => e.exercise_id));
     pendingProgressions.forEach(p => { if (planIds.has(p.to)) appliedProgressions.add(p.from); });
     pendingProgressions = pendingProgressions.filter(p => planIds.has(p.to) ? false : true);

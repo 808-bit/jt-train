@@ -89,6 +89,18 @@ async function handleGet(request, env) {
     return json({ status: row.status, result, error: row.error });
   }
 
+  // Grounds the idle coach card in the same deterministic state Gerald's
+  // assess_training_state tool sees, plus the archetype the rotation rules pick
+  // for today's readiness — so the card and the plan agree on what today is.
+  if (action === 'getTrainingState') {
+    const state = await executeTool('assess_training_state', {}, {}, env);
+    const readiness = {
+      sleep: parseInt(searchParams.get('sleep') || '3'),
+      energy: parseInt(searchParams.get('energy') || '3'),
+    };
+    return json({ ...state, suggested: pickArchetype(state.archetype_rotation, readiness) });
+  }
+
   if (action === 'getExercises') {
     const { results } = await env.DB.prepare(
       'SELECT e.*, mp.name AS pattern_name FROM exercises e LEFT JOIN movement_patterns mp ON e.movement_pattern_id = mp.id ORDER BY e.display_name'
@@ -1557,9 +1569,23 @@ async function runAskAgent(body, env) {
   return { text: '', error: 'Ask agent exhausted its iteration budget' };
 }
 
+// The archetype rules in code, so the coach card and Gerald start from the same
+// answer. Readiness overrides rotation; rotation flags are otherwise advisory.
+function pickArchetype(rot, readiness) {
+  const low = readiness && (readiness.sleep <= 2 || readiness.energy <= 2);
+  if (low) {
+    return rot.last_5_archetypes[0] === 'restoration'
+      ? { archetype: 'strength', why: 'Low readiness, but restoration ran last session — lightened strength day.' }
+      : { archetype: 'restoration', why: 'Low readiness — restoration day.' };
+  }
+  if (rot.power_overdue) return { archetype: 'power', why: `${rot.sessions_since_power} sessions since the last power day.` };
+  if (rot.restoration_overdue) return { archetype: 'restoration', why: `${rot.sessions_since_restoration} sessions since the last restoration day.` };
+  return { archetype: 'strength', why: 'Nothing overdue — default strength day.' };
+}
+
 async function runGeraldAgent(body, env) {
   const { context } = body;
-  const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '' } = context;
+  const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '', brief } = context;
   const MAX_ITER = 8;
 
   const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
@@ -1571,6 +1597,16 @@ async function runGeraldAgent(body, env) {
     ? '✓ HIGH — push load and volume'
     : 'MODERATE — standard dose';
 
+  // The coach card James just read and accepted. Gerald wrote it (same persona),
+  // so the plan must deliver it — not re-decide the day from scratch.
+  const briefBlock = brief && brief.headline ? `
+YOUR BRIEF TO JAMES — you gave him this on the coach card a moment ago and he has accepted it:
+Archetype: ${brief.archetype || 'strength'}
+Headline: ${brief.headline}
+${brief.brief ? `Brief: ${brief.brief}\n` : ''}${(brief.cues || []).length ? `Cues:\n${brief.cues.map(c => '- ' + c).join('\n')}\n` : ''}${brief.reason ? `Why today's dose: ${brief.reason}\n` : ''}
+Build the session that delivers this brief. Its archetype is DECIDED — use it, don't re-run the archetype choice below. Every cue should be visible in the plan (exercise choice, order, load, or that exercise's notes). Still run the tools: if the data contradicts the brief (a lift it names isn't available, the history shows something it missed), adjust — and open session_notes by saying plainly what you changed from the brief and why. Otherwise session_notes continues the brief in one new sentence; don't restate it.
+` : '';
+
   const system = `${GERALD_PERSONA}
 
 ${MODALITY_DOCTRINE}
@@ -1578,7 +1614,7 @@ ${MODALITY_DOCTRINE}
 ${BW_PROGRESSION_RULE}
 
 ${LOAD_PROTOCOL}
-${userContext ? `\nATHLETE CONTEXT (always factor this in):\n${userContext}\n` : ''}${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
+${briefBlock}${userContext ? `\nATHLETE CONTEXT (always factor this in):\n${userContext}\n` : ''}${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
 TODAY:
 Location: ${location} | Kit: ${kit}
 Readiness: Sleep ${readiness.sleep}/5 · Energy ${readiness.energy}/5 · Soreness ${readiness.soreness}/5 — ${readinessNote}
@@ -1586,7 +1622,7 @@ ${bwLine ? bwLine + '\n' : ''}Injuries: ${injStr}
 ${preNotes ? `Athlete note: ${preNotes}` : ''}
 ${pendingProgressions.length ? `Approved progressions: ${pendingProgressions.map(p => `${p.fromName} → ${p.toName || 'peak'}`).join(', ')}` : ''}
 
-SESSION ARCHETYPE (decide this FIRST — it sets which pattern group anchors the session and the whole session's intensity character):
+SESSION ARCHETYPE (${briefBlock ? 'already decided in your brief above — reference only' : 'decide this FIRST'} — it sets which pattern group anchors the session and the whole session's intensity character):
 - strength — DEFAULT. Anchor the main patterns (push/pull/squat/hinge/carry/core). RIR 1-2, compounds first, proximity-to-failure hypertrophy. Use this unless a signal below says otherwise.
 - power — Anchor mp_power_conditioning (KB swings/cleans/snatches) as the first 2-3 slots. Higher reps, RIR 2-3, shorter rest, output quality over grinding to failure. This is the KB-lower-body / conditioning slot the doctrine calls non-negotiable.
 - restoration — Anchor mp_rehab (band pull-aparts, face pulls, scapular work, dead hangs). High RIR (2-3+), longer holds, low load. Shoulder-health insurance + active recovery.
@@ -1638,7 +1674,7 @@ HARD CONSTRAINTS:
 
   const messages = [{
     role: 'user',
-    content: `Design today's session. Location: ${location}.${preNotes ? ' Athlete note: ' + preNotes : ''}`
+    content: `${briefBlock ? 'Build the session you just briefed me on.' : "Design today's session."} Location: ${location}.${preNotes ? ' Athlete note: ' + preNotes : ''}`
   }];
 
   const startedAt = Date.now();

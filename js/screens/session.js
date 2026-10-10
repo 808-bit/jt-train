@@ -60,6 +60,7 @@ async function loadPlanHistoryContext() {
 
 async function startSession() {
   sessionId = await pickSessionId();
+  prebuild = null;  // consumed — after this session the card's data is stale
   loggedSets = [];
   chatLog = [];
   loadPlanHistoryContext(); // fire-and-forget; ready well before the first message
@@ -108,6 +109,7 @@ async function startSession() {
   const estMins = estimateSessionMins(plan);
   planWrap.innerHTML = `
     <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text3);letter-spacing:0.2em;margin-bottom:2px;">${sType.toUpperCase()} — ${new Date().toLocaleDateString('en-AU')} — ${loc.toUpperCase()}${estMins ? ` — ~${estMins} MIN` : ''}</div>
+    ${planIntent.headline || planIntent.session_notes ? `<div style="font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:4px;">${planIntent.headline ? `<span style="color:var(--text);">${planIntent.headline}.</span> ` : ''}${planIntent.session_notes || ''}</div>` : ''}
     ${plan.map((e, i) => `
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:2px solid rgba(34,197,94,0.25);border-radius:8px;padding:10px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
@@ -214,8 +216,10 @@ async function getCoachReply(userMsg) {
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
   let system;
   if (isDebriefMode && lastSSO) {
-    system = `You are a post-session coach reviewing this session with James. Direct, insightful, no filler.
-${userContextBlock()}
+    system = `${GERALD_PERSONA}
+
+You're reviewing the session James just finished — the one you briefed and planned.
+${userContextBlock()}${intentBlock()}
 Session: ${sType}
 Signal: ${lastSSO.performance_signal} | Outcome: ${lastSSO.outcome}
 Summary: ${lastSSO.headline}
@@ -251,8 +255,8 @@ Full set log: ${JSON.stringify(loggedSets)}
 
     system = `${GERALD_PERSONA}
 
-You are coaching James live, mid-workout — terse directives, no chat.
-${userContextBlock()}Session: ${sType} | Location: ${loc}
+You are coaching James live, mid-workout — terse directives, no chat. You briefed and built this session; keep it on the intent below (e.g. on a power day, cut a set that's turning into a grind rather than pushing it to failure).
+${userContextBlock()}${intentBlock()}Session: ${sType} | Location: ${loc}
 Kit: ${kitStr}
 Active injuries: ${injStr}
 
@@ -365,15 +369,19 @@ async function generateDebrief() {
 
   const injStr = injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') || 'None';
   const stimulusStr = summariseStimulus(loggedSets, exercises, latestBodyweight(bodyMetrics));
+  // What happened mid-session (swaps, pain, tweaks) — so the debrief judges the
+  // session James actually ran, not just the numbers.
+  const convo = chatLog.filter(m => m.text && m.text.toLowerCase() !== 'done').slice(-16)
+    .map(m => `${m.role === 'you' ? 'James' : 'You'}: ${String(m.text).replace(/<[^>]+>/g, '').slice(0, 220)}`).join('\n');
   const system = `${GERALD_PERSONA}
 
-You are debriefing James right after his session.
+You are debriefing James right after his session — the one you briefed on the coach card and planned.
 
 ${MODALITY_DOCTRINE}
 
 ${bodyweightContext(bodyMetrics)}
 
-${userContextBlock()}Session: ${sType} | Location: ${loc}
+${userContextBlock()}${intentBlock()}Session: ${sType} | Location: ${loc}
 Total: ${fmtSetCount(totalSets)} sets across ${exCount} exercises | Loaded volume: ${Math.round(totalVol)}kg${bwSets.length ? ` + ${fmtSetCount(effectiveSetCount(bwSets))} BW sets (volume not in kg)` : ''}
 Active injuries: ${injStr}
 
@@ -387,9 +395,9 @@ ${signals}
 
 ## Historical comparison
 ${histStr}
-
+${convo ? `\n## What was said mid-session (swaps, pain, tweaks)\n${convo}\n` : ''}
 Write a debrief. Cover:
-1. Stimulus verdict — judge by hard sets per pattern (proximity to failure), NOT kg volume. Was this a quality stimulus, and was modality balance right (KB covering lower-body, calisthenics taken close to failure)?
+1. Stimulus verdict — judge against TODAY'S INTENT above, not a generic hypertrophy yardstick. Strength day: hard sets near failure per pattern, NOT kg volume. Power day: rep speed/quality at RIR 2-3. Restoration day: controlled, pain-free work done — low load is success. Did the session deliver the brief, and was modality balance right?
 2. Per-exercise progression calls for next session — be explicit (increase X to Y, swap A for B)
 3. Any injury flags from today's data
 4. One priority focus for next ${sType} session
@@ -408,7 +416,8 @@ Return ONLY the JSON object. No explanation. No markdown. Just the JSON starting
 }
 
 performance_signal: "improving" | "stable" | "declining"
-outcome: "progressed" | "maintained" | "declined" | "incomplete" — determined by comparing logged numbers against previous sessions above
+outcome: "progressed" | "maintained" | "declined" | "incomplete" — determined by comparing logged numbers against previous sessions above, read through today's intent (a restoration or power day at lower load than a strength day is NOT "declined")
+recommendation: this is read by your next coach card — make it the hand-off to next session (what that session should open with or fix).
 exercises_flagged: exercise_ids where sets were missed, load dropped vs history, or pain was reported
 shoulder_flag: true only if right shoulder was loaded in a risky way`;
   try {
@@ -775,6 +784,52 @@ function addReviewMsg(role, text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+// Surgical edit to the plan on the review screen — used by the adjust chat and
+// by the Push/Dial chips on a prebuilt plan. Gerald, with the same brief and
+// memory that built the plan, so the edit stays in voice and on intent.
+async function adjustPlan(instruction, current) {
+  const library = filterByEquipmentOnly(exercises, loc)
+    .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe));
+  const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
+  const system = `${GERALD_PERSONA}
+
+You built this plan for James a minute ago. Before starting, he wants a change. Make it surgically — don't restructure what wasn't asked about.
+${userContextBlock()}${coachMemo ? `\nYOUR RUNNING NOTES:\n${coachMemo}\n` : ''}
+${intentBlock()}
+Phase: ${TRAINING_PHASE}
+Readiness: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
+Active injuries: ${injStr}
+Kit: ${buildKitString(loc)}
+
+${LOAD_PROTOCOL_BRIEF}
+
+Recent sessions (size loads on any changed or substituted exercise from this — where he actually is, not defaults):
+${buildHistStr()}
+
+Current plan: ${JSON.stringify({ session_notes: current.session_notes || '', exercises: current.exercises || [] })}
+Exercise library (exercise_id | name — use ONLY these ids): ${library.map(e => e.id + ' | ' + e.display_name + ' (' + e.category + ', L' + (e.matrix_level || '?') + ', ' + e.equipment + ')').join('; ')}
+
+Rules: keep the session's archetype and brief unless James explicitly asks to change the day. Weights only from owned kit. "Push harder" = the next step per the load protocol on lifts with room (reps first), not more exercises. "Dial back" = fewer sets and higher RIR, same exercises.
+
+Return ONLY valid JSON, no markdown:
+{
+  "reply": "1-2 sentences to James: what you changed and why. No preamble, no motivation.",
+  "session_notes": "updated one-line tactical intent",
+  "exercises": [
+    { "exercise_id": "slug", "display_name": "Name", "sets": 3, "reps": "8-10", "weight": "24kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
+  ]
+}`;
+  const raw = await claude(system, [{ role: 'user', content: instruction }], SONNET);
+  const parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+  const allowedIds = new Set(library.map(e => e.id));
+  const kept = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
+  if (!kept.length) throw new Error('Adjusted plan had no valid exercises');
+  return {
+    reply: parsed.reply || 'Done.',
+    plan: { session_notes: parsed.session_notes || current.session_notes || '', exercises: kept },
+  };
+}
+
 async function sendReviewMsg() {
   const input = document.getElementById('review-input');
   const msg = input.value.trim();
@@ -782,10 +837,6 @@ async function sendReviewMsg() {
   input.value = '';
   reviewTyping = true;
   addReviewMsg('you', msg);
-  const availableExList = filterByEquipmentOnly(exercises, loc)
-    .filter(e => !hasShoulderInjury() || isTrue(e.shoulder_safe))
-    .map(e => e.id + ' (' + e.display_name + ', ' + e.category + ', L' + (e.matrix_level||'?') + ', ' + e.equipment + ')')
-    .join(', ');
   const chat = document.getElementById('review-chat');
   const typingDiv = document.createElement('div');
   typingDiv.id = 'review-typing';
@@ -793,47 +844,13 @@ async function sendReviewMsg() {
   typingDiv.innerHTML = '<div style="font-size:10px;color:#333;margin-bottom:2px">COACH</div><div style="padding:8px 12px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:10px 10px 10px 3px;"><div class="typing"><span></span><span></span><span></span></div></div>';
   chat.appendChild(typingDiv);
   chat.scrollTop = chat.scrollHeight;
-  const injStr = injuries.length ? injuries.map(i => i.body_part + ': ' + i.restrictions).join('\n') : 'None';
-  const kitStr2 = buildKitString(loc);
-  const histStr = buildHistStr();
-  const system = `You are The Tactical Partner — adjusting a workout plan pre-session for James Thornton.
-Operating principle: maintain the machine, respect the load, optimise for life.
-Make the requested change surgically. Don't restructure what wasn't asked about.
-
-Phase: ${TRAINING_PHASE}
-Active injuries: ${injStr}
-Available kit: ${kitStr2}
-${preNotes ? 'Pre-session notes from James: ' + preNotes : ''}
-
-Previous ${sType} sessions (use to set weights on any substituted exercises — match to where he actually is, not defaults):
-${histStr}
-
-Current plan: ${JSON.stringify(plan)}
-Available exercises to substitute from (use exercise_id slugs): ${availableExList}
-
-Return ONLY valid JSON — same format, no markdown, no preamble:
-{
-  "session_notes": "updated tactical intent",
-  "exercises": [
-    { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
-  ]
-}
-Keep what works. Only change what was asked. Weights on any new exercises must come from history, not defaults. Respect the active injury restrictions listed above exactly as written.`;
   try {
-    const raw = await claude(system, [{ role: 'user', content: msg }], SONNET);
-    const clean = raw.replace(/\`\`\`json|\`\`\`/g, '').trim();
-    const parsed = JSON.parse(clean);
-    plan = parsed.exercises || [];
-    renderPlanCards(parsed);
-    document.getElementById('review-typing').remove();
-    const contextReply = await claude(
-      `You are The Tactical Partner. You just adjusted a workout plan based on the athlete's input.
-Respond in 1-2 sentences max. Acknowledge what you heard, state what you changed and why — analytically, no fluff.
-Use James's name only if delivering a decisive recalibration. No motivation speak.`,
-      [{ role: 'user', content: msg }],
-      SONNET
-    );
-    addReviewMsg('coach', contextReply);
+    const adj = await adjustPlan(msg, { session_notes: planIntent.session_notes, exercises: plan });
+    plan = adj.plan.exercises;
+    planIntent.session_notes = adj.plan.session_notes;
+    renderPlanCards(adj.plan);
+    document.getElementById('review-typing')?.remove();
+    addReviewMsg('coach', adj.reply);
   } catch (e) {
     document.getElementById('review-typing')?.remove();
     addReviewMsg('coach', 'Could not parse update. Try rephrasing.');
