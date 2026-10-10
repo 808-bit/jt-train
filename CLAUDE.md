@@ -295,9 +295,8 @@ Gym:    { rings:false, pull_up_bar:true, parallettes_high:false, parallettes_low
 
 ## Idle Screen Flow
 
-1. **COACH card** auto-loads with Sonnet recommendation (`autoRecommend`) — re-triggers on location change or signal change (800ms debounce)
-2. **Background build:** as soon as the card lands (Coach's Workout only), `startPrebuild()` fires Gerald's agent job with the card as his `brief`. A status line under the chips shows "building…" → "✓ Session built". Any card refresh (signal/location change) discards it and starts a new one.
-3. **Quick-action chips** under coach card: "Sounds good — let's go →" (green) opens the prebuilt plan; "Push it harder" / "Dial it back" run a quick `adjustPlan()` edit on the prebuilt plan (not a second agent run). All go through `generatePlan(chipNote)`. If no valid prebuild (card failed, readiness/location/progressions changed since), it builds on demand with the brief.
+1. **COACH card = Gerald's plan, summarised.** `autoRecommend` shows the code-computed archetype line instantly (`getTrainingState` → `pickArchetype`), then runs Gerald's agent job and renders the card from the plan's own `card` field (headline/brief/cues/reason). The card never decides the session — Gerald (tools + D1) does, and the card describes what he built. Re-triggers on location/signal change (800ms debounce), each a fresh agent run (~15-70s).
+2. **Quick-action chips** appear once the plan exists: "Sounds good — let's go →" opens that exact plan; "Push it harder" / "Dial it back" run a quick `adjustPlan()` edit on it (not a second agent run). All go through `generatePlan(chipNote)`. If readiness/location/progressions changed since the build, it rebuilds on demand.
 4. **Override ↓** reveals override panel containing:
    - LOCATION pills
    - READINESS signals (Sleep/Energy/Soreness)
@@ -309,13 +308,10 @@ Gym:    { rings:false, pull_up_bar:true, parallettes_high:false, parallettes_low
 
 ## autoRecommend Data
 
-- Fetches: `getSessions` (limit 10) + `getRecentDebriefs` (limit 20) + `getTrainingState` (same pattern gaps / archetype rotation as Gerald's `assess_training_state`, plus `suggested` archetype from `pickArchetype()` in worker.js — the rotation + readiness rules in code) + memo
-- Commits to an `archetype`; the card is stored as `coachCard` and becomes Gerald's brief
-- Model: Sonnet
-- Caches raw debriefs in `cachedDebriefs` for reuse by `generatePlan`
-- Does NOT set `sType` — coach recommendation is advisory only
-- Output: headline, brief, 3-4 cues (10-15 words each, must cite actual data), reason
-- KB weights in cues must come exactly from `buildKitString(loc)` — no invented bell sizes
+- No separate card model call. Fetches `getTrainingState` (instant archetype line) + memo, then runs Gerald's agent; card fields come from the plan JSON `card` object, stored as `coachCard`
+- `pickArchetype()` (worker.js) is the archetype rules in code — used by `getTrainingState` and surfaced to Gerald as `suggested_archetype` in `assess_training_state`
+- Caches raw debriefs in `cachedDebriefs` for the named-session-type path
+- Does NOT set `sType`
 
 ## Plan Gen Flow
 
@@ -366,7 +362,7 @@ Design (learned the hard way — `ctx.waitUntil()` is NOT enough on its own):
   (`created_at < now - 1 day`) when a new job starts.
 
 ### One intent thread: card → plan → live coach → debrief
-`planIntent` (app.js) holds the card's headline/brief/cues, the archetype, and the plan's `session_notes`. `intentBlock()` renders it into the review-adjust (`adjustPlan`), mid-workout coach, debrief-chat and debrief prompts, so no stage re-derives the day. The debrief judges the session against its archetype (a restoration/power day isn't "declined" for low tonnage), sees the mid-session chat (swaps/pain), and its `recommendation` is written as the hand-off the next card reads. All stages use `GERALD_PERSONA`.
+`planIntent` (app.js) holds Gerald's card headline/brief/cues, the archetype, and the plan's `session_notes`. `intentBlock()` renders it into the review-adjust (`adjustPlan`), mid-workout coach, debrief-chat and debrief prompts, so no stage re-derives the day. The debrief judges the session against its archetype (a restoration/power day isn't "declined" for low tonnage), sees the mid-session chat (swaps/pain), and its `recommendation` is written as the hand-off Gerald reads next time (via `assess_training_state` recent_debriefs). All stages use `GERALD_PERSONA`.
 
 ### Named session type path
 `generatePlan()` (non-Coach's Workout):

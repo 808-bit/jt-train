@@ -1272,7 +1272,9 @@ async function executeTool(toolName, toolInput, context, env) {
       last_5_archetypes: archList.slice(0, 5),
     };
 
-    return { pattern_gaps: patternGaps, recent_debriefs: recentDebriefs, archetype_rotation: archetypeRotation };
+    const out = { pattern_gaps: patternGaps, recent_debriefs: recentDebriefs, archetype_rotation: archetypeRotation };
+    if (context && context.readiness) out.suggested_archetype = pickArchetype(archetypeRotation, context.readiness);
+    return out;
   }
 
   if (toolName === 'get_available_exercises') {
@@ -1575,17 +1577,17 @@ function pickArchetype(rot, readiness) {
   const low = readiness && (readiness.sleep <= 2 || readiness.energy <= 2);
   if (low) {
     return rot.last_5_archetypes[0] === 'restoration'
-      ? { archetype: 'strength', why: 'Low readiness, but restoration ran last session — lightened strength day.' }
-      : { archetype: 'restoration', why: 'Low readiness — restoration day.' };
+      ? { archetype: 'strength', why: 'Low readiness, but restoration ran last session — lightened.' }
+      : { archetype: 'restoration', why: 'Low readiness.' };
   }
   if (rot.power_overdue) return { archetype: 'power', why: `${rot.sessions_since_power} sessions since the last power day.` };
   if (rot.restoration_overdue) return { archetype: 'restoration', why: `${rot.sessions_since_restoration} sessions since the last restoration day.` };
-  return { archetype: 'strength', why: 'Nothing overdue — default strength day.' };
+  return { archetype: 'strength', why: 'Nothing overdue.' };
 }
 
 async function runGeraldAgent(body, env) {
   const { context } = body;
-  const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '', brief } = context;
+  const { location, readiness, injuries = [], kit, memo, pendingProgressions = [], preNotes, userContext = '' } = context;
   const MAX_ITER = 8;
 
   const injStr = injuries.length ? injuries.map(i => `${i.body_part}: ${i.restrictions}`).join(', ') : 'None';
@@ -1597,16 +1599,6 @@ async function runGeraldAgent(body, env) {
     ? '✓ HIGH — push load and volume'
     : 'MODERATE — standard dose';
 
-  // The coach card James just read and accepted. Gerald wrote it (same persona),
-  // so the plan must deliver it — not re-decide the day from scratch.
-  const briefBlock = brief && brief.headline ? `
-YOUR BRIEF TO JAMES — you gave him this on the coach card a moment ago and he has accepted it:
-Archetype: ${brief.archetype || 'strength'}
-Headline: ${brief.headline}
-${brief.brief ? `Brief: ${brief.brief}\n` : ''}${(brief.cues || []).length ? `Cues:\n${brief.cues.map(c => '- ' + c).join('\n')}\n` : ''}${brief.reason ? `Why today's dose: ${brief.reason}\n` : ''}
-Build the session that delivers this brief. Its archetype is DECIDED — use it, don't re-run the archetype choice below. Every cue should be visible in the plan (exercise choice, order, load, or that exercise's notes). Still run the tools: if the data contradicts the brief (a lift it names isn't available, the history shows something it missed), adjust — and open session_notes by saying plainly what you changed from the brief and why. Otherwise session_notes continues the brief in one new sentence; don't restate it.
-` : '';
-
   const system = `${GERALD_PERSONA}
 
 ${MODALITY_DOCTRINE}
@@ -1614,7 +1606,7 @@ ${MODALITY_DOCTRINE}
 ${BW_PROGRESSION_RULE}
 
 ${LOAD_PROTOCOL}
-${briefBlock}${userContext ? `\nATHLETE CONTEXT (always factor this in):\n${userContext}\n` : ''}${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
+${userContext ? `\nATHLETE CONTEXT (always factor this in):\n${userContext}\n` : ''}${memo ? `\nYOUR RUNNING NOTES (read first — these override defaults):\n${memo}\n` : ''}
 TODAY:
 Location: ${location} | Kit: ${kit}
 Readiness: Sleep ${readiness.sleep}/5 · Energy ${readiness.energy}/5 · Soreness ${readiness.soreness}/5 — ${readinessNote}
@@ -1622,12 +1614,12 @@ ${bwLine ? bwLine + '\n' : ''}Injuries: ${injStr}
 ${preNotes ? `Athlete note: ${preNotes}` : ''}
 ${pendingProgressions.length ? `Approved progressions: ${pendingProgressions.map(p => `${p.fromName} → ${p.toName || 'peak'}`).join(', ')}` : ''}
 
-SESSION ARCHETYPE (${briefBlock ? 'already decided in your brief above — reference only' : 'decide this FIRST'} — it sets which pattern group anchors the session and the whole session's intensity character):
+SESSION ARCHETYPE (decide this FIRST — it sets which pattern group anchors the session and the whole session's intensity character):
 - strength — DEFAULT. Anchor the main patterns (push/pull/squat/hinge/carry/core). RIR 1-2, compounds first, proximity-to-failure hypertrophy. Use this unless a signal below says otherwise.
 - power — Anchor mp_power_conditioning (KB swings/cleans/snatches) as the first 2-3 slots. Higher reps, RIR 2-3, shorter rest, output quality over grinding to failure. This is the KB-lower-body / conditioning slot the doctrine calls non-negotiable.
 - restoration — Anchor mp_rehab (band pull-aparts, face pulls, scapular work, dead hangs). High RIR (2-3+), longer holds, low load. Shoulder-health insurance + active recovery.
 
-HOW TO CHOOSE (assess_training_state returns archetype_rotation — read it):
+HOW TO CHOOSE (assess_training_state returns archetype_rotation and suggested_archetype — suggested_archetype is these rules already applied in code; use it unless the debriefs or notes make it clearly wrong, and say why in card.reason if you override it):
 - Readiness is the override. LOW readiness (⚠ above) → choose restoration regardless of rotation, UNLESS last session was already restoration (last_5_archetypes[0] === "restoration") — then run a lightened strength session instead.
 - Otherwise, if power_overdue is true → choose power. High readiness makes power especially appropriate; on moderate readiness it's still fine.
 - Otherwise, if restoration_overdue is true → choose restoration (the soft safety-net so mobility work never disappears).
@@ -1648,6 +1640,12 @@ OUTPUT (when done, return only this — no preamble, no commentary):
 {
   "archetype": "strength | power | restoration — the theme you chose above",
   "session_notes": "one sharp sentence on what you're targeting and why (mention the archetype if it's not strength)",
+  "card": {
+    "headline": "4-6 words — the session in a punchy phrase, not a list of exercises",
+    "brief": "1-2 sentences to James: what this session targets and why, citing what the tools showed (e.g. 'Hinge absent 9 days', 'front squat cleared 3x8 @44kg twice')",
+    "cues": ["3-4 coaching points, 10-15 words each — technique, sequencing, load or rest — each matching a prescription in exercises below and citing a real number"],
+    "reason": "1 sentence: why today's dose matches today's readiness"
+  },
   "equipment_note": "OPTIONAL — one sentence, only when a KB lift is ready to progress but the next owned bell is a big jump (≥8kg or ≥25% per get_equipment). Name the next-weight move (jump to the next owned bell, or a rep/tempo bridge on the current one) and, if it genuinely helps, which bell to buy to bridge the gap — flagged as a purchase, never as owned kit. Omit or leave \"\" otherwise.",
   "exercises": [
     { "exercise_id": "slug", "display_name": "Name", "sets": 4, "reps": "8-10", "weight": "32kg", "tempo": "3-0-1-0", "rir": 1, "notes": "cue" }
@@ -1655,6 +1653,7 @@ OUTPUT (when done, return only this — no preamble, no commentary):
 }
 
 HARD CONSTRAINTS:
+- card is James's first look at this session (it's shown on the home screen before he opens the plan) — it must describe THIS plan exactly. Never cue a load, exercise or set count that isn't in exercises.
 - Only use exercise_ids from get_available_exercises — never invent one
 - VARIETY: get_available_exercises annotates each exercise with last_trained/sessions_last_42d.
   When multiple exercises satisfy the same pattern gap at a similar level, prefer the one with
@@ -1674,7 +1673,7 @@ HARD CONSTRAINTS:
 
   const messages = [{
     role: 'user',
-    content: `${briefBlock ? 'Build the session you just briefed me on.' : "Design today's session."} Location: ${location}.${preNotes ? ' Athlete note: ' + preNotes : ''}`
+    content: `Design today's session. Location: ${location}.${preNotes ? ' Athlete note: ' + preNotes : ''}`
   }];
 
   const startedAt = Date.now();

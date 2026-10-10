@@ -54,141 +54,122 @@ let recommendedType = null;
 let coachBrief = null;
 let cachedDebriefs = null;
 let sessionPace = null;
-let coachCard = null;   // the accepted card: { archetype, headline, brief, cues, reason } — Gerald's brief
-let cardGen = 0;        // bumps on every card refresh; stale cards/prebuilds compare against it
-// Gerald builds the Coach's Workout in the background as soon as the card lands,
-// so "let's go" opens the plan the card described instead of starting a fresh
-// handoff. { gen, key, allowed, promise } — promise resolves to the raw plan.
+let coachCard = null;   // Gerald's card for the plan he built: { archetype, headline, brief, cues, reason }
+let cardGen = 0;        // bumps on every card refresh; stale cards/builds compare against it
+// Gerald (the tool-using agent) decides the session; the card is his summary of
+// the plan he built — never a separate guess that the plan then has to follow.
+// The build starts as soon as the idle screen loads, so "let's go" opens it
+// instantly. { gen, key, allowed, promise } — promise resolves to the raw plan.
 let prebuild = null;
 
 function prebuildKey() {
   return JSON.stringify([loc, preSleep, preEnergy, preSoreness, pendingProgressions.map(p => p.from + '>' + p.to)]);
 }
 
-function setBuildStatus(state) {
-  const el = document.getElementById('rec-build');
+const ARCHETYPE_LABEL = { strength: 'Strength day', power: 'Power day', restoration: 'Restoration day' };
+
+function setEarlyLine(text) {
+  const el = document.getElementById('rec-early');
   if (!el) return;
-  el.style.display = state ? 'block' : 'none';
-  el.textContent = state === 'building' ? "Gerald's building this session…"
-    : state === 'ready' ? '✓ Session built — ready when you are' : '';
-  el.style.color = state === 'ready' ? 'var(--green)' : 'var(--text2)';
+  el.textContent = text || '';
+  el.style.display = text ? 'block' : 'none';
 }
 
-function trainingStateBlock(state) {
-  if (!state || !state.archetype_rotation) return '';
-  const rot = state.archetype_rotation;
-  const gaps = (state.pattern_gaps || []).slice(0, 8).map(g => `${g.pattern} ${g.days_ago}d`).join(', ');
-  return `TRAINING STATE (computed from the logs — the same data your planning tools read):
-Days since each pattern was trained: ${gaps || 'no data'}
-Archetype rotation: last 5 = ${rot.last_5_archetypes.join(', ') || 'none'} · ${rot.sessions_since_power} sessions since power · ${rot.sessions_since_restoration} since restoration
-TODAY'S ARCHETYPE (computed by the rotation + readiness rules): ${state.suggested.archetype} — ${state.suggested.why}
-`;
+function setBuildStatus(text) {
+  const el = document.getElementById('rec-build');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? 'block' : 'none';
 }
 
 async function autoRecommend() {
   const gen = ++cardGen;
   prebuild = null;
+  coachCard = null;
   setBuildStatus('');
-  document.getElementById('rec-loading').style.display = 'block';
+  setEarlyLine('');
+  const loadingEl = document.getElementById('rec-loading');
+  loadingEl.style.display = 'block';
+  if (REC_LOADING_HTML === null) REC_LOADING_HTML = loadingEl.innerHTML;
+  else if (!document.getElementById('rec-early')) loadingEl.innerHTML = REC_LOADING_HTML;  // restore after a retry message
   document.getElementById('rec-content').style.display = 'none';
 
   try {
-    const [sessRes, debriefRes, state, memoRes] = await Promise.all([
-      api('getSessions', { limit: 10 }),
-      api('getRecentDebriefs', { limit: 20 }),
+    // cachedDebriefs feeds the named-session-type path (generatePlan) — not the card.
+    api('getRecentDebriefs', { limit: 20 })
+      .then(r => { if (gen === cardGen) cachedDebriefs = r.data || []; }).catch(() => {});
+    const [state, memoRes] = await Promise.all([
       api('getTrainingState', { sleep: preSleep, energy: preEnergy }).catch(() => null),
       apiPost({ action: 'getMemo' }).catch(() => ({ memo: null })),
     ]);
     if (gen !== cardGen) return;  // a newer refresh (signal/location change) owns the card now
-    const recentSessions = sessRes.sessions || [];
-    const debriefs       = debriefRes.data   || [];
-    cachedDebriefs = debriefs;
     coachMemo = memoRes.memo || '';
-    const suggested = state && state.suggested ? state.suggested.archetype : null;
-
-    const sessionSummary = recentSessions.map(s =>
-      `${fmtDate(s.date)}: ${s.session_type} @ ${s.location}`
-    ).join('\n') || 'No recent sessions';
-
-    const debriefSummary = debriefs.map(d =>
-      `${fmtDate(d.date)} ${d.session_type}: ${d.performance_signal}, ${d.total_sets} sets, ${d.total_volume_kg}kg. ${d.recommendation}`
-    ).join('\n') || 'No debrief data';
-
-    const system = `${GERALD_PERSONA}
-${userContextBlock()}${coachMemo ? `\nYOUR RUNNING NOTES (your memory of James — read first):\n${coachMemo}\n` : ''}
-${trainingStateBlock(state)}
-RECENT SESSIONS (last 10):
-${sessionSummary}
-
-RECENT DEBRIEFS (last 20):
-${debriefSummary}
-
-READINESS: Sleep ${preSleep}/5 · Energy ${preEnergy}/5 · Soreness ${preSoreness}/5
-LOCATION: ${loc}
-INJURIES: ${injuries.length ? injuries.map(i=>i.body_part+': '+i.restrictions).join(', ') : 'None'}
-KIT: ${buildEquipmentBrief(loc)}
-${bodyweightContext(bodyMetrics)}
-
-Write a session card. This is YOUR brief for the session you will build next — the plan is generated straight from it, so commit to something you'll deliver.
-${suggested ? `Use TODAY'S ARCHETYPE (${suggested}) unless the notes or debriefs make it clearly wrong (e.g. shoulder flagged before a power day) — if you change it, the reason field says why.\n` : ''}Fields:
-- archetype: "strength" | "power" | "restoration".
-- headline: 4-6 words. The session in a punchy phrase. Not a list of exercises.
-- brief: 1-2 sentences. What patterns need work and why, based on the debrief data. Reference specifics — e.g. "Ring rows hit progression threshold last session" or "Hinge has been absent three sessions running."
-- cues: 3-4 specific coaching points. Draw from debrief recommendations and readiness. Each cue is one focused instruction — technique, sequencing, load, rest. 10-15 words each. CRITICAL: any KB weight or double KB combination you prescribe as owned kit must come exactly from the KIT list above — never invent an owned bell size (a bell to BUY is different — see equipment_note).
-- reason: 1 sentence. Why today's dose matches today's readiness.
-- equipment_note: OPTIONAL. Include ONLY when a KB lift is at or near its progression threshold and the next owned bell is a big jump. One sentence: name the next-weight move (jump to the next owned bell, or a rep/tempo bridge on the current one) and, if it genuinely helps, which bell to buy to close the gap — flagged clearly as a purchase, not as owned kit. Otherwise return "".
-
-Return ONLY valid JSON, no markdown:
-{
-  "session_type": "Full Body A",
-  "archetype": "${suggested || 'strength'}",
-  "headline": "...",
-  "brief": "...",
-  "cues": ["...", "...", "...", "..."],
-  "reason": "...",
-  "equipment_note": ""
-}`;
-
-    const raw = await claude(system, [{ role:'user', content:'What should I train today?' }], SONNET);
-    const jsonStart = raw.indexOf('{');
-    const jsonEnd   = raw.lastIndexOf('}');
-    const rec = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-
-    if (gen !== cardGen) return;
-    recommendedType = rec.session_type;
-    coachBrief = rec.brief;
-    coachCard = {
-      archetype: ['strength', 'power', 'restoration'].includes(rec.archetype) ? rec.archetype : (suggested || 'strength'),
-      headline: rec.headline || '',
-      brief: rec.brief || '',
-      cues: rec.cues || [],
-      reason: rec.reason || '',
-    };
-
-    document.getElementById('rec-loading').style.display = 'none';
-    document.getElementById('rec-content').style.display = 'block';
-    document.getElementById('rec-type').textContent  = rec.headline || rec.session_type;
-    document.getElementById('rec-brief').textContent = rec.brief;
-    const cuesEl = document.getElementById('rec-cues');
-    cuesEl.innerHTML = (rec.cues || []).map(c =>
-      `<div style="display:flex;gap:8px;align-items:flex-start;font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.4;"><span style="color:var(--green);flex-shrink:0;">→</span><span>${c}</span></div>`
-    ).join('');
-    document.getElementById('rec-reason').textContent = rec.reason ? '─  ' + rec.reason : '';
-    const eqEl = document.getElementById('rec-equip');
-    if (eqEl) {
-      const note = (rec.equipment_note || '').trim();
-      eqEl.textContent = note ? '🔩  ' + note : '';
-      eqEl.style.display = note ? 'block' : 'none';
+    // Instant, code-computed part of the answer while Gerald works through his tools.
+    if (state && state.suggested) {
+      setEarlyLine(`${ARCHETYPE_LABEL[state.suggested.archetype] || 'Strength day'} — ${state.suggested.why} Gerald's planning the session…`);
+    } else {
+      setEarlyLine("Gerald's planning the session…");
     }
 
-    renderCoachChips();
-    if (sType === "Coach's Workout") startPrebuild(gen);
-
+    const context = agentContext('');
+    const pb = { gen, key: prebuildKey(), allowed: context.availableExerciseIds, promise: startAgentJob(context) };
+    prebuild = pb;
+    const built = await pb.promise;
+    if (prebuild !== pb) return;
+    renderCard(built);
   } catch(e) {
     if (gen !== cardGen) return;
-    document.getElementById('rec-loading').innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);">Could not load — <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:10px;color:var(--text2);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">retry</button></div>';
+    prebuild = null;
+    loadingEl.innerHTML = '<div style="font-family:var(--font);font-size:11px;color:var(--text3);">Could not load — <button type="button" onclick="autoRecommend()" style="font-family:var(--font-ui);font-size:10px;color:var(--text2);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">retry</button></div>';
     console.log('Recommendation failed:', e);
   }
+}
+
+let REC_LOADING_HTML = null;  // skeleton markup, captured on first run (scripts load before the DOM)
+
+// The card is read straight off Gerald's plan — headline/brief/cues are his
+// summary of the exercises he prescribed, so card and plan can't disagree.
+function renderCard(built) {
+  const c = built.card || {};
+  const archetype = ['strength', 'power', 'restoration'].includes(built.archetype) ? built.archetype : 'strength';
+  coachCard = {
+    archetype,
+    headline: c.headline || ARCHETYPE_LABEL[archetype],
+    brief: c.brief || built.session_notes || '',
+    cues: c.cues || [],
+    reason: c.reason || '',
+  };
+  recommendedType = null;  // card is always the Coach's Workout now
+  coachBrief = coachCard.brief;
+
+  document.getElementById('rec-loading').style.display = 'none';
+  document.getElementById('rec-content').style.display = 'block';
+  document.getElementById('rec-type').textContent  = coachCard.headline;
+  document.getElementById('rec-brief').textContent = coachCard.brief;
+  const cuesEl = document.getElementById('rec-cues');
+  cuesEl.innerHTML = '';
+  coachCard.cues.forEach(cue => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;font-family:var(--font);font-size:11px;color:var(--text2);line-height:1.4;';
+    const arrow = document.createElement('span');
+    arrow.style.cssText = 'color:var(--green);flex-shrink:0;';
+    arrow.textContent = '→';
+    const txt = document.createElement('span');
+    txt.textContent = cue;
+    row.append(arrow, txt);
+    cuesEl.appendChild(row);
+  });
+  document.getElementById('rec-reason').textContent = coachCard.reason ? '─  ' + coachCard.reason : '';
+  const eqEl = document.getElementById('rec-equip');
+  if (eqEl) {
+    const note = (built.equipment_note || '').trim();
+    eqEl.textContent = note ? '🔩  ' + note : '';
+    eqEl.style.display = note ? 'block' : 'none';
+  }
+  const exs = built.exercises || [];
+  const mins = estimateSessionMins(exs);
+  setBuildStatus(`${(ARCHETYPE_LABEL[archetype] || '').toUpperCase()} · ${exs.length} exercises${mins ? ` · ~${mins} min` : ''}`);
+  renderCoachChips();
 }
 
 function renderCoachChips() {
@@ -222,7 +203,7 @@ function quickCoachAction(action) {
   generatePlan(CHIP_ADJUST[action] || '');
 }
 
-// The context Gerald's agent works from. `brief` is the coach card James accepted.
+// The context Gerald's agent works from.
 function agentContext(notes) {
   // Equipment + injury filter runs on the frontend where the logic already lives.
   // We pass the resulting IDs to the worker so the agent's tool is constrained.
@@ -242,7 +223,6 @@ function agentContext(notes) {
     preNotes: notes,
     availableExerciseIds,
     userContext: getUserContext(),
-    brief: coachCard,
   };
 }
 
@@ -260,18 +240,6 @@ function startAgentJob(context) {
   });
 }
 
-function startPrebuild(gen) {
-  const context = agentContext('');
-  const promise = startAgentJob(context);
-  const pb = { gen, key: prebuildKey(), allowed: context.availableExerciseIds, promise };
-  prebuild = pb;
-  setBuildStatus('building');
-  promise.then(() => { if (prebuild === pb) setBuildStatus('ready'); })
-    .catch(e => {
-      console.log('Prebuild failed — will build on demand:', e);
-      if (prebuild === pb) { prebuild = null; setBuildStatus(''); }
-    });
-}
 
 function toggleOverride() {
   const panel = document.getElementById('override-panel');
@@ -336,7 +304,7 @@ async function generateCoachesWorkout(chipNote) {
   preNotes = [chipNote, typed].filter(Boolean).join(' ');
   const statusEl = document.getElementById('gen-status');
 
-  // Warm path: the plan Gerald built from the card while James was reading it.
+  // Warm path: the plan Gerald built (and summarised on the card) while James was reading it.
   let parsed = null, allowed = null, fromPrebuild = false;
   const pb = prebuild && prebuild.gen === cardGen && prebuild.key === prebuildKey() ? prebuild : null;
   if (pb) {
@@ -348,7 +316,7 @@ async function generateCoachesWorkout(chipNote) {
     } catch (e) { parsed = null; }
   }
 
-  // Cold path: no card yet, readiness/location changed, or the prebuild failed.
+  // Cold path: readiness/location/progressions changed since the card, or the build failed.
   if (!parsed) {
     statusEl.textContent = 'Gerald is building your session...';
     if (!coachMemo) {
@@ -364,10 +332,10 @@ async function generateCoachesWorkout(chipNote) {
   const allowedIds = new Set(allowed);
   parsed.exercises = (parsed.exercises || []).filter(e => allowedIds.has(e.exercise_id));
 
-  planArchetype = ['strength', 'power', 'restoration'].includes(parsed.archetype) ? parsed.archetype
-    : (coachCard && coachCard.archetype) || null;
+  planArchetype = ['strength', 'power', 'restoration'].includes(parsed.archetype) ? parsed.archetype : null;
+  const card = parsed.card || {};
   planIntent = {
-    headline: coachCard?.headline || '', brief: coachCard?.brief || '', cues: coachCard?.cues || [],
+    headline: card.headline || '', brief: card.brief || '', cues: card.cues || [],
     archetype: planArchetype, session_notes: parsed.session_notes || '',
   };
 
