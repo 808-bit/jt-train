@@ -22,6 +22,8 @@ Because this is solo: commit directly to `main`, plain descriptive commit messag
 
 ## Deploy
 
+**Staging first, always.** Worker changes and D1 migrations go to staging (`--env staging` / `jt-train-db-staging`) and get verified from the local preview before production. Only run plain `wrangler deploy` or touch `jt-train-db` when James says to ship to prod. Frontend changes are tested in the local preview (which hits staging) before `git push`, since a push to `main` is live on his phone.
+
 **Frontend and worker deploy by different mechanisms — don't conflate them:**
 
 | Change | How it goes live |
@@ -33,10 +35,12 @@ Because this is solo: commit directly to `main`, plain descriptive commit messag
 # Frontend change → push only
 cd ~/Projects/jt-train && git add . && git commit -m "msg" && git push
 
-# Worker change → deploy (commit too, for history)
+# Worker change → staging first, then prod once James approves
+wrangler deploy --env staging
 git add . && git commit -m "msg" && git push && wrangler deploy
 
-# D1 migration
+# D1 migration → staging first, then prod once James approves
+wrangler d1 execute jt-train-db-staging --file=path/to/migration.sql --remote
 wrangler d1 execute jt-train-db --file=path/to/migration.sql --remote
 
 # Tail worker logs
